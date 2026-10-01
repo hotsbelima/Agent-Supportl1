@@ -1,0 +1,85 @@
+openapi: 3.0.3
+info:
+  title: Autonomous L1 Incident Agent - Dify Spike API
+  version: 1.1.0
+  description: >-
+    Two dependent read-only tools used only to prove autonomous multi-step tool
+    calling. Domain-level NOT_FOUND is returned as HTTP 200 with ok=false so
+    Dify receives a structured tool observation.
+servers:
+  - url: https://agent-support-l1-hte6ek8x4-tonybatony.vercel.app
+paths:
+  /api/spike/cmdb/devices/{device_id}:
+    get:
+      operationId: spike_get_device
+      summary: Get device metadata and site relation
+      description: >-
+        Get authoritative CMDB data for a known device ID. Use the returned
+        site_id when site health must be checked. Never invent a site ID.
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Device result; inspect ok before using data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolEnvelope'
+  /api/spike/monitoring/sites/{site_id}:
+    get:
+      operationId: spike_get_site_health
+      summary: Get current site health
+      description: >-
+        Get current site-wide health for a known site ID. Use it to distinguish
+        site-wide failure from a device-local symptom.
+      parameters:
+        - name: site_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Site-health result; inspect ok before using data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolEnvelope'
+components:
+  schemas:
+    ToolEnvelope:
+      type: object
+      required:
+        - ok
+        - run_id
+        - tool
+        - observed_at
+      properties:
+        ok:
+          type: boolean
+        run_id:
+          type: string
+        tool:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        evidence_ref:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
