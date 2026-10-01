@@ -1,0 +1,135 @@
+openapi: 3.0.3
+info:
+  title: Autonomous L1 Incident Agent - Dify Spike API
+  version: 1.1.0
+  description: Two dependent read-only tools used only to prove autonomous multi-step tool calling. Domain-level
+    NOT_FOUND is returned as HTTP 200 with ok=false so Dify receives a structured tool observation.
+servers:
+- url: https://REPLACE_WITH_PUBLIC_SPIKE_BASE_URL
+paths:
+  /api/spike/cmdb/devices/{device_id}:
+    get:
+      operationId: spike_get_device
+      summary: Get device metadata and site relation
+      description: Get authoritative CMDB data for a known device ID. Use the returned site_id when site
+        health must be checked. Never invent a site ID.
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Device result; inspect ok before using data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolEnvelope'
+              examples:
+                found:
+                  value:
+                    ok: true
+                    run_id: RUN-SPIKE-001
+                    tool: spike_get_device
+                    observed_at: '2026-10-01T11:27:18+03:00'
+                    evidence_ref: EVD-SPIKE-CMDB-001
+                    data:
+                      device_id: POS-KZN17-03
+                      type: POS_TERMINAL
+                      site_id: SITE-KZN-17
+                      upstream_device_id: SW-KZN17-01
+                      upstream_port: Gi1/0/23
+                not_found:
+                  value:
+                    ok: false
+                    run_id: RUN-SPIKE-001
+                    tool: spike_get_device
+                    observed_at: '2026-10-01T11:27:18+03:00'
+                    error:
+                      code: NOT_FOUND
+                      message: Device not found
+  /api/spike/monitoring/sites/{site_id}:
+    get:
+      operationId: spike_get_site_health
+      summary: Get current site health
+      description: Get current site-wide health for a known site ID. Use it to distinguish site-wide failure
+        from a device-local symptom.
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Site-health result; inspect ok before using data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolEnvelope'
+              examples:
+                found:
+                  value:
+                    ok: true
+                    run_id: RUN-SPIKE-001
+                    tool: spike_get_site_health
+                    observed_at: '2026-10-01T11:27:20+03:00'
+                    evidence_ref: EVD-SPIKE-SITE-001
+                    data:
+                      site_id: SITE-KZN-17
+                      overall_status: HEALTHY
+                      internet: UP
+                      default_gateway: UP
+                      core_switch: UP
+                      peer_devices:
+                      - device_id: POS-KZN17-01
+                        status: HEALTHY
+                      - device_id: POS-KZN17-02
+                        status: HEALTHY
+                      - device_id: POS-KZN17-03
+                        status: UNREACHABLE
+                      active_sitewide_alerts: []
+                not_found:
+                  value:
+                    ok: false
+                    run_id: RUN-SPIKE-001
+                    tool: spike_get_site_health
+                    observed_at: '2026-10-01T11:27:20+03:00'
+                    error:
+                      code: NOT_FOUND
+                      message: Site not found
+components:
+  schemas:
+    ToolEnvelope:
+      type: object
+      required:
+      - ok
+      - run_id
+      - tool
+      - observed_at
+      properties:
+        ok:
+          type: boolean
+        run_id:
+          type: string
+        tool:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        evidence_ref:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
