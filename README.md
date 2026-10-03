@@ -1,25 +1,53 @@
 # Autonomous L1 Incident Agent
 
-This repository begins with the Phase 1 Dify/Gemini technical spike from the v4.1 handoff. The scope is intentionally limited to two dependent read-only HTTP tools. It does not include the full Scenario 1 backend, UI, persistence, approvals, MCP, or n8n.
+## Current scope — Phase 1, Google ADK + Gemini
 
-## Tool contracts
+This repository contains a deliberately small, local **Google ADK function-tool** spike. It replaces the old Dify/HTTP experiment as the current Phase 1 implementation. It is not the Scenario 1 backend: there is no database, FastAPI service, UI, SSE stream, approval flow, deployment or Northflank configuration.
 
-The source contracts and agent prompt are retained in [`docs/handoff`](docs/handoff). After a Vercel Preview deployment, replace `https://REPLACE_WITH_PUBLIC_SPIKE_BASE_URL` in `docs/handoff/dify_spike_openapi_v1_1.yaml` with that preview origin and import it into Dify.
+The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evidence only; the current spike does not call them.
 
-| Tool | Endpoint | Input | Dependency |
-| --- | --- | --- | --- |
-| `spike_get_device` | `GET /api/spike/cmdb/devices/{device_id}` | `POS-KZN17-03` | Initial event supplies `device_id` |
-| `spike_get_site_health` | `GET /api/spike/monitoring/sites/{site_id}` | `SITE-KZN-17` | The agent must learn `site_id` from the first tool result |
+### Pinned runtime
 
-Known values respond with `200` and `ok: true`. Unknown values intentionally respond with `200` and `ok: false`, so the Dify experiment can observe a structured domain failure instead of a transport failure. Each response has a server-generated `observed_at` timestamp.
+| Component | Pin |
+| --- | --- |
+| Python | `3.12.14` (`.python-version`) |
+| Google ADK | `2.10.0` (`requirements.txt`) |
+| Gemini | `gemini-3.5-flash-lite` (stable model ID) |
+| Test runner | `pytest==8.4.2` |
 
-## Dify acceptance gate
+### Exact tool boundary
 
-1. Use `docs/handoff/agent_system_prompt_v1_1.txt` as the agent system prompt.
-2. Import the deployed OpenAPI document as the only tool source.
-3. Send an initial event with `device_id: POS-KZN17-03` and no `site_id`.
-4. Run the same input five times, without entering tool arguments or prompting the model between calls.
-5. Pass only if all five runs call `spike_get_device`, then call `spike_get_site_health` using the observed `SITE-KZN-17`.
-6. Record the exact Gemini model/version, Dify version and settings, maximum iterations, and Dify handling of `200` plus `ok:false`.
+The ADK agent has exactly two ordinary Python function tools and no others.
 
-Do not implement full Scenario 1 until this result is 5/5.
+| Tool | Input | Output / dependency |
+| --- | --- | --- |
+| `get_device(device_id)` | `POS-KZN17-03` | Returns `attachment_id: ATT-KZN17-POS03-NIC` |
+| `run_diagnostic(attachment_id)` | Must use the first result | Returns a read-only `LINK_DOWN` observation |
+
+The complete initial event is in `phase1_adk_spike/contracts.py`; it intentionally includes no `attachment_id`. The application never invokes a tool itself or copies an ID into the second call. Gemini must choose both calls through the native ADK loop.
+
+### Run it
+
+Create an environment with Python 3.12.14, install the pinned dependencies, and create a local `.env` file (ignored by Git) containing exactly `GOOGLE_API_KEY=your_key`. Do not put a key into an issue, chat, trace, or committed file.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m phase1_adk_spike.runner --runs 3
+```
+
+Each real attempt uses one new native `InMemorySessionService` session and saves a redacted, audit-safe event trace under `traces/` plus a summary under `results/`. Traces retain only function calls, function results, final answers and failures; they deliberately omit model reasoning/thought fields. Generated run files are ignored by Git so credentials and transient reports are never committed.
+
+The Phase 1 acceptance sample was run successfully on 3 October 2026: all three independent Gemini runs made exactly `get_device` followed by `run_diagnostic`, and each second argument matched the attachment ID returned by the preceding tool result. The updated handoff records the exact run and trace filenames.
+
+The command returns non-zero when any observed call fails the acceptance check. With no `GOOGLE_API_KEY`, it makes no network/model request and records a `not_run` preflight report instead.
+
+### Verification
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+The local tests validate the two-tool boundary, absence of `attachment_id` in initial input, the fixture dependency, and rejection of an invented second argument. They do not substitute for live Gemini execution.
+
+See [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md) for the current handoff and closure criteria.

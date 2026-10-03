@@ -1,1 +1,9 @@
 .vercel
+.venv/
+.env
+*.env
+__pycache__/
+.pytest_cache/
+traces/*.json
+results/*.json
+*.py[cod]
