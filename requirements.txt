@@ -1,6 +1,8 @@
 # Phase 1 ADK/Gemini spike. Exact direct dependencies, intentionally small.
 google-adk==2.10.0
 python-dotenv==1.2.4
-fastapi==0.142.2
+# 0.142.x requires OpenTelemetry >=1.44, while google-adk 2.10.0 caps it at
+# 1.42.1.  0.141.1 is the newest compatible FastAPI release for the pinned ADK.
+fastapi==0.141.1
 uvicorn==0.54.0
 pytest==8.4.2
