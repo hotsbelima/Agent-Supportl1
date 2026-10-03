@@ -29,9 +29,32 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TRACES_DIR = PROJECT_ROOT / "traces"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
+def load_google_api_key(secret_file: Path) -> None:
+    """Load a local .env file or a one-line managed secret without logging it."""
+    # Normal development and most managed-secret mounts use dotenv syntax.
+    load_dotenv(secret_file)
+    if os.environ.get("GOOGLE_API_KEY"):
+        return
+
+    # Some secret-file UIs store the field content as a bare value. Accept only
+    # a single non-comment, non-empty line in that fallback so a malformed
+    # dotenv file cannot silently become an API key.
+    try:
+        meaningful_lines = [
+            line.strip()
+            for line in secret_file.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    except OSError:
+        return
+
+    if len(meaningful_lines) == 1 and "=" not in meaningful_lines[0]:
+        os.environ["GOOGLE_API_KEY"] = meaningful_lines[0]
+
+
 # .env is local-only and ignored by Git. A pre-existing process environment
 # value wins, so deployment can use its native secret management unchanged.
-load_dotenv(PROJECT_ROOT / ".env")
+load_google_api_key(PROJECT_ROOT / ".env")
 
 
 def utc_now() -> str:

@@ -1,6 +1,8 @@
+import os
+
 from phase1_adk_spike.agent import root_agent
 from phase1_adk_spike.contracts import ATTACHMENT_ID, DEVICE_ID, INITIAL_EVENT
-from phase1_adk_spike.runner import validate_tool_dependency
+from phase1_adk_spike.runner import load_google_api_key, validate_tool_dependency
 from phase1_adk_spike.tools import get_device, run_diagnostic
 
 
@@ -50,3 +52,13 @@ def test_dependency_validator_accepts_observed_dependent_calls() -> None:
         [{"name": "get_device", "response": {"attachment_id": ATTACHMENT_ID}}],
     )
     assert result["passed"] is True
+
+
+def test_secret_file_loader_accepts_a_bare_managed_secret(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    secret_file = tmp_path / ".env"
+    secret_file.write_text("test-managed-secret\n", encoding="utf-8")
+
+    load_google_api_key(secret_file)
+
+    assert os.environ["GOOGLE_API_KEY"] == "test-managed-secret"
