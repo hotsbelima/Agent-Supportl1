@@ -187,3 +187,8 @@ def test_product_backend_contains_no_canonical_fixture_or_hidden_answer_constant
 def test_product_diagnostic_result_preserves_phase2_required_top_level_fields() -> None:
     names = field_names(RunDiagnosticSuccess)
     assert {"ok", "attachment_id", "diagnostic", "observed_state"}.issubset(names)
+
+
+def test_application_read_service_uses_pure_domain_read_model() -> None:
+    modules = _imported_modules(Path("product_backend/application/read_tools.py"))
+    assert "product_backend.domain.read_model" in modules
