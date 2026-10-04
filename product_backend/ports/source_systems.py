@@ -16,12 +16,16 @@ from product_backend.domain.models import (
 
 
 class CmdbPort(Protocol):
+    """Return None only for an authoritative not-found result; outages raise."""
+
     async def get_device(
         self, *, tenant_id: str, run_id: str, device_id: str
     ) -> DeviceTopology | None: ...
 
 
 class MonitoringPort(Protocol):
+    """Return None only for authoritative absence; provider outages raise."""
+
     async def get_site_health(
         self, *, tenant_id: str, run_id: str, site_id: str
     ) -> SiteHealthSnapshot | None: ...
