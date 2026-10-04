@@ -164,3 +164,23 @@ Detailed checkpoint:
 Phase 4 itself is not complete yet: Product FastAPI boundary 4C and the final
 managed Northflank infrastructure acceptance remain.
 
+### Phase 4C Product FastAPI checkpoint
+
+Branch `phase-4c-product-api` adds the product HTTP/application boundary on
+top of verified Phase 4A/4B:
+
+- explicit Scenario 1 persistent start without Gemini/ADK;
+- tenant/run-scoped current-state read;
+- persisted event timeline read with cursor;
+- human Approve/Reject delegated to the existing deterministic approval service;
+- typed/safe HTTP errors;
+- PostgreSQL-aware health endpoint;
+- canonical Scenario 1 API composition kept outside `product_backend`.
+
+Detailed checkpoint:
+[`docs/contracts/PHASE_4C_PRODUCT_API.md`](docs/contracts/PHASE_4C_PRODUCT_API.md).
+
+**Important:** by explicit instruction, Phase 4C has not been tested in this
+implementation pass. No Phase 4C tests or CI verification were run. Current
+status is `IMPLEMENTED / NOT TESTED`, not Phase 4 PASS.
+
