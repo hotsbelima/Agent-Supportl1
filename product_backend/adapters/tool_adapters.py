@@ -195,23 +195,25 @@ class DefaultScenario1ToolAdapter:
             )
         )
 
-    async def _known_attachment(
+    async def _topology_for_attachment(
         self,
         uow: ToolReadUnitOfWork,
         context: ToolCallContext,
         attachment_id: str,
-    ) -> bool:
+    ) -> DeviceTopology | None:
         evidence = await uow.evidence.find_by_entity_id(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
             entity_id=attachment_id,
         )
-        return any(
-            item.source_type is EvidenceSourceType.CMDB_SNAPSHOT
-            and isinstance(item.payload, DeviceTopology)
-            and item.payload.attachment_id == attachment_id
-            for item in evidence
-        )
+        for item in evidence:
+            if (
+                item.source_type is EvidenceSourceType.CMDB_SNAPSHOT
+                and isinstance(item.payload, DeviceTopology)
+                and item.payload.attachment_id == attachment_id
+            ):
+                return item.payload
+        return None
 
     async def get_device(
         self,
@@ -251,6 +253,12 @@ class DefaultScenario1ToolAdapter:
                         ErrorCode.UPSTREAM_UNAVAILABLE,
                         "CMDB returned an inconsistent device result.",
                         "cmdb_identity_mismatch",
+                    )
+                if not await self._known_entity(uow, context, topology.site_id):
+                    return _failure(
+                        ErrorCode.UPSTREAM_UNAVAILABLE,
+                        "CMDB returned topology outside the current run context.",
+                        "cmdb_site_context_mismatch",
                     )
 
                 now = self._clock()
@@ -327,6 +335,16 @@ class DefaultScenario1ToolAdapter:
                         "Monitoring returned an inconsistent site result.",
                         "site_identity_mismatch",
                     )
+                if not await self._known_entity(
+                    uow,
+                    context,
+                    snapshot.affected_device_id,
+                ):
+                    return _failure(
+                        ErrorCode.SITE_HEALTH_UNAVAILABLE,
+                        "Monitoring returned an affected device outside the run context.",
+                        "site_health_device_context_mismatch",
+                    )
 
                 now = self._clock()
                 evidence = Evidence(
@@ -381,7 +399,12 @@ class DefaultScenario1ToolAdapter:
                 state_error = await self._require_active_run(uow, context)
                 if state_error:
                     return state_error
-                if not await self._known_attachment(uow, context, request.target_id):
+                topology = await self._topology_for_attachment(
+                    uow,
+                    context,
+                    request.target_id,
+                )
+                if topology is None:
                     return _failure(
                         ErrorCode.DIAGNOSTIC_TARGET_NOT_FOUND,
                         "Diagnostic target is not a known attachment in this run.",
@@ -402,11 +425,13 @@ class DefaultScenario1ToolAdapter:
                 if (
                     snapshot.target_id != request.target_id
                     or snapshot.attachment_id != request.target_id
+                    or snapshot.switch_id != topology.expected_switch_id
+                    or snapshot.port_id != topology.expected_port_id
                 ):
                     return _failure(
                         ErrorCode.DIAGNOSTIC_UNAVAILABLE,
-                        "Diagnostic returned an inconsistent target.",
-                        "diagnostic_identity_mismatch",
+                        "Diagnostic returned topology inconsistent with CMDB.",
+                        "diagnostic_topology_mismatch",
                     )
 
                 now = self._clock()
@@ -535,6 +560,12 @@ class DefaultScenario1ToolAdapter:
                     run_id=context.run_id,
                     query=request.query,
                 )
+                if any(not article.article_id.strip() for article in articles):
+                    return _failure(
+                        ErrorCode.KB_UNAVAILABLE,
+                        "Knowledge base returned an invalid article.",
+                        "kb_article_identity_missing",
+                    )
                 now = self._clock()
                 evidence_items = tuple(
                     Evidence(
