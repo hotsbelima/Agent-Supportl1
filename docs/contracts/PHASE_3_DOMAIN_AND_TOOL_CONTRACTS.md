@@ -38,7 +38,7 @@ DefaultScenario1ToolAdapter      # thin boundary
         |       +--> trusted ToolCallContext(tenant_id, run_id)
         |       +--> CMDB / Monitoring / ITSM / KB ports
         |       +--> immutable Evidence repository
-        |       +--> domain ownership/freshness invariants
+        |       +--> pure domain/read_model.py + validators
         |
         +--> FieldVisitProposalService
                 |
@@ -279,7 +279,7 @@ python -m compileall -q product_backend
 python -m pytest -q   tests/test_phase3a_contracts.py   tests/test_phase3b_domain_logic.py   tests/test_phase3c_contract_integration.py
 ```
 
-Результат после финального полного аудита Фазы 3: **67 passed**.
+Результат после финального полного аудита Фазы 3: **69 passed**.
 
 ### Full repository regression
 
@@ -295,7 +295,7 @@ npm test
 Финальный результат:
 
 - `pip check`: no broken requirements;
-- Python: **75 passed, 1 dependency deprecation warning**;
+- Python: **77 passed, 1 dependency deprecation warning**;
 - retained Node spike tests: **5 passed, 0 failed**.
 
 Warning относится к FastAPI/Starlette TestClient dependency surface и не
