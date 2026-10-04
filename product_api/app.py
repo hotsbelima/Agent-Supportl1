@@ -65,7 +65,7 @@ _ERROR_RESPONSES = {
     status.HTTP_400_BAD_REQUEST: {"model": ApiErrorResponse},
     status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
     status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
-    status.HTTP_422_UNPROCESSABLE_ENTITY: {"model": ApiErrorResponse},
+    status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ApiErrorResponse},
     status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ApiErrorResponse},
     status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
 }
@@ -265,7 +265,7 @@ def create_app(
             )
         )
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=body.model_dump(mode="json"),
         )
 
