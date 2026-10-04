@@ -95,6 +95,7 @@ class RunDiagnosticSuccess:
     ok: Literal[True]
     diagnostic_type: DiagnosticType
     target_id: str
+    attachment_id: str
     diagnostic: str
     observed_state: str
     snapshot: AccessLinkDiagnosticSnapshot
@@ -149,5 +150,5 @@ MODEL_VISIBLE_TOOL_NAMES = (
 
 # `propose_field_visit` itself fixes the action type. The model does not select
 # queue, address, engineer or work type. The returned proposal must carry the
-# canonical action type after deterministic validation in Phase 3B.
+# canonical action type after deterministic validation.
 PROPOSE_FIELD_VISIT_ACTION = ActionType.ONSITE_FIELD_VISIT
