@@ -1007,3 +1007,185 @@ def test_evidence_entity_ids_must_match_typed_payload_relationships():
 
     assert result.ok is False
     assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_proposal_rejects_diagnostic_run_for_wrong_target_even_if_payload_looks_right():
+    store = make_store()
+    store.evidence["E-DIAG"] = replace(
+        store.evidence["E-DIAG"],
+        payload=replace(
+            store.evidence["E-DIAG"].payload,
+            target_id="ATT-OTHER",
+        ),
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+class MissingCmdb:
+    async def get_device(self, *, tenant_id: str, run_id: str, device_id: str):
+        return None
+
+
+class RaisingCmdb:
+    async def get_device(self, *, tenant_id: str, run_id: str, device_id: str):
+        raise RuntimeError("provider secret should never escape")
+
+
+class MissingMonitoring:
+    async def get_site_health(self, *, tenant_id: str, run_id: str, site_id: str):
+        return None
+
+    async def run_diagnostic(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        diagnostic_type,
+        target_id: str,
+    ):
+        return None
+
+
+class RaisingMonitoring(MissingMonitoring):
+    async def run_diagnostic(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        diagnostic_type,
+        target_id: str,
+    ):
+        raise RuntimeError("provider secret should never escape")
+
+
+def _approval_service_with_ports(store: Store, ids: Ids, cmdb, monitoring):
+    return FieldVisitApprovalService(
+        lambda: Uow(store),
+        cmdb=cmdb,
+        monitoring=monitoring,
+        clock=Clock(T0 + timedelta(minutes=2)),
+        id_factory=ids,
+    )
+
+
+def test_missing_cmdb_revalidation_does_not_consume_human_approval():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    service = _approval_service_with_ports(
+        store,
+        ids,
+        MissingCmdb(),
+        FakeMonitoring(store.evidence["E-DIAG"].payload),
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.UPSTREAM_UNAVAILABLE
+    assert result.error.retryable is True
+    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
+    assert store.runs[(TENANT, RUN_ID)].status is RunStatus.WAITING_APPROVAL
+    assert not store.approvals
+    assert not store.actions
+    assert not store.workorders
+
+
+def test_cmdb_exception_is_normalized_and_does_not_escape_or_consume_approval():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    service = _approval_service_with_ports(
+        store,
+        ids,
+        RaisingCmdb(),
+        FakeMonitoring(store.evidence["E-DIAG"].payload),
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.UPSTREAM_UNAVAILABLE
+    assert result.error.retryable is True
+    assert "secret" not in result.error.message.lower()
+    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
+    assert not store.approvals
+
+
+def test_missing_diagnostic_revalidation_keeps_proposal_pending():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    service = _approval_service_with_ports(
+        store,
+        ids,
+        FakeCmdb(store.evidence["E-CMDB"].payload),
+        MissingMonitoring(),
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.DIAGNOSTIC_UNAVAILABLE
+    assert result.error.retryable is True
+    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
+    assert not store.approvals
+    assert not store.actions
+    assert not store.workorders
+
+
+def test_diagnostic_exception_is_normalized_and_keeps_proposal_pending():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    service = _approval_service_with_ports(
+        store,
+        ids,
+        FakeCmdb(store.evidence["E-CMDB"].payload),
+        RaisingMonitoring(),
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.DIAGNOSTIC_UNAVAILABLE
+    assert result.error.retryable is True
+    assert "secret" not in result.error.message.lower()
+    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
+    assert not store.approvals
