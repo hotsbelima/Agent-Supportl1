@@ -94,10 +94,21 @@ _FORBIDDEN_KEY_STEMS = (
 def _forbidden_key(normalized: str) -> bool:
     if normalized in _FORBIDDEN_KEYS:
         return True
-    return any(
+
+    if any(
         normalized.startswith(f"{stem}_")
         or normalized.endswith(f"_{stem}")
         or f"_{stem}_" in normalized
+        for stem in _FORBIDDEN_KEY_STEMS
+    ):
+        return True
+
+    # JSON producers frequently use camelCase/PascalCase. After lower-casing,
+    # names such as chainOfThought become "chainofthought" and would otherwise
+    # bypass underscore-oriented checks.
+    collapsed = normalized.replace("_", "")
+    return any(
+        stem.replace("_", "") in collapsed
         for stem in _FORBIDDEN_KEY_STEMS
     )
 
