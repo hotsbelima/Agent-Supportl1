@@ -29,23 +29,21 @@ runtime probe и не являются product backend.
 ```text
 future ADK function wrappers
         |
-        | model-visible request only
+        | primitive/model-visible args
         v
-DefaultScenario1ToolAdapter
+DefaultScenario1ToolAdapter      # thin boundary
         |
-        +--> trusted ToolCallContext(tenant_id, run_id)
-        |
-        +--> CMDB / Monitoring / ITSM / KB ports
-        |
-        +--> immutable Evidence repository
+        +--> Scenario1ReadToolService
+        |       |
+        |       +--> trusted ToolCallContext(tenant_id, run_id)
+        |       +--> CMDB / Monitoring / ITSM / KB ports
+        |       +--> immutable Evidence repository
+        |       +--> domain ownership/freshness invariants
         |
         +--> FieldVisitProposalService
-                    |
-                    v
-            deterministic validators
-                    |
-                    v
-            proposal / approval domain
+                |
+                +--> deterministic validators
+                +--> proposal / approval domain
 ```
 
 Модель не выбирает `tenant_id`, `run_id`, approval decision, work-order
@@ -57,31 +55,39 @@ Model-visible surface фиксирован:
 
 1. `get_device(device_id)`
 2. `get_site_health(site_id)`
-3. `run_diagnostic(diagnostic_type, target_id)`
+3. `run_diagnostic(diagnostic_type, target_id)` — success сохраняет
+   Phase 2 top-level `attachment_id`, `diagnostic`, `observed_state`
 4. `search_incidents(scope, entity_id)`
 5. `search_kb(query)`
 6. `propose_field_visit(incident_id, device_id, diagnosis, evidence_ids, rationale)`
 
-Первый пять tools — read-only observations. Шестой создаёт только
+Первые пять tools — read-only observations. Шестой создаёт только
 `PENDING_APPROVAL` proposal; execution не является tool модели.
 
 ## 4. Ownership и ID safety
 
 Все model calls получают trusted `ToolCallContext` от application layer.
 
-Concrete adapter до provider call проверяет:
+Model-facing adapter остаётся тонким: он не импортирует repositories или
+source-system ports и делегирует операции application services.
+
+`Scenario1ReadToolService` до provider call/записи evidence проверяет:
 
 - run существует и находится в `ACTIVE`;
+- device и site проверяются **по типу сущности**, а не по общему мешку ID;
 - device/site/search entity уже принадлежит текущему run или был открыт
-  предыдущим evidence;
+  предыдущим typed evidence;
 - diagnostic target является canonical attachment, ранее полученным из
   `CMDB_SNAPSHOT`;
-- CMDB topology не уводит device в неизвестный site;
+- из нескольких CMDB snapshots для attachment выбирается самый новый известный;
+- CMDB topology не уводит device в неизвестный site и содержит обязательные
+  attachment/switch/port IDs;
 - site health не подменяет affected device;
 - diagnostic switch/port совпадают с canonical CMDB topology.
 
-Таким образом модель не может превратить произвольный угаданный ID в
-authoritative observation.
+Поэтому, например, KB article ID или incident ID, случайно присутствующий в
+`entity_ids`, не становится device/site ID. Модель не может превратить
+произвольный угаданный ID в authoritative observation.
 
 После создания proposal run переходит в `WAITING_APPROVAL`; read tools в этом
 состоянии не выполняются. После human decision run возвращается в `ACTIVE`.
@@ -116,6 +122,15 @@ Dynamic evidence (`SITE_HEALTH`, `ACCESS_LINK_DIAGNOSTIC`) обязано име
 положительный TTL. Конкретные TTL являются application configuration через
 `EvidenceTtlPolicy`, а не model-visible параметрами и не захардкожены в
 domain contract.
+
+Validator также отвергает temporal anomalies: naive/non-comparable timestamps,
+`captured_at` из будущего, expiry не позже capture и уже истёкший evidence.
+
+Typed tool results перед будущим ADK model boundary переводятся в JSON-safe
+primitives через `contracts.serialization.to_tool_payload`: enums становятся
+строковыми values, datetimes — ISO-8601 strings, tuples — arrays. Таким образом
+Phase 3 фиксирует не только Python-типы, но и однозначный serializable result
+boundary.
 
 ## 6. Proposal validator
 
@@ -221,7 +236,6 @@ Raw exception text, stack trace или secrets наружу не передаю�
 - `ATTACHMENT_NOT_FOUND`
 - `SITE_HEALTH_UNAVAILABLE`
 - `DIAGNOSTIC_UNAVAILABLE`
-- `DIAGNOSTIC_TARGET_NOT_FOUND`
 - `UNSUPPORTED_DIAGNOSTIC`
 - `INCIDENT_NOT_FOUND`
 - `INCIDENT_SEARCH_UNAVAILABLE`
@@ -249,6 +263,7 @@ Consumer принимает решения по `error.code`, не по своб
 - `ToolReadUnitOfWork`
 - `ProposalCreationUnitOfWork`
 - `ApprovalExecutionUnitOfWork`
+- `Scenario1ReadToolService` как application orchestration boundary.
 
 Persistent implementation обязана обеспечить transactionality и uniqueness
 approval/action/work-order invariants.
@@ -264,7 +279,7 @@ python -m compileall -q product_backend
 python -m pytest -q   tests/test_phase3a_contracts.py   tests/test_phase3b_domain_logic.py   tests/test_phase3c_contract_integration.py
 ```
 
-Результат на финальном Phase 3 checkpoint: **51 passed**.
+Результат после финального полного аудита Фазы 3: **67 passed**.
 
 ### Full repository regression
 
@@ -280,11 +295,18 @@ npm test
 Финальный результат:
 
 - `pip check`: no broken requirements;
-- Python: **59 passed, 1 dependency deprecation warning**;
+- Python: **75 passed, 1 dependency deprecation warning**;
 - retained Node spike tests: **5 passed, 0 failed**.
 
 Warning относится к FastAPI/Starlette TestClient dependency surface и не
 является Phase 3 regression.
+
+Architecture regression дополнительно проверяет, что pure domain не импортирует
+ADK/FastAPI/DB/application/ports, model-facing adapter не обращается напрямую к
+repositories/source ports, а canonical fixture IDs и hidden
+`PATCH_CABLE_DISCONNECTED` отсутствуют в product code. Отдельный test
+подтверждает, что допустимые read tools не требуют одного глобального
+hard-coded порядка.
 
 ## 13. Что Фаза 3 намеренно не делает
 
