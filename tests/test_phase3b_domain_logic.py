@@ -1072,7 +1072,7 @@ def _approval_service_with_ports(store: Store, ids: Ids, cmdb, monitoring):
     )
 
 
-def test_missing_cmdb_revalidation_does_not_consume_human_approval():
+def test_authoritative_missing_cmdb_state_marks_approved_proposal_stale():
     store = make_store()
     ids = Ids()
     created = create_proposal(store, ids=ids)
@@ -1093,12 +1093,11 @@ def test_missing_cmdb_revalidation_does_not_consume_human_approval():
         )
     )
 
-    assert result.ok is False
-    assert result.error.code is ErrorCode.UPSTREAM_UNAVAILABLE
-    assert result.error.retryable is True
-    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
-    assert store.runs[(TENANT, RUN_ID)].status is RunStatus.WAITING_APPROVAL
-    assert not store.approvals
+    assert result.ok is True
+    assert result.approval.decision is ApprovalDecision.APPROVED
+    assert result.proposal.status is ProposalStatus.STALE
+    assert store.runs[(TENANT, RUN_ID)].status is RunStatus.ACTIVE
+    assert len(store.approvals) == 1
     assert not store.actions
     assert not store.workorders
 
@@ -1132,7 +1131,7 @@ def test_cmdb_exception_is_normalized_and_does_not_escape_or_consume_approval():
     assert not store.approvals
 
 
-def test_missing_diagnostic_revalidation_keeps_proposal_pending():
+def test_authoritative_missing_diagnostic_marks_approved_proposal_stale():
     store = make_store()
     ids = Ids()
     created = create_proposal(store, ids=ids)
@@ -1153,11 +1152,10 @@ def test_missing_diagnostic_revalidation_keeps_proposal_pending():
         )
     )
 
-    assert result.ok is False
-    assert result.error.code is ErrorCode.DIAGNOSTIC_UNAVAILABLE
-    assert result.error.retryable is True
-    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
-    assert not store.approvals
+    assert result.ok is True
+    assert result.approval.decision is ApprovalDecision.APPROVED
+    assert result.proposal.status is ProposalStatus.STALE
+    assert len(store.approvals) == 1
     assert not store.actions
     assert not store.workorders
 
