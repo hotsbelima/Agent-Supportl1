@@ -1,7 +1,7 @@
 """State-transition contracts for Scenario 1.
 
-This module declares allowed transitions only. Phase 3B will implement the
-business operations that apply them after validation.
+This module declares allowed transitions only. Application services apply them
+after deterministic validation; persistence/API layers must not redefine them.
 """
 
 from __future__ import annotations
