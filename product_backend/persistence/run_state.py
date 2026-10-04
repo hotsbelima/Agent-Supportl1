@@ -29,6 +29,14 @@ from .tables import (
 
 
 class SqlAlchemyRunStateQuery:
+    """Read one internally consistent run snapshot.
+
+    The owning Run row is held with a PostgreSQL shared lock while child tables
+    are read. Phase 4 mutation/event transactions take a conflicting FOR UPDATE
+    lock on the same Run before commit, preventing a mixed pre/post-mutation
+    state bundle from being returned to the API.
+    """
+
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
@@ -43,10 +51,12 @@ class SqlAlchemyRunStateQuery:
     ) -> RunStateSnapshot | None:
         async with self._session_factory() as session:
             run_result = await session.execute(
-                select(RunRow).where(
+                select(RunRow)
+                .where(
                     RunRow.tenant_id == tenant_id,
                     RunRow.run_id == run_id,
                 )
+                .with_for_update(read=True)
             )
             run_row = run_result.scalar_one_or_none()
             if run_row is None:
