@@ -977,11 +977,11 @@ def test_approve_when_current_cmdb_relationship_changed_marks_stale():
         store.evidence["E-CMDB"].payload,
         expected_port_id="Gi1/0/99",
     )
-    service = approval_service(
+    service = _approval_service_with_ports(
         store,
-        clock=Clock(T0 + timedelta(minutes=2)),
-        ids=ids,
-        topology=changed_topology,
+        ids,
+        FakeCmdb(changed_topology),
+        RaisingMonitoring(),
     )
 
     result = asyncio.run(
