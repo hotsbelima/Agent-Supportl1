@@ -411,6 +411,16 @@ def test_safe_event_payload_rejects_hidden_reasoning_and_secrets():
         validate_safe_event_payload(
             {"nested": {"thought_trace": "must-not-persist"}}
         )
+    for key in (
+        "chainOfThought",
+        "modelReasoning",
+        "clientSecret",
+        "accessToken",
+    ):
+        with pytest.raises(ValueError, match=key):
+            validate_safe_event_payload(
+                {"nested": {key: "must-not-persist"}}
+            )
 
 
 def test_database_constraint_accepts_every_declared_event_type():
