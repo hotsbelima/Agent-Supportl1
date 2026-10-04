@@ -305,6 +305,20 @@ class ApplicationEventRow(Base):
             name="uq_application_events_event_id",
         ),
         CheckConstraint("seq > 0", name="ck_application_events_seq_positive"),
+        CheckConstraint(
+            "event_type IN ("
+            "'simulation.started', "
+            "'external.signal', "
+            "'tool.started', "
+            "'tool.finished', "
+            "'finding.recorded', "
+            "'proposal.created', "
+            "'approval.decided', "
+            "'action.executed', "
+            "'run.status_changed'"
+            ")",
+            name="ck_application_events_type_known",
+        ),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -353,7 +367,7 @@ class ApplicationOutboxRow(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     outbox_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    event_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     topic: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
