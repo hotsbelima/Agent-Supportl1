@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, Header, Path, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -304,13 +305,23 @@ def create_app(
             content=body.model_dump(mode="json"),
         )
 
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
+    @app.get(
+        "/health",
+        responses={
+            status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse}
+        },
+    )
+    async def health(request: Request) -> dict[str, Any]:
+        services = _container(request)
+        if services.engine is not None:
+            async with services.engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
         return {
             "status": "ok",
             "phase": 4,
             "checkpoint": "4C",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
+            "database_reachable": True,
             "adk_wired": False,
             "sse_wired": False,
         }
