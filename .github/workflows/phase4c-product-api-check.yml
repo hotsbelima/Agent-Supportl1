@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase-4c-product-api
+      - phase-4d-managed-acceptance
   pull_request:
     branches:
       - phase-4b-persisted-lifecycle
@@ -52,7 +53,12 @@ jobs:
       - name: Compile all Python code
         run: >-
           python -m compileall -q
-          product_backend product_api phase1_adk_spike phase2_backend tests
+          product_backend product_api phase1_adk_spike phase2_backend scripts tests
+
+      - name: Import Phase 4D acceptance helpers
+        run: >-
+          python -c
+          "import scripts.phase4d_db_assert, scripts.phase4d_seed_proposal"
 
       - name: Apply PostgreSQL migrations
         run: python -m alembic upgrade head
