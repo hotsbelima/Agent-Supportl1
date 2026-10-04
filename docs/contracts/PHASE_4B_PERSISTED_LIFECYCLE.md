@@ -52,9 +52,9 @@ Payload validator принимает только JSON primitives/arrays/objects
 non-finite numbers и запрещает persistence ключей, относящихся к hidden model
 reasoning или credential material. Проверка применяется как на write boundary,
 так и повторно при чтении persisted events, чтобы raw/corrupt DB write не
-вернулся в operational timeline. Блокируются как exact keys, так и семейства
-ключей вроде `reasoning_trace`, `model_reasoning_text`,
-`client_secret_value` и `x_api_key`, включая:
+вернулся в operational timeline. Блокируются как exact keys, так и семейства ключей независимо от
+separator/camelCase формы — например `reasoning_trace`, `modelReasoning`,
+`chainOfThought`, `client_secret_value`, `clientSecret`, `x_api_key`, включая:
 
 - `thought` / `thoughts`
 - `reasoning`
