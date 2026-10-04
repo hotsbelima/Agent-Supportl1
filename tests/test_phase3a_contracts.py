@@ -1,4 +1,5 @@
 from dataclasses import fields
+from inspect import signature
 
 from product_backend.contracts.tools import (
     MODEL_VISIBLE_TOOL_NAMES,
@@ -12,6 +13,7 @@ from product_backend.contracts.tools import (
 )
 from product_backend.domain.enums import IncidentStatus, ProposalStatus, RunStatus
 from product_backend.domain.errors import ErrorCode
+from product_backend.ports.source_systems import CmdbPort, ItsmPort, KnowledgeBasePort, MonitoringPort
 from product_backend.domain.transitions import (
     PROPOSAL_TRANSITIONS,
     RUN_TRANSITIONS,
@@ -113,3 +115,18 @@ def test_run_can_pause_for_human_decision_and_resume() -> None:
     assert can_transition(
         RUN_TRANSITIONS, RunStatus.WAITING_APPROVAL, RunStatus.ACTIVE
     )
+
+
+def test_source_system_ports_are_run_scoped() -> None:
+    methods = (
+        CmdbPort.get_device,
+        MonitoringPort.get_site_health,
+        MonitoringPort.run_diagnostic,
+        ItsmPort.get_incident,
+        ItsmPort.search_incidents,
+        KnowledgeBasePort.search,
+    )
+    for method in methods:
+        params = signature(method).parameters
+        assert "tenant_id" in params
+        assert "run_id" in params
