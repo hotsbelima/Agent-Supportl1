@@ -1335,3 +1335,41 @@ def test_naive_evidence_timestamp_is_rejected():
 
     assert result.ok is False
     assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_approve_uses_current_topology_when_fresh_link_still_matches_failure():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    changed_topology = replace(
+        store.evidence["E-CMDB"].payload,
+        expected_port_id="Gi1/0/19",
+    )
+    changed_diagnostic = replace(
+        store.evidence["E-DIAG"].payload,
+        port_id="Gi1/0/19",
+    )
+    service = approval_service(
+        store,
+        clock=Clock(T0 + timedelta(minutes=2)),
+        ids=ids,
+        topology=changed_topology,
+        diagnostic=changed_diagnostic,
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok
+    assert result.proposal.status is ProposalStatus.EXECUTED
+    assert result.work_order is not None
+    assert result.work_order.port_id == "Gi1/0/19"
+    assert len(store.actions) == 1
+    assert len(store.workorders) == 1
