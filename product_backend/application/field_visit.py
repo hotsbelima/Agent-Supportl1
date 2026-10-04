@@ -546,6 +546,20 @@ class FieldVisitApprovalService:
                 or equivalent_action is not None
                 or existing_work_order is not None
             ):
+                if currentness_error is not None:
+                    stale_reason = next(
+                        (
+                            value
+                            for key, value in currentness_error.details
+                            if key == "reason"
+                        ),
+                        "currentness_invalid",
+                    )
+                elif equivalent_action is not None:
+                    stale_reason = "equivalent_action_exists"
+                else:
+                    stale_reason = "work_order_exists"
+
                 if not can_transition(
                     PROPOSAL_TRANSITIONS,
                     proposal.status,
@@ -581,6 +595,7 @@ class FieldVisitApprovalService:
                         "decided_by": approval.decided_by,
                         "proposal_status": updated_proposal.status.value,
                         "execution": "skipped_stale",
+                        "stale_reason": stale_reason,
                     },
                 )
                 await append_uow_event(
