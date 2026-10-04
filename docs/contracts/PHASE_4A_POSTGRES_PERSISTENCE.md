@@ -1,14 +1,15 @@
 # Phase 4A — PostgreSQL persistence implementation checkpoint
 
 Дата: 4 октября 2026 года.  
-Статус: **IMPLEMENTED, NOT YET VERIFIED**.
+Статус: **IMPLEMENTED + POSTGRESQL CI VERIFIED; MANAGED-INFRA ACCEPTANCE PENDING**.
 
 Этот документ фиксирует implementation checkpoint 4A поверх закрытой Фазы 3.
 Он не объявляет Phase 4 PASS и не заменяет cumulative handoff v5.7.
 
-По явной инструкции на этом проходе **тесты не добавлялись и не запускались**.
-PostgreSQL integration/concurrency/restart acceptance остаётся отдельной
-проверкой перед закрытием Phase 4.
+Первый implementation pass был намеренно выполнен без тестов. После отдельного
+логического аудита добавлена PostgreSQL integration suite и выполнен полный CI
+на реальном PostgreSQL 16 service container. Managed Northflank deployment/
+restart acceptance остаётся отдельной проверкой перед закрытием Phase 4.
 
 ## 1. Граница checkpoint
 
@@ -170,21 +171,45 @@ alembic upgrade head
 Managed provider выбирается отдельно при infrastructure acceptance. Handoff
 фиксирует PostgreSQL как store, но не конкретного vendor.
 
-## 8. Что ещё НЕ доказано
+## 8. Что доказано PostgreSQL CI
 
-На этом checkpoint не доказаны:
+GitHub Actions workflow `Phase 4A PostgreSQL persistence check` прошёл на
+Python 3.12.14 + PostgreSQL 16:
 
-- что migration реально применяется к PostgreSQL;
-- repository round-trip для всех entities;
-- restart persistence;
-- cross-tenant/cross-run integration behavior;
-- два реальных concurrent Approve;
-- compatibility нового dependency set через `pip check`;
-- regression Фаз 1–3.
+- pinned dependencies installed; `pip check`: no broken requirements;
+- compileall: PASS;
+- Alembic `upgrade head`: PASS;
+- `alembic check`: no new upgrade operations detected;
+- `downgrade base -> upgrade head`: PASS;
+- Phase 3 architecture/domain regression: **69 passed**;
+- Phase 4A PostgreSQL integration suite: **7 passed**;
+- full Python regression: **84 passed, 1 existing dependency warning**;
+- retained Node regression: **5 passed, 0 failed**.
 
-Эти пункты нельзя считать PASS по наличию кода. Они должны быть проверены
-отдельно. Финальный infrastructure acceptance на реальном PostgreSQL/Northflank
-позже выполняется отдельно, как уже согласовано.
+Phase 4A integration suite проверяет:
+
+- PostgreSQL-only URL boundary;
+- strict typed Evidence JSONB serialization/deserialization;
+- наличие всех девяти product-owned tables;
+- repository round-trip всех пяти typed Evidence payload classes;
+- сохранение state после dispose/recreate database engine;
+- tenant/run read isolation;
+- composite-FK rejection cross-tenant child write;
+- два реальных concurrent Approve через разные DB transactions;
+- ровно один Approval, ExecutedAction и FieldServiceWorkOrder;
+- replay повторного Approve без duplicate side effects.
+
+Первый CI attempt остановился на compileall из-за буквальных `\\n`, случайно
+попавших в одну строку ORM mapping при GitHub patch. Файл исправлен; итоговый
+полный run после исправления зелёный.
+
+### Что ещё не является managed-infrastructure proof
+
+Этот CI использует настоящий PostgreSQL, но ephemeral GitHub service container,
+а не Northflank managed database/backend. Поэтому окончательный Phase 4
+infrastructure acceptance всё ещё должен подтвердить deployment, secrets,
+migration и state survival после реального backend restart/redeploy на
+Northflank. Это не подменяется CI.
 
 ## 9. Files
 
@@ -208,9 +233,8 @@ Dependencies are pinned in `requirements.txt`.
 
 ## 10. Verification status
 
-**No tests were written or executed in this implementation pass.**
+**Phase 4A implementation and PostgreSQL CI verification: PASS.**
 
-Следующий шаг после review — отдельный Phase 4A verification pass:
-persistence integration tests + PostgreSQL migration/round-trip/isolation/
-concurrency checks. До этого 4A является implemented checkpoint, но не
-verified PASS.
+Это не означает полный Phase 4 PASS: 4B/4C ещё не реализованы, а managed
+Northflank infrastructure acceptance выполняется отдельно перед закрытием
+Phase 4.
