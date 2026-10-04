@@ -6,6 +6,7 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from .events import SqlAlchemyApplicationEventRepository
 from .repositories import (
     SqlAlchemyApprovalRepository,
     SqlAlchemyEvidenceRepository,
@@ -64,6 +65,7 @@ class SqlAlchemyToolReadUnitOfWork(_SqlAlchemyUnitOfWorkBase):
         self.runs = SqlAlchemyRunRepository(self._session)
         self.incidents = SqlAlchemyIncidentRepository(self._session)
         self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
 
 
 class SqlAlchemyProposalCreationUnitOfWork(_SqlAlchemyUnitOfWorkBase):
@@ -88,6 +90,7 @@ class SqlAlchemyProposalCreationUnitOfWork(_SqlAlchemyUnitOfWorkBase):
         )
         self.evidence = SqlAlchemyEvidenceRepository(self._session)
         self.proposals = SqlAlchemyProposalRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
 
 
 class SqlAlchemyApprovalExecutionUnitOfWork(_SqlAlchemyUnitOfWorkBase):
@@ -120,3 +123,16 @@ class SqlAlchemyApprovalExecutionUnitOfWork(_SqlAlchemyUnitOfWorkBase):
         self.approvals = SqlAlchemyApprovalRepository(self._session)
         self.executed_actions = SqlAlchemyExecutedActionRepository(self._session)
         self.work_orders = SqlAlchemyWorkOrderRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
+
+
+class SqlAlchemyLifecycleUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Transaction boundary for lifecycle/audit writes and timeline reads."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
