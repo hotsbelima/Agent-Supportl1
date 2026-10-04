@@ -103,8 +103,7 @@ The cumulative source of truth is now
 [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md).
 
 The final Phase 3 audit also moved ownership/provider orchestration out of the
-model-facing adapter into `Scenario1ReadToolService`, made device/site ID checks
-type-aware, restored the Phase 2 top-level diagnostic fields, added explicit
+model-facing adapter into `Scenario1ReadToolService`, moved pure type-aware ID/topology rules into `domain/read_model.py`, restored the Phase 2 top-level diagnostic fields, added explicit
 JSON-safe tool-result serialization, hardened evidence timestamps and added
 architecture tests against layer leakage and hardcoded fixture truth.
 
@@ -114,7 +113,7 @@ runs the full Python and retained Node regression suites.
 
 Final audited checkpoint:
 
-- architecture/domain: **67 passed**;
-- full Python regression: **75 passed, 1 dependency deprecation warning**;
+- architecture/domain: **69 passed**;
+- full Python regression: **77 passed, 1 dependency deprecation warning**;
 - retained Node regression: **5 passed, 0 failed**;
 - `pip check`: **No broken requirements found**.
