@@ -1,8 +1,8 @@
 # Autonomous L1 Incident Agent
 
-## Current scope — Phase 3A checkpoint
+## Current scope — Phase 3B checkpoint
 
-Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. The branch `phase-3a-domain-contracts` now also contains a separate `product_backend/` foundation for Scenario 1: pure domain contracts, repository/source-system ports, model-visible tool contracts and adapter boundaries. It still has no product database, UI, SSE stream, concrete approval/execution service, persistent workflow or production API.
+Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. Phase 3A added a separate `product_backend/` foundation for Scenario 1. The branch `phase-3b-domain-logic` now adds deterministic evidence/proposal validation plus the human approval/execution boundary, including stale revalidation and idempotent repeat decisions. It still has no product database, UI, SSE stream, persistent workflow, product HTTP approval endpoint or live six-tool ADK wiring.
 
 The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evidence only; the current spike does not call them.
 
@@ -65,3 +65,27 @@ The fixed Phase 2 spike contracts are in
 ### Phase 3A contract checkpoint
 
 The Phase 3A design is documented in [`docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md). The new `product_backend/` package is intentionally separate from `phase1_adk_spike/` and `phase2_backend/`; the verified spike code remains unchanged.
+
+
+### Phase 3B deterministic domain checkpoint
+
+Phase 3B adds:
+
+- typed validation of the four required evidence classes for `LOCAL_ACCESS_LINK_FAILURE`;
+- TTL enforcement for dynamic proposal evidence;
+- proposal creation only after deterministic validation, with `PENDING_APPROVAL`;
+- fresh trusted CMDB + access-link reads on human Approve;
+- `APPROVED + stale conditions -> STALE` with zero execution;
+- valid Approve -> exactly one `ExecutedAction` and one `FieldServiceWorkOrder`, incident `ESCALATED`;
+- Reject -> `REJECTED`, no execution, incident stays open;
+- replay of the same human decision returns the stored result and creates no duplicate action/work order.
+
+The work order receives site/link fields derived from trusted CMDB topology; the model never supplies queue/address/engineer/work-order routing fields. Repository ports state the uniqueness requirements that the future PostgreSQL implementation must enforce transactionally.
+
+For the product-domain checkpoint only:
+
+```powershell
+python -m pytest -q tests/test_phase3a_contracts.py tests/test_phase3b_domain_logic.py
+```
+
+Phase 3B intentionally does not add PostgreSQL, product FastAPI routes, SSE, UI, or six-tool ADK integration.
