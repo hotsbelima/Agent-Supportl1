@@ -135,8 +135,6 @@ class ActionProposal:
     status: ProposalStatus
     created_at: datetime
     updated_at: datetime
-    # Server-derived fields are stored after validation, never chosen by the model.
-    derived_parameters: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
