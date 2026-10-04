@@ -205,10 +205,13 @@ tenant/run ownership и timestamps.
 ### ActionProposal
 
 Поля: proposal/tenant/run/incident/device IDs, diagnosis, action type,
-evidence IDs, rationale, status, timestamps и server-derived parameters.
+evidence IDs, rationale, status и timestamps.
 
 Model-visible request **не содержит** queue, address, engineer или arbitrary
-work type. Для этого tool action фиксирован как `ONSITE_FIELD_VISIT`.
+work type. Domain layer обязан выводить разрешённые execution parameters
+детерминированно по action type и authoritative CMDB/policy. Точный внутренний
+schema этих execution parameters текущий cumulative handoff не задаёт, поэтому
+3A намеренно не вводит untyped `dict`/`payload_json` как псевдоконтракт.
 
 ### Approval
 
