@@ -181,7 +181,7 @@ Detailed checkpoint:
 [`docs/contracts/PHASE_4C_PRODUCT_API.md`](docs/contracts/PHASE_4C_PRODUCT_API.md).
 
 Phase 4C has now completed its dedicated PostgreSQL + FastAPI verification:
-**9/9 Phase 4C tests**, full Python **101/101** with one retained external
+**10/10 Phase 4C tests**, full Python **102/102** with one retained external
 FastAPI/TestClient dependency warning, and Node **5/5**. The review also
 hardened run-state snapshot consistency against concurrent mutations and fixed
 internal-failure HTTP classification.
