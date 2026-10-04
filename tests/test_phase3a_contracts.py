@@ -1,5 +1,7 @@
+import ast
 from dataclasses import fields
 from inspect import signature
+from pathlib import Path
 
 from product_backend.contracts.tools import (
     MODEL_VISIBLE_TOOL_NAMES,
@@ -130,3 +132,36 @@ def test_source_system_ports_are_run_scoped() -> None:
         params = signature(method).parameters
         assert "tenant_id" in params
         assert "run_id" in params
+
+
+def _imported_modules(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    return modules
+
+
+def test_pure_domain_does_not_depend_on_framework_application_or_ports() -> None:
+    forbidden_prefixes = (
+        "google",
+        "fastapi",
+        "sqlalchemy",
+        "psycopg",
+        "product_backend.adapters",
+        "product_backend.application",
+        "product_backend.contracts",
+        "product_backend.ports",
+    )
+    for path in Path("product_backend/domain").glob("*.py"):
+        for module in _imported_modules(path):
+            assert not module.startswith(forbidden_prefixes), (path, module)
+
+
+def test_model_facing_adapter_does_not_reach_repositories_or_source_ports_directly() -> None:
+    modules = _imported_modules(Path("product_backend/adapters/tool_adapters.py"))
+    assert "product_backend.ports.repositories" not in modules
+    assert "product_backend.ports.source_systems" not in modules
