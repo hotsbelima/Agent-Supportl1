@@ -1,8 +1,8 @@
 # Autonomous L1 Incident Agent
 
-## Current scope — Phases 1–2, Google ADK + Gemini
+## Current scope — Phase 3A checkpoint
 
-This repository contains a deliberately small **Google ADK function-tool** spike. Phase 1 proved the local ADK/Gemini dependency chain; Phase 2 proved the same runtime on Northflank. It is not the Scenario 1 backend: there is no database, UI, SSE stream, approval flow, persistent workflow or production API.
+Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. The branch `phase-3a-domain-contracts` now also contains a separate `product_backend/` foundation for Scenario 1: pure domain contracts, repository/source-system ports, model-visible tool contracts and adapter boundaries. It still has no product database, UI, SSE stream, concrete approval/execution service, persistent workflow or production API.
 
 The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evidence only; the current spike does not call them.
 
@@ -60,3 +60,8 @@ The phase documents are retained as deltas/evidence:
 and [`v5.5 — Phase 2`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md).
 The fixed Phase 2 spike contracts are in
 [`docs/contracts/PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md`](docs/contracts/PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md).
+
+
+### Phase 3A contract checkpoint
+
+The Phase 3A design is documented in [`docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md). The new `product_backend/` package is intentionally separate from `phase1_adk_spike/` and `phase2_backend/`; the verified spike code remains unchanged.
