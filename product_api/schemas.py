@@ -28,7 +28,11 @@ class ApiErrorResponse(BaseModel):
 class HumanDecisionRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    decided_by: str = Field(min_length=1, max_length=256)
+    decided_by: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[^\r\n]+$",
+    )
 
 
 class RunView(BaseModel):
