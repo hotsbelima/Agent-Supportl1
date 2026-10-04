@@ -1,5 +1,13 @@
-"""Tool-adapter boundaries for the product backend."""
+"""Tool-adapter boundaries and Scenario 1 concrete integration."""
 
-from .tool_adapters import Scenario1ToolAdapter
+from .tool_adapters import (
+    DefaultScenario1ToolAdapter,
+    EvidenceTtlPolicy,
+    Scenario1ToolAdapter,
+)
 
-__all__ = ["Scenario1ToolAdapter"]
+__all__ = [
+    "DefaultScenario1ToolAdapter",
+    "EvidenceTtlPolicy",
+    "Scenario1ToolAdapter",
+]
