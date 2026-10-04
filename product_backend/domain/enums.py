@@ -35,6 +35,13 @@ class ApprovalDecision(StrEnum):
     REJECTED = "REJECTED"
 
 
+class ApprovalApplicationResult(StrEnum):
+    """Whether a recorded human decision was applied or blocked by revalidation."""
+
+    APPLIED = "APPLIED"
+    BLOCKED = "BLOCKED"
+
+
 class DiagnosisCode(StrEnum):
     LOCAL_ACCESS_LINK_FAILURE = "LOCAL_ACCESS_LINK_FAILURE"
 
@@ -89,11 +96,6 @@ class ConfigurationState(StrEnum):
     EXPECTED = "EXPECTED"
     DRIFTED = "DRIFTED"
     UNKNOWN = "UNKNOWN"
-
-
-class DeviceResolutionState(StrEnum):
-    UNRESOLVED = "UNRESOLVED"
-    RESOLVED = "RESOLVED"
 
 
 class WorkOrderStatus(StrEnum):
