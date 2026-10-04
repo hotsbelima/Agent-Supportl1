@@ -105,6 +105,52 @@ class ApplicationLifecycleService:
             await uow.commit()
             return event
 
+    async def record_tool_started(
+        self,
+        context: ToolCallContext,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> ApplicationEvent:
+        if not tool_name.strip():
+            raise ValueError("tool_name is required")
+        async with self._uow_factory() as uow:
+            await self._require_run(uow, context)
+            event = await uow.events.append(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                event_type=ApplicationEventType.TOOL_STARTED,
+                payload={
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                },
+            )
+            await uow.commit()
+            return event
+
+    async def record_tool_finished(
+        self,
+        context: ToolCallContext,
+        *,
+        tool_name: str,
+        result: dict[str, Any],
+    ) -> ApplicationEvent:
+        if not tool_name.strip():
+            raise ValueError("tool_name is required")
+        async with self._uow_factory() as uow:
+            await self._require_run(uow, context)
+            event = await uow.events.append(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                event_type=ApplicationEventType.TOOL_FINISHED,
+                payload={
+                    "tool_name": tool_name,
+                    "result": result,
+                },
+            )
+            await uow.commit()
+            return event
+
     async def record_finding(
         self,
         context: ToolCallContext,
