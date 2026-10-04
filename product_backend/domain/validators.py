@@ -146,6 +146,13 @@ def validate_field_visit_evidence(
         and bool(item.payload.attachment_id)
         and bool(item.payload.expected_switch_id)
         and bool(item.payload.expected_port_id)
+        and {
+            item.payload.device_id,
+            item.payload.site_id,
+            item.payload.attachment_id,
+            item.payload.expected_switch_id,
+            item.payload.expected_port_id,
+        }.issubset(set(item.entity_ids))
     ]
     if not cmdb_candidates:
         return _invalid_evidence("cmdb_relationship_not_supported")
@@ -160,6 +167,11 @@ def validate_field_visit_evidence(
         and item.payload.peer_reachable
         and item.payload.affected_device_id == device_id
         and not item.payload.affected_device_reachable
+        and {
+            item.payload.site_id,
+            item.payload.peer_device_id,
+            item.payload.affected_device_id,
+        }.issubset(set(item.entity_ids))
         for item in evidence
         if item.source_type is EvidenceSourceType.SITE_HEALTH
     )
@@ -179,6 +191,11 @@ def validate_field_visit_evidence(
         and item.payload.operational_state is OperationalState.DOWN
         and item.payload.port_security is PortSecurityState.NORMAL
         and item.payload.configuration is ConfigurationState.EXPECTED
+        and {
+            item.payload.attachment_id,
+            item.payload.switch_id,
+            item.payload.port_id,
+        }.issubset(set(item.entity_ids))
         for item in evidence
         if item.source_type is EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC
     )
@@ -190,6 +207,7 @@ def validate_field_visit_evidence(
         and item.payload.approved
         and diagnosis in item.payload.diagnosis_codes
         and action_type in item.payload.allowed_actions
+        and item.payload.article_id in item.entity_ids
         for item in evidence
         if item.source_type is EvidenceSourceType.KB_ARTICLE
     )
