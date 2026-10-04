@@ -10,15 +10,19 @@ from .database import (
     create_session_factory,
     normalize_database_url,
 )
+from .events import SqlAlchemyApplicationEventRepository
 from .uow import (
     SqlAlchemyApprovalExecutionUnitOfWork,
+    SqlAlchemyLifecycleUnitOfWork,
     SqlAlchemyProposalCreationUnitOfWork,
     SqlAlchemyToolReadUnitOfWork,
 )
 
 __all__ = [
     "DatabaseSettings",
+    "SqlAlchemyApplicationEventRepository",
     "SqlAlchemyApprovalExecutionUnitOfWork",
+    "SqlAlchemyLifecycleUnitOfWork",
     "SqlAlchemyProposalCreationUnitOfWork",
     "SqlAlchemyToolReadUnitOfWork",
     "create_engine",
