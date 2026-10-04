@@ -58,7 +58,10 @@ provider SDK.
 - `KnowledgeBasePort` — deterministic KB search.
 
 Mock или будущая реальная интеграция могут меняться за этой границей без
-изменения model-visible tool contract.
+изменения model-visible tool contract. Все source-system reads получают trusted
+`tenant_id` и `run_id`: это позволяет deterministic simulator читать именно
+копию mutable mock-world текущего run; реальный внешний adapter вправе
+игнорировать `run_id`, если внешний источник сам по себе не run-scoped.
 
 ### Product repositories
 
@@ -169,9 +172,8 @@ Scope, entity ID и найденные open incident IDs. Этот evidence по
 
 ### KbArticle
 
-Typed KB result: article ID, title, approved flag, diagnosis codes, allowed
-actions и stable `guidance_code`. Validator не должен извлекать policy из
-свободного текста статьи.
+Typed KB result: article ID, title, approved flag, diagnosis codes и allowed
+actions. Validator не должен извлекать policy из свободного текста статьи.
 
 ### Evidence
 
@@ -218,13 +220,10 @@ work type. Для этого tool action фиксирован как `ONSITE_FIE
 Отдельные immutable записи фактического исполнения после approval. Proposal не
 равен execution.
 
-Для work order пока фиксируется только статус `CREATED`; dispatch/completion
-lifecycle текущими документами не специфицирован и не придумывается в 3A.
-
-### DeviceResolution
-
-После создания work order устройство Scenario 1 остаётся `UNRESOLVED`.
-Work order сам по себе не является repair evidence.
+Dispatch/completion lifecycle work order текущими документами не
+специфицирован и не придумывается в 3A. После создания work order Scenario 1
+по-прежнему **не имеет evidence восстановления устройства**: work order сам по
+себе не позволяет объявить device восстановленным или incident `RESOLVED`.
 
 ## 5. Proposal state contract
 
@@ -397,7 +396,8 @@ Raw exception, provider payload, stack trace и secrets наружу не вых
 - incident/evidence/proposal/approval/execution/work-order связаны с одним
   tenant/run context;
 - evidence другого tenant/run не может подтверждать proposal;
-- source adapters не принимают model-selected tenant/run;
+- source adapters не принимают model-selected tenant/run; trusted `tenant_id` и
+  `run_id` передаются им application/domain layer;
 - repository read interfaces для run-scoped state требуют tenant + run;
 - hidden fixture может содержать больше данных, чем model-visible observation.
 
@@ -412,8 +412,8 @@ Raw exception, provider payload, stack trace и secrets наружу не вых
    executed action;
 4. Approved, но уже неактуальный proposal -> `STALE`, без execution;
 5. Approved + valid -> ровно один `ExecutedAction`, один
-   `FieldServiceWorkOrder`, proposal `EXECUTED`, incident `ESCALATED`,
-   device `UNRESOLVED`;
+   `FieldServiceWorkOrder`, proposal `EXECUTED`, incident `ESCALATED`; это не
+   является доказательством восстановления device;
 6. повторный Approve idempotent и возвращает stored result;
 7. Reject -> `REJECTED`, zero execution, incident остаётся open;
 8. после commit application может передать actual result в ту же ADK session.
@@ -451,3 +451,18 @@ Raw exception, provider payload, stack trace и secrets наружу не вых
 - PostgreSQL/UI/SSE/live mutation endpoint не добавлены.
 
 После review этого design freeze можно переходить к 3B.
+
+
+## 13. Design decisions, introduced in 3A
+
+Текущий cumulative handoff задаёт обязательные ownership/approval semantics,
+но не фиксирует точные имена всех внутренних run states и enum values для
+`diagnostic_type`/`search_incidents.scope`. Поэтому следующие значения являются
+**явными design decisions Фазы 3A**, а не цитатами из предыдущего handoff:
+
+- `RunStatus = CREATED | ACTIVE | WAITING_APPROVAL | COMPLETED | FAILED`;
+- `DiagnosticType.ACCESS_LINK` как единственный нужный Scenario 1 diagnostic;
+- `IncidentSearchScope = DEVICE | SITE` как минимальный scope Scenario 1.
+
+Они могут быть пересмотрены только до реализации 3B, если review выявит
+несовместимость; после design freeze их изменение уже считается contract change.
