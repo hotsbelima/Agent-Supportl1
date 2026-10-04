@@ -5,11 +5,12 @@ import copy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
-from product_backend.adapters.tool_adapters import (
-    DefaultScenario1ToolAdapter,
-    EvidenceTtlPolicy,
-)
+from product_backend.adapters.tool_adapters import DefaultScenario1ToolAdapter
 from product_backend.application.field_visit import FieldVisitProposalService
+from product_backend.application.read_tools import (
+    EvidenceTtlPolicy,
+    Scenario1ReadToolService,
+)
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetSiteHealthRequest,
@@ -489,9 +490,8 @@ def make_adapter(
         clock=clock,
         id_factory=ids,
     )
-    adapter = DefaultScenario1ToolAdapter(
+    read_service = Scenario1ReadToolService(
         read_uow_factory=lambda: Uow(store),
-        proposal_service=proposal_service,
         cmdb=cmdb,
         monitoring=monitoring,
         itsm=itsm,
@@ -502,6 +502,10 @@ def make_adapter(
         ),
         clock=clock,
         id_factory=ids,
+    )
+    adapter = DefaultScenario1ToolAdapter(
+        read_service=read_service,
+        proposal_service=proposal_service,
     )
     return adapter, store, cmdb, monitoring, itsm, kb
 
@@ -529,6 +533,8 @@ def test_full_six_tool_contract_integration_creates_valid_pending_proposal():
     assert device.ok and site.ok and diagnostic.ok and incidents.ok and kb.ok
     assert device.evidence.source_type is EvidenceSourceType.CMDB_SNAPSHOT
     assert site.evidence.source_type is EvidenceSourceType.SITE_HEALTH
+    assert diagnostic.attachment_id == ATTACHMENT
+    assert diagnostic.diagnostic == "LINK_DOWN"
     assert diagnostic.evidence.source_type is EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC
     assert incidents.evidence.source_type is EvidenceSourceType.INCIDENT_SEARCH
     assert kb.evidence[0].source_type is EvidenceSourceType.KB_ARTICLE
@@ -569,7 +575,7 @@ def test_diagnostic_target_must_first_be_discovered_from_cmdb_evidence():
     )
 
     assert result.ok is False
-    assert result.error.code is ErrorCode.DIAGNOSTIC_TARGET_NOT_FOUND
+    assert result.error.code is ErrorCode.ATTACHMENT_NOT_FOUND
     assert monitoring.diagnostic_calls == 0
     assert not store.evidence
 
