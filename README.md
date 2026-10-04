@@ -4,7 +4,7 @@
 
 Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. Phase 3 now adds a separate `product_backend/` foundation for Scenario 1: domain contracts, deterministic evidence/proposal validation, human approval/execution semantics and concrete integration of the six product tool contracts. It still has no product PostgreSQL implementation, UI, SSE stream, persistent workflow, product HTTP approval endpoint or live six-tool ADK wiring.
 
-The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evidence only; the current spike does not call them.
+The retained `api/`, `public/`, and historical Dify material are evidence only; neither the Phase 1/2 spike nor `product_backend/` uses Dify.
 
 ### Pinned runtime
 
@@ -16,9 +16,9 @@ The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evi
 | FastAPI host probe | `fastapi==0.141.1`, `uvicorn==0.54.0` |
 | Test runner | `pytest==8.4.2` |
 
-### Exact tool boundary
+### Phase 1/2 live ADK spike boundary
 
-The ADK agent has exactly two ordinary Python function tools and no others.
+The **currently live-wired Phase 1/2 ADK spike** has exactly two ordinary Python function tools and no others. This statement does not describe the six-tool Scenario 1 product contract, which is not wired to live ADK yet.
 
 | Tool | Input | Output / dependency |
 | --- | --- | --- |
@@ -64,7 +64,7 @@ The fixed Phase 2 spike contracts are in
 
 ### Phase 3A contract checkpoint
 
-The Phase 3A design is documented in [`docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md). The new `product_backend/` package is intentionally separate from `phase1_adk_spike/` and `phase2_backend/`; the verified spike code remains unchanged.
+The Phase 3A design checkpoint is documented in [`docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md). It is historical and is superseded by the final Phase 3 contract. The `product_backend/` package is intentionally separate from `phase1_adk_spike/` and `phase2_backend/`; the verified spike code remains unchanged.
 
 
 ### Phase 3B deterministic domain checkpoint
@@ -102,6 +102,19 @@ Phase 3 completion evidence is recorded in
 The cumulative source of truth is now
 [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md).
 
-The Phase 3 CI gate compiles the product backend, runs the 3A/3B/3C domain suite,
-then installs the pinned runtime dependencies and runs the full Python and
-retained Node regression suites.
+The final Phase 3 audit also moved ownership/provider orchestration out of the
+model-facing adapter into `Scenario1ReadToolService`, made device/site ID checks
+type-aware, restored the Phase 2 top-level diagnostic fields, added explicit
+JSON-safe tool-result serialization, hardened evidence timestamps and added
+architecture tests against layer leakage and hardcoded fixture truth.
+
+The Phase 3 CI gate compiles the product backend, runs the 3A/3B/3C
+architecture/domain suite, then installs the pinned runtime dependencies and
+runs the full Python and retained Node regression suites.
+
+Final audited checkpoint:
+
+- architecture/domain: **67 passed**;
+- full Python regression: **75 passed, 1 dependency deprecation warning**;
+- retained Node regression: **5 passed, 0 failed**;
+- `pip check`: **No broken requirements found**.
