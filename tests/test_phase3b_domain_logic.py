@@ -619,6 +619,10 @@ def test_valid_approve_executes_once_escalates_incident_and_resumes_run():
     assert result.incident.status is IncidentStatus.ESCALATED
     assert result.executed_action is not None
     assert result.work_order is not None
+    assert result.work_order.site_id == SITE
+    assert result.work_order.attachment_id == ATTACHMENT
+    assert result.work_order.switch_id == SWITCH
+    assert result.work_order.port_id == PORT
     assert len(store.actions) == 1
     assert len(store.workorders) == 1
     assert len(store.approvals) == 1
@@ -860,6 +864,10 @@ def test_approve_when_work_order_already_exists_marks_stale_no_second_work_order
         "OTHER-PROP",
         INCIDENT_ID,
         DEVICE,
+        SITE,
+        ATTACHMENT,
+        SWITCH,
+        PORT,
         T0,
     )
     store.workorders[existing.work_order_id] = existing
@@ -925,5 +933,64 @@ def test_repeated_approve_of_stale_proposal_replays_same_blocked_result():
     assert second.executed_action is None
     assert second.work_order is None
     assert len(store.approvals) == 1
+    assert not store.actions
+    assert not store.workorders
+
+
+def test_invalid_runtime_decision_value_is_rejected_before_mutation():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    service = approval_service(
+        store,
+        clock=Clock(T0 + timedelta(minutes=2)),
+        ids=ids,
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision="APPROVED",
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INVALID_ARGUMENT
+    assert not store.approvals
+    assert not store.actions
+    assert not store.workorders
+    assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
+
+
+def test_approve_when_current_cmdb_relationship_changed_marks_stale():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    changed_topology = replace(
+        store.evidence["E-CMDB"].payload,
+        expected_port_id="Gi1/0/99",
+    )
+    service = approval_service(
+        store,
+        clock=Clock(T0 + timedelta(minutes=2)),
+        ids=ids,
+        topology=changed_topology,
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok
+    assert result.proposal.status is ProposalStatus.STALE
     assert not store.actions
     assert not store.workorders
