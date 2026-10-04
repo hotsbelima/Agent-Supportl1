@@ -180,7 +180,12 @@ top of verified Phase 4A/4B:
 Detailed checkpoint:
 [`docs/contracts/PHASE_4C_PRODUCT_API.md`](docs/contracts/PHASE_4C_PRODUCT_API.md).
 
-**Important:** by explicit instruction, Phase 4C has not been tested in this
-implementation pass. No Phase 4C tests or CI verification were run. Current
-status is `IMPLEMENTED / NOT TESTED`, not Phase 4 PASS.
+Phase 4C has now completed its dedicated PostgreSQL + FastAPI verification:
+**9/9 Phase 4C tests**, full Python **101/101** with one retained external
+FastAPI/TestClient dependency warning, and Node **5/5**. The review also
+hardened run-state snapshot consistency against concurrent mutations and fixed
+internal-failure HTTP classification.
+
+Phase 4C is **PASS in CI**. Full Phase 4 is still pending the separate managed
+Northflank deployment/restart acceptance.
 
