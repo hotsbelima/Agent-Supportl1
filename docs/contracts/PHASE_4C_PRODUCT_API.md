@@ -1,11 +1,13 @@
 # Phase 4C — Product FastAPI application boundary
 
 Дата: 4 октября 2026 года.  
-Статус: **IMPLEMENTED / NOT TESTED**.
+Статус: **PASS (PostgreSQL + FastAPI CI verified)**.
 
-Этот checkpoint реализует только 4C поверх verified Phase 4A/4B. По явной
-инструкции на этом проходе тесты для 4C **не добавлялись и не запускались**.
-Полный Phase 4 PASS пока не объявляется.
+Этот checkpoint реализует 4C поверх verified Phase 4A/4B. После отдельного
+implementation pass без тестов выполнен полный логический аудит, исправлены
+найденные API/state-consistency проблемы и добавлена PostgreSQL + FastAPI
+integration suite. Полный Phase 4 PASS пока не объявляется только потому, что
+managed Northflank infrastructure acceptance выполняется отдельно.
 
 ## 1. Scope
 
@@ -135,6 +137,11 @@ API не собирает state из process memory.
 Persistence read implementation находится в
 `product_backend/persistence/run_state.py`.
 
+Owning Run row удерживается через PostgreSQL shared lock на время сборки всего
+snapshot. Все Phase 4 mutation/event transactions используют конфликтующий
+`FOR UPDATE` того же Run, поэтому concurrent commit не может дать API
+гибридный snapshot вида «старый RunStatus + уже новый Proposal/Action».
+
 ## 7. Timeline read
 
 Endpoint:
@@ -262,27 +269,80 @@ Successful health сообщает:
 Domain entities, validators, Scenario 1 diagnosis/action semantics и approval
 rules не изменены.
 
-## 13. Verification status
+## 13. Audit findings before verification
 
-**4C пока не тестировалась.**
+Повторный review перед тестами нашёл и исправил две реальные проблемы:
 
-По явной инструкции в этом implementation pass:
+1. `POST /scenario-1/runs` ловил любой `ValueError` и превращал его в
+   HTTP 400. Это могло замаскировать internal event/persistence/composition
+   failure под ошибку пользователя. Broad catch удалён: DB failures идут в
+   safe 503, остальные internal failures — в safe 500.
+2. Run-state snapshot собирался несколькими SELECT под обычным
+   PostgreSQL READ COMMITTED и теоретически мог увидеть части состояния до и
+   после concurrent mutation. Добавлен shared lock owning Run на весь snapshot.
 
-- не создавался `tests/test_phase4c_*.py`;
-- не запускался pytest;
-- не запускался compileall;
-- не запускался GitHub Actions verification;
-- не выполнялся реальный HTTP/PostgreSQL smoke;
-- не выполнялся Northflank deploy/restart acceptance.
+Дополнительно заменён deprecated Starlette/FastAPI alias
+`HTTP_422_UNPROCESSABLE_ENTITY` на текущий
+`HTTP_422_UNPROCESSABLE_CONTENT`.
 
-Выполнен только ручной логический review кода и границ scope.
+## 14. PostgreSQL + FastAPI verification
 
-Поэтому текущий статус:
+Добавлен:
 
-- Phase 4A: PostgreSQL CI verified;
-- Phase 4B: PostgreSQL CI verified;
-- Phase 4C: **IMPLEMENTED / NOT TESTED**;
-- Phase 4 overall: **NOT PASS YET**.
+`tests/test_phase4c_product_api.py`
 
-Следующий шаг после отдельной команды — verification 4C/полный Phase 4 local-CI
-pass, затем согласованный managed Northflank infrastructure acceptance.
+и CI workflow:
+
+`Phase 4C product API check`.
+
+Environment:
+
+- Python 3.12.14;
+- PostgreSQL 16;
+- FastAPI 0.141.1;
+- pinned project dependencies.
+
+Финальный кодовый verification pass:
+
+- `pip check`: no broken requirements;
+- compileall, включая `product_api`: PASS;
+- Alembic upgrade/check/downgrade/re-upgrade/check: PASS;
+- Phase 3 architecture/domain regression: **69 passed**;
+- Phase 4A PostgreSQL regression: **7 passed**;
+- Phase 4B lifecycle PostgreSQL regression: **8 passed**;
+- Phase 4C FastAPI/PostgreSQL suite: **9 passed**;
+- full Python regression: **101 passed, 1 dependency warning**;
+- retained Node regression: **5 passed, 0 failed**.
+
+Оставшийся warning находится во внешнем FastAPI/TestClient dependency surface:
+Starlette сообщает о будущем переходе test client с `httpx` на `httpx2`.
+Собственный deprecated 422 warning после аудита устранён.
+
+### Что доказывают 9 тестов 4C
+
+- Scenario 1 start работает без `GOOGLE_API_KEY`;
+- start создаёт persistent Run + Incident и события
+  `simulation.started -> external.signal -> run.status_changed`;
+- state сохраняется после закрытия первого app/database engine и читается
+  новым app/engine;
+- tenant-isolated state/events не читаются с чужим `X-Tenant-ID`;
+- validation errors имеют generic typed body и не echo raw input;
+- timeline cursor `after_seq/next_cursor` работает;
+- Approve создаёт ровно один Approval + ExecutedAction + WorkOrder;
+- repeat Approve replayed и не создаёт duplicate side effects;
+- conflicting Reject после Approve даёт typed 409;
+- Reject оставляет Incident OPEN и не создаёт execution/work order;
+- raw SQLAlchemy exception с credential-like строкой не попадает в HTTP 503;
+- unexpected exception с secret-like text не попадает в HTTP 500;
+- shared run-state lock реально блокирует concurrent lifecycle mutation до
+  завершения snapshot, после чего writer получает следующий event seq.
+
+## 15. Текущий статус Phase 4
+
+- Phase 4A: **PASS in PostgreSQL CI**;
+- Phase 4B: **PASS in PostgreSQL CI**;
+- Phase 4C: **PASS in PostgreSQL + FastAPI CI**;
+- managed Northflank deployment/restart acceptance: pending.
+
+То есть кодовая часть 4A+4B+4C проверена, но полный Phase 4 PASS будет объявлен
+только после согласованного managed-infrastructure acceptance.
