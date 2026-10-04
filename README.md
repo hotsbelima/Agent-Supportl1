@@ -1,8 +1,8 @@
 # Autonomous L1 Incident Agent
 
-## Current scope — Phase 3B checkpoint
+## Current scope — Phase 3 PASS
 
-Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. Phase 3A added a separate `product_backend/` foundation for Scenario 1. The branch `phase-3b-domain-logic` now adds deterministic evidence/proposal validation plus the human approval/execution boundary, including stale revalidation and idempotent repeat decisions. It still has no product database, UI, SSE stream, persistent workflow, product HTTP approval endpoint or live six-tool ADK wiring.
+Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. Phase 3 now adds a separate `product_backend/` foundation for Scenario 1: domain contracts, deterministic evidence/proposal validation, human approval/execution semantics and concrete integration of the six product tool contracts. It still has no product PostgreSQL implementation, UI, SSE stream, persistent workflow, product HTTP approval endpoint or live six-tool ADK wiring.
 
 The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evidence only; the current spike does not call them.
 
@@ -54,7 +54,7 @@ The local tests validate the two-tool boundary, absence of `attachment_id` in in
 For Phase 2 deployment verification, `Dockerfile` runs the minimal `phase2_backend` service on port 8080. Its `/health` endpoint exposes no credential, and `POST /spike/runs` returns audit-safe observed tool calls/results for this temporary runtime check.
 
 For project context, start with the canonical cumulative handoff:
-[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Cumulative.md).
+[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md).
 The phase documents are retained as deltas/evidence:
 [`v5.4 — Phase 1`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md)
 and [`v5.5 — Phase 2`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md).
@@ -89,3 +89,19 @@ python -m pytest -q tests/test_phase3a_contracts.py tests/test_phase3b_domain_lo
 ```
 
 Phase 3B intentionally does not add PostgreSQL, product FastAPI routes, SSE, UI, or six-tool ADK integration.
+
+
+### Phase 3 final contract and handoff
+
+The final Phase 3 contract is
+[`docs/contracts/PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md).
+
+Phase 3 completion evidence is recorded in
+[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Phase_3_Update.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Phase_3_Update.md).
+
+The cumulative source of truth is now
+[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md).
+
+The Phase 3 CI gate compiles the product backend, runs the 3A/3B/3C domain suite,
+then installs the pinned runtime dependencies and runs the full Python and
+retained Node regression suites.
