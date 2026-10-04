@@ -39,11 +39,14 @@ from product_backend.domain.enums import (
     RunStatus,
 )
 from product_backend.domain.errors import DomainError, ErrorCode
-from product_backend.domain.models import (
-    DeviceTopology,
-    Evidence,
-    IncidentSearchSnapshot,
-    SiteHealthSnapshot,
+from product_backend.domain.models import Evidence
+from product_backend.domain.read_model import (
+    evidence_knows_device,
+    evidence_knows_site,
+    latest_topology_for_attachment,
+    valid_access_link_observation,
+    valid_cmdb_observation,
+    valid_site_health_observation,
 )
 from product_backend.ports.repositories import ToolReadUnitOfWork
 from product_backend.ports.source_systems import (
@@ -161,32 +164,12 @@ class Scenario1ReadToolService:
         ):
             return True
 
-        for item in await uow.evidence.find_by_entity_id(
+        evidence = await uow.evidence.find_by_entity_id(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
             entity_id=device_id,
-        ):
-            payload = item.payload
-            if (
-                item.source_type is EvidenceSourceType.CMDB_SNAPSHOT
-                and isinstance(payload, DeviceTopology)
-                and payload.device_id == device_id
-            ):
-                return True
-            if (
-                item.source_type is EvidenceSourceType.SITE_HEALTH
-                and isinstance(payload, SiteHealthSnapshot)
-                and device_id in (payload.peer_device_id, payload.affected_device_id)
-            ):
-                return True
-            if (
-                item.source_type is EvidenceSourceType.INCIDENT_SEARCH
-                and isinstance(payload, IncidentSearchSnapshot)
-                and payload.scope is IncidentSearchScope.DEVICE
-                and payload.entity_id == device_id
-            ):
-                return True
-        return False
+        )
+        return evidence_knows_device(evidence, device_id)
 
     async def _known_site(
         self,
@@ -201,32 +184,12 @@ class Scenario1ReadToolService:
         ):
             return True
 
-        for item in await uow.evidence.find_by_entity_id(
+        evidence = await uow.evidence.find_by_entity_id(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
             entity_id=site_id,
-        ):
-            payload = item.payload
-            if (
-                item.source_type is EvidenceSourceType.CMDB_SNAPSHOT
-                and isinstance(payload, DeviceTopology)
-                and payload.site_id == site_id
-            ):
-                return True
-            if (
-                item.source_type is EvidenceSourceType.SITE_HEALTH
-                and isinstance(payload, SiteHealthSnapshot)
-                and payload.site_id == site_id
-            ):
-                return True
-            if (
-                item.source_type is EvidenceSourceType.INCIDENT_SEARCH
-                and isinstance(payload, IncidentSearchSnapshot)
-                and payload.scope is IncidentSearchScope.SITE
-                and payload.entity_id == site_id
-            ):
-                return True
-        return False
+        )
+        return evidence_knows_site(evidence, site_id)
 
     async def _latest_topology_for_attachment(
         self,
@@ -234,24 +197,12 @@ class Scenario1ReadToolService:
         context: ToolCallContext,
         attachment_id: str,
     ) -> DeviceTopology | None:
-        candidates = [
-            item
-            for item in await uow.evidence.find_by_entity_id(
-                tenant_id=context.tenant_id,
-                run_id=context.run_id,
-                entity_id=attachment_id,
-            )
-            if item.source_type is EvidenceSourceType.CMDB_SNAPSHOT
-            and isinstance(item.payload, DeviceTopology)
-            and item.payload.attachment_id == attachment_id
-        ]
-        if not candidates:
-            return None
-        try:
-            latest = max(candidates, key=lambda item: item.captured_at)
-        except TypeError:
-            return None
-        return latest.payload
+        evidence = await uow.evidence.find_by_entity_id(
+            tenant_id=context.tenant_id,
+            run_id=context.run_id,
+            entity_id=attachment_id,
+        )
+        return latest_topology_for_attachment(evidence, attachment_id)
 
     async def get_device(
         self,
@@ -287,30 +238,20 @@ class Scenario1ReadToolService:
                         "Device was not found.",
                         "device_not_found",
                     )
-                if topology.device_id != request.device_id:
-                    return _failure(
-                        ErrorCode.UPSTREAM_UNAVAILABLE,
-                        "CMDB returned an inconsistent device result.",
-                        "cmdb_identity_mismatch",
-                    )
-                if not all(
-                    (
-                        topology.site_id.strip(),
-                        topology.attachment_id.strip(),
-                        topology.expected_switch_id.strip(),
-                        topology.expected_port_id.strip(),
-                    )
+                site_is_known = await self._known_site(
+                    uow,
+                    context,
+                    topology.site_id,
+                )
+                if not valid_cmdb_observation(
+                    requested_device_id=request.device_id,
+                    topology=topology,
+                    site_is_known=site_is_known,
                 ):
                     return _failure(
                         ErrorCode.UPSTREAM_UNAVAILABLE,
-                        "CMDB returned incomplete topology.",
-                        "cmdb_topology_incomplete",
-                    )
-                if not await self._known_site(uow, context, topology.site_id):
-                    return _failure(
-                        ErrorCode.UPSTREAM_UNAVAILABLE,
-                        "CMDB returned topology outside the current run context.",
-                        "cmdb_site_context_mismatch",
+                        "CMDB returned invalid or out-of-context topology.",
+                        "cmdb_topology_invalid",
                     )
 
                 now = self._clock()
@@ -382,27 +323,20 @@ class Scenario1ReadToolService:
                         "Site health was not found.",
                         "site_not_found",
                     )
-                if snapshot.site_id != request.site_id:
-                    return _failure(
-                        ErrorCode.SITE_HEALTH_UNAVAILABLE,
-                        "Monitoring returned an inconsistent site result.",
-                        "site_identity_mismatch",
-                    )
-                if not snapshot.peer_device_id.strip() or not snapshot.affected_device_id.strip():
-                    return _failure(
-                        ErrorCode.SITE_HEALTH_UNAVAILABLE,
-                        "Monitoring returned incomplete device identities.",
-                        "site_health_identity_incomplete",
-                    )
-                if not await self._known_device(
+                affected_device_is_known = await self._known_device(
                     uow,
                     context,
                     snapshot.affected_device_id,
+                )
+                if not valid_site_health_observation(
+                    requested_site_id=request.site_id,
+                    snapshot=snapshot,
+                    affected_device_is_known=affected_device_is_known,
                 ):
                     return _failure(
                         ErrorCode.SITE_HEALTH_UNAVAILABLE,
-                        "Monitoring returned an affected device outside the run context.",
-                        "site_health_device_context_mismatch",
+                        "Monitoring returned invalid or out-of-context site health.",
+                        "site_health_invalid",
                     )
 
                 now = self._clock()
@@ -483,11 +417,10 @@ class Scenario1ReadToolService:
                         "Diagnostic target was not found.",
                         "diagnostic_target_not_found",
                     )
-                if (
-                    snapshot.target_id != request.target_id
-                    or snapshot.attachment_id != request.target_id
-                    or snapshot.switch_id != topology.expected_switch_id
-                    or snapshot.port_id != topology.expected_port_id
+                if not valid_access_link_observation(
+                    requested_target_id=request.target_id,
+                    topology=topology,
+                    snapshot=snapshot,
                 ):
                     return _failure(
                         ErrorCode.DIAGNOSTIC_UNAVAILABLE,
