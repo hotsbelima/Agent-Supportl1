@@ -1021,7 +1021,12 @@ def test_tool_failure_is_json_safe_without_raw_exception_text():
 
 def test_concrete_adapter_is_thin_and_depends_only_on_application_services():
     params = signature(DefaultScenario1ToolAdapter.__init__).parameters
-    assert set(params) == {"self", "read_service", "proposal_service"}
+    assert set(params) == {
+        "self",
+        "read_service",
+        "proposal_service",
+        "lifecycle_service",
+    }
 
 
 def test_cmdb_missing_required_topology_fields_is_rejected_before_evidence_write():
