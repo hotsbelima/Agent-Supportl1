@@ -455,6 +455,19 @@ def test_approve_replay_conflict_and_cross_tenant_are_safe_and_idempotent():
         assert wrong_tenant.status_code == 404
         assert wrong_tenant.json()["error"]["code"] == "PROPOSAL_NOT_FOUND"
 
+        second_state = _start(client, tenant_id)
+        other_run_id = second_state["run"]["run_id"]
+        wrong_run = client.post(
+            f"/api/v1/runs/{other_run_id}/proposals/{proposal_id}/approve",
+            headers=_headers(tenant_id),
+            json={"decided_by": "human-operator"},
+        )
+        assert wrong_run.status_code == 404
+        assert wrong_run.json()["error"]["code"] == "PROPOSAL_NOT_FOUND"
+        assert asyncio.run(
+            _execution_counts(tenant_id=tenant_id, run_id=run_id)
+        ) == (0, 0, 0)
+
         approved = client.post(
             f"/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
             headers=_headers(tenant_id),
@@ -504,6 +517,55 @@ def test_approve_replay_conflict_and_cross_tenant_are_safe_and_idempotent():
         assert len(body["approvals"]) == 1
         assert len(body["executed_actions"]) == 1
         assert len(body["work_orders"]) == 1
+
+
+def test_approved_state_survives_new_app_and_engine():
+    tenant_id = f"TENANT-APP-RESTART-{uuid4().hex[:8]}"
+
+    with TestClient(create_app()) as first:
+        state = _start(first, tenant_id)
+        run_id = state["run"]["run_id"]
+        proposal_id = asyncio.run(
+            _seed_pending_proposal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+        )
+        approved = first.post(
+            f"/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
+            headers=_headers(tenant_id),
+            json={"decided_by": "human-operator"},
+        )
+        assert approved.status_code == 200, approved.text
+        first_body = approved.json()
+
+    with TestClient(create_app()) as restarted:
+        response = restarted.get(
+            f"/api/v1/runs/{run_id}",
+            headers=_headers(tenant_id),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["run"]["status"] == "ACTIVE"
+        assert body["incidents"][0]["status"] == "ESCALATED"
+        assert len(body["evidence"]) == 4
+        assert len(body["proposals"]) == 1
+        assert len(body["approvals"]) == 1
+        assert len(body["executed_actions"]) == 1
+        assert len(body["work_orders"]) == 1
+        assert body["proposals"][0]["proposal_id"] == proposal_id
+        assert (
+            body["approvals"][0]["approval_id"]
+            == first_body["approval"]["approval_id"]
+        )
+        assert (
+            body["executed_actions"][0]["action_id"]
+            == first_body["executed_action"]["action_id"]
+        )
+        assert (
+            body["work_orders"][0]["work_order_id"]
+            == first_body["work_order"]["work_order_id"]
+        )
 
 
 def test_reject_keeps_incident_open_and_creates_no_execution():
