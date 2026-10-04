@@ -39,6 +39,8 @@ def _require_aware_utc(value: datetime) -> datetime:
 
 
 def _from_row(row: ApplicationEventRow) -> ApplicationEvent:
+    payload = deepcopy(row.payload)
+    validate_safe_event_payload(payload)
     return ApplicationEvent(
         event_id=row.event_id,
         tenant_id=row.tenant_id,
@@ -46,7 +48,7 @@ def _from_row(row: ApplicationEventRow) -> ApplicationEvent:
         seq=row.seq,
         event_type=ApplicationEventType(row.event_type),
         occurred_at=row.occurred_at,
-        payload=deepcopy(row.payload),
+        payload=payload,
     )
 
 
