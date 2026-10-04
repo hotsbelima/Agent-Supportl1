@@ -1,6 +1,6 @@
 """Persistence interfaces for product-owned Scenario 1 state.
 
-Concrete persistence is intentionally outside Phase 3B; services depend on
+Concrete persistence is intentionally outside Phase 3; services depend on
 these transactional ports so PostgreSQL can be added later without moving the
 business rules into database/adapters.
 """
