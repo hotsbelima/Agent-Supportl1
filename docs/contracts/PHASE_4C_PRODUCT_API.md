@@ -310,15 +310,15 @@ Environment:
 - Phase 3 architecture/domain regression: **69 passed**;
 - Phase 4A PostgreSQL regression: **7 passed**;
 - Phase 4B lifecycle PostgreSQL regression: **8 passed**;
-- Phase 4C FastAPI/PostgreSQL suite: **9 passed**;
-- full Python regression: **101 passed, 1 dependency warning**;
+- Phase 4C FastAPI/PostgreSQL suite: **10 passed**;
+- full Python regression: **102 passed, 1 dependency warning**;
 - retained Node regression: **5 passed, 0 failed**.
 
 Оставшийся warning находится во внешнем FastAPI/TestClient dependency surface:
 Starlette сообщает о будущем переходе test client с `httpx` на `httpx2`.
 Собственный deprecated 422 warning после аудита устранён.
 
-### Что доказывают 9 тестов 4C
+### Что доказывают 10 тестов 4C
 
 - Scenario 1 start работает без `GOOGLE_API_KEY`;
 - start создаёт persistent Run + Incident и события
@@ -326,10 +326,13 @@ Starlette сообщает о будущем переходе test client с `ht
 - state сохраняется после закрытия первого app/database engine и читается
   новым app/engine;
 - tenant-isolated state/events не читаются с чужим `X-Tenant-ID`;
+- proposal из одного run нельзя Approve через другой run того же tenant;
 - validation errors имеют generic typed body и не echo raw input;
 - timeline cursor `after_seq/next_cursor` работает;
 - Approve создаёт ровно один Approval + ExecutedAction + WorkOrder;
 - repeat Approve replayed и не создаёт duplicate side effects;
+- approved Evidence/Proposal/Approval/Action/WorkOrder переживают закрытие app/
+  engine и читаются новым app/engine;
 - conflicting Reject после Approve даёт typed 409;
 - Reject оставляет Incident OPEN и не создаёт execution/work order;
 - raw SQLAlchemy exception с credential-like строкой не попадает в HTTP 503;
