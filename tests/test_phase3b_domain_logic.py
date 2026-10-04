@@ -1292,3 +1292,43 @@ def test_device_ownership_change_before_approve_marks_proposal_stale():
     assert result.proposal.status is ProposalStatus.STALE
     assert not store.actions
     assert not store.workorders
+
+
+def test_future_captured_at_is_rejected_as_invalid_evidence():
+    store = make_store()
+    store.evidence["E-SITE"] = replace(
+        store.evidence["E-SITE"],
+        captured_at=T0 + timedelta(minutes=10),
+        expires_at=T0 + timedelta(minutes=15),
+    )
+
+    result = create_proposal(store, Clock(T0 + timedelta(minutes=1)))
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_expiry_must_be_after_capture_time():
+    store = make_store()
+    store.evidence["E-DIAG"] = replace(
+        store.evidence["E-DIAG"],
+        expires_at=T0,
+    )
+
+    result = create_proposal(store, Clock(T0 + timedelta(minutes=1)))
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_naive_evidence_timestamp_is_rejected():
+    store = make_store()
+    store.evidence["E-KB"] = replace(
+        store.evidence["E-KB"],
+        captured_at=datetime(2026, 10, 4, 12, 0),
+    )
+
+    result = create_proposal(store, Clock(T0 + timedelta(minutes=1)))
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
