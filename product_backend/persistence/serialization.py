@@ -159,8 +159,9 @@ def deserialize_evidence_payload(
         return IncidentSearchSnapshot(
             scope=IncidentSearchScope(_require_str(payload, "scope")),
             entity_id=_require_str(payload, "entity_id"),
-            open_incident_ids=tuple(
-                str(value) for value in payload["open_incident_ids"]
+            open_incident_ids=_require_str_tuple(
+                payload,
+                "open_incident_ids",
             ),
         )
 
@@ -170,10 +171,12 @@ def deserialize_evidence_payload(
             title=_require_str(payload, "title"),
             approved=_require_bool(payload, "approved"),
             diagnosis_codes=tuple(
-                DiagnosisCode(value) for value in _require_str_tuple(payload, "diagnosis_codes")
+                DiagnosisCode(value)
+                for value in _require_str_tuple(payload, "diagnosis_codes")
             ),
             allowed_actions=tuple(
-                ActionType(value) for value in _require_str_tuple(payload, "allowed_actions")
+                ActionType(value)
+                for value in _require_str_tuple(payload, "allowed_actions")
             ),
         )
 
