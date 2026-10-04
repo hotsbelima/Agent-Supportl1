@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from product_backend.contracts.events import ApplicationEventType
+from product_backend.contracts.serialization import to_tool_payload
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetDeviceResult,
@@ -55,6 +57,9 @@ from product_backend.ports.source_systems import (
     KnowledgeBasePort,
     MonitoringPort,
 )
+
+from .lifecycle import append_uow_event
+
 
 Clock = Callable[[], datetime]
 IdFactory = Callable[[str], str]
@@ -271,8 +276,7 @@ class Scenario1ReadToolService:
                     payload=topology,
                 )
                 await uow.evidence.add(evidence)
-                await uow.commit()
-                return GetDeviceSuccess(
+                result = GetDeviceSuccess(
                     ok=True,
                     device_id=topology.device_id,
                     attachment_id=topology.attachment_id,
@@ -281,6 +285,17 @@ class Scenario1ReadToolService:
                     topology=topology,
                     evidence=evidence,
                 )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.TOOL_FINISHED,
+                    payload={
+                        "tool_name": "get_device",
+                        "result": to_tool_payload(result),
+                    },
+                )
+                await uow.commit()
+                return result
         except Exception:
             return _failure(
                 ErrorCode.UPSTREAM_UNAVAILABLE,
@@ -355,13 +370,23 @@ class Scenario1ReadToolService:
                     expires_at=now + self._ttl.site_health,
                 )
                 await uow.evidence.add(evidence)
-                await uow.commit()
-                return GetSiteHealthSuccess(
+                result = GetSiteHealthSuccess(
                     ok=True,
                     site_id=snapshot.site_id,
                     health=snapshot,
                     evidence=evidence,
                 )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.TOOL_FINISHED,
+                    payload={
+                        "tool_name": "get_site_health",
+                        "result": to_tool_payload(result),
+                    },
+                )
+                await uow.commit()
+                return result
         except Exception:
             return _failure(
                 ErrorCode.SITE_HEALTH_UNAVAILABLE,
@@ -444,8 +469,7 @@ class Scenario1ReadToolService:
                     expires_at=now + self._ttl.access_link_diagnostic,
                 )
                 await uow.evidence.add(evidence)
-                await uow.commit()
-                return RunDiagnosticSuccess(
+                result = RunDiagnosticSuccess(
                     ok=True,
                     diagnostic_type=request.diagnostic_type,
                     target_id=request.target_id,
@@ -455,6 +479,17 @@ class Scenario1ReadToolService:
                     snapshot=snapshot,
                     evidence=evidence,
                 )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.TOOL_FINISHED,
+                    payload={
+                        "tool_name": "run_diagnostic",
+                        "result": to_tool_payload(result),
+                    },
+                )
+                await uow.commit()
+                return result
         except Exception:
             return _failure(
                 ErrorCode.DIAGNOSTIC_UNAVAILABLE,
@@ -528,14 +563,24 @@ class Scenario1ReadToolService:
                     payload=snapshot,
                 )
                 await uow.evidence.add(evidence)
-                await uow.commit()
-                return SearchIncidentsSuccess(
+                result = SearchIncidentsSuccess(
                     ok=True,
                     scope=request.scope,
                     entity_id=request.entity_id,
                     snapshot=snapshot,
                     evidence=evidence,
                 )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.TOOL_FINISHED,
+                    payload={
+                        "tool_name": "search_incidents",
+                        "result": to_tool_payload(result),
+                    },
+                )
+                await uow.commit()
+                return result
         except Exception:
             return _failure(
                 ErrorCode.INCIDENT_SEARCH_UNAVAILABLE,
@@ -588,13 +633,23 @@ class Scenario1ReadToolService:
                 )
                 for evidence in evidence_items:
                     await uow.evidence.add(evidence)
-                await uow.commit()
-                return SearchKbSuccess(
+                result = SearchKbSuccess(
                     ok=True,
                     query=request.query,
                     articles=articles,
                     evidence=evidence_items,
                 )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.TOOL_FINISHED,
+                    payload={
+                        "tool_name": "search_kb",
+                        "result": to_tool_payload(result),
+                    },
+                )
+                await uow.commit()
+                return result
         except Exception:
             return _failure(
                 ErrorCode.KB_UNAVAILABLE,
