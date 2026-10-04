@@ -44,9 +44,12 @@ Product Scenario 1 теперь имеет отдельный headless domain/ap
 - `contracts/tools.py` — model-visible request/result contracts;
 - `ports/repositories.py` — persistence/UoW ports и uniqueness invariants;
 - `ports/source_systems.py` — CMDB/Monitoring/ITSM/KB ports;
-- `adapters/tool_adapters.py` — concrete integration шести Scenario 1 tools;
+- `adapters/tool_adapters.py` — thin model-facing integration шести Scenario 1 tools;
+- `application/read_tools.py` — run/entity ownership, provider orchestration,
+  evidence creation и TTL policy;
 - `application/field_visit.py` — proposal + human approval/execution services;
-- `application/results.py` — application result contracts.
+- `application/results.py` — application result contracts;
+- `contracts/serialization.py` — JSON-safe serialization typed tool results.
 
 Финальный technical contract:
 `docs/contracts/PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md`.
@@ -86,16 +89,19 @@ context, captured time, entity IDs и payload.
 4. approved KB, разрешающую onsite physical-path inspection.
 
 Validator не доверяет `facts`/LLM rationale и не парсит prose как evidence.
-Dynamic site/diagnostic evidence требует TTL.
+Dynamic site/diagnostic evidence требует TTL. Validator также отвергает
+future/naive/non-comparable timestamps и некорректное TTL-window.
 
 ## ID ownership и adapter safety
 
-Concrete adapter получает `tenant_id/run_id` только из trusted application
-context.
+Model-facing adapter получает `tenant_id/run_id` только из trusted application
+context и остаётся тонким: repositories/source ports он напрямую не импортирует.
 
-До provider call проверяется, что model-selected entity уже принадлежит
-текущему run или был открыт предыдущим evidence. Diagnostic разрешён только по
-attachment, ранее полученному из CMDB evidence.
+Проверки выполняет `Scenario1ReadToolService`. До provider call он проверяет
+entity **по типу** (device отдельно от site), чтобы KB/incident/switch IDs не
+могли случайно стать допустимыми device/site IDs. Diagnostic разрешён только по
+attachment, ранее полученному из CMDB evidence; при нескольких snapshots
+используется самый новый известный.
 
 До evidence write дополнительно проверяются provider relationships:
 
@@ -103,8 +109,8 @@ attachment, ранее полученному из CMDB evidence.
 - site-health affected device принадлежит run;
 - diagnostic target/attachment/switch/port совпадают с canonical CMDB.
 
-Таким образом guessed/arbitrary ID не становится authoritative evidence только
-потому, что его передала модель.
+Таким образом guessed/arbitrary или ID другого типа не становится authoritative
+evidence только потому, что его передала модель.
 
 ## Proposal / approval / execution
 
@@ -149,10 +155,20 @@ implementation для защиты от конкурентных duplicate reque
 - удалён generic proposal `derived_parameters` bag;
 - proposal diagnostic теперь обязан быть запущен именно по canonical
   attachment;
+- Phase 2 top-level diagnostic fields восстановлены в product result:
+  `attachment_id`, `diagnostic`, `observed_state`;
+- generic ID ownership заменён type-aware ownership для device/site;
+- read/domain orchestration вынесена из adapter в application service;
 - authoritative absence и temporary provider outage разделены: только первое
   ведёт к STALE; outage не потребляет approval;
 - evidence `entity_ids` cross-check-ятся с typed payload;
-- diagnostic switch/port cross-check-ятся с CMDB до evidence write.
+- timestamps/TTL проходят deterministic sanity checks;
+- diagnostic switch/port cross-check-ятся с CMDB до evidence write;
+- provider diagnostic не вызывается, если proposal уже stale из-за incident
+  state или existing action/work order;
+- typed tool results получили explicit JSON-safe serialization boundary;
+- добавлен architecture regression против framework imports в pure domain,
+  direct port access из adapter и hardcoded canonical fixture/hidden answer.
 
 ## Tests / acceptance
 
@@ -164,12 +180,12 @@ implementation для защиты от конкурентных duplicate reque
 - Python 3.12;
 - `compileall product_backend`;
 - 3A + 3B + 3C tests;
-- **51 passed**.
+- **67 passed**.
 
 Полный repository regression на pinned `requirements.txt`:
 
 - `pip check`: **No broken requirements found**;
-- Python: **59 passed, 1 warning**;
+- Python: **75 passed, 1 warning**;
 - retained Node spike tests: **5 passed, 0 failed**.
 
 Единственный Python warning — dependency deprecation в FastAPI/Starlette
@@ -209,3 +225,23 @@ foundation, затем delivery/persistence layer.
 Точный phase-number и разбиение следующего слоя следует зафиксировать до
 начала реализации, чтобы снова не смешивать persistence/API/UI в один
 неуправляемый шаг.
+
+
+## Финальный аудит Фазы 3
+
+После первоначального PASS выполнен отдельный полный аудит 3A+3B+3C против
+canonical handoff v5.5 и Phase 2 contract.
+
+Аудит обнаружил и устранил не косметические, а контрактные проблемы:
+application/domain responsibilities больше не лежат в model-facing adapter;
+`run_diagnostic` снова сохраняет обязательный Phase 2 `attachment_id`;
+entity ownership стал type-aware; tool results имеют JSON-safe boundary;
+evidence timestamps проходят sanity validation; approval revalidation не делает
+лишние provider calls для уже stale proposal.
+
+Также добавлен test с другим допустимым порядком read tools: success не требует
+одного global walkthrough. Canonical fixture IDs и hidden
+`PATCH_CABLE_DISCONNECTED` автоматически запрещены в `product_backend/`.
+
+После этих корректировок Phase 3 остаётся **PASS**; финальный source of truth —
+`PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md` и cumulative handoff v5.6.
