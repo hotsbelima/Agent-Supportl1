@@ -71,6 +71,8 @@ _FORBIDDEN_KEYS = frozenset(
 )
 
 _FORBIDDEN_KEY_STEMS = (
+    "thought",
+    "thoughts",
     "reasoning",
     "chain_of_thought",
     "model_reasoning",
