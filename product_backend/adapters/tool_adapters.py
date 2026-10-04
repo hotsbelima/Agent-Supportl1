@@ -239,23 +239,19 @@ class DefaultScenario1ToolAdapter:
         context: ToolCallContext,
         request: ProposeFieldVisitRequest,
     ) -> ProposeFieldVisitResult:
-        result = await self._invoke(
+        async def operation() -> ProposeFieldVisitResult:
+            result = await self._proposal_service.create(context, request)
+            if not result.ok:
+                return ToolFailure(ok=False, error=result.error)
+            return ProposeFieldVisitSuccess(ok=True, proposal=result.proposal)
+
+        return await self._invoke(
             tool_name="propose_field_visit",
             context=context,
             request=request,
-            operation=lambda: self._proposal_service.create(context, request),
+            operation=operation,
             unexpected_reason="proposal_service_unexpected_failure",
         )
-        if isinstance(result, ToolFailure):
-            return result
-        if not result.ok:
-            failure = ToolFailure(ok=False, error=result.error)
-            return await self._record_failed_finish(
-                tool_name="propose_field_visit",
-                context=context,
-                result=failure,
-            )
-        return ProposeFieldVisitSuccess(ok=True, proposal=result.proposal)
 
 
 __all__ = [
