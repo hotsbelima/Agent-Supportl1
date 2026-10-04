@@ -418,35 +418,22 @@ class FieldVisitApprovalService:
                     "cmdb_revalidation_unavailable",
                     retryable=True,
                 )
-            if current_topology is None:
-                return _failure(
-                    ErrorCode.UPSTREAM_UNAVAILABLE,
-                    "Current CMDB state could not be revalidated.",
-                    "cmdb_revalidation_unavailable",
-                    retryable=True,
-                )
-
-            try:
-                current_diagnostic = await self._monitoring.run_diagnostic(
-                    tenant_id=context.tenant_id,
-                    run_id=context.run_id,
-                    diagnostic_type=DiagnosticType.ACCESS_LINK,
-                    target_id=current_topology.attachment_id,
-                )
-            except Exception:
-                return _failure(
-                    ErrorCode.DIAGNOSTIC_UNAVAILABLE,
-                    "Current access-link state could not be revalidated.",
-                    "diagnostic_revalidation_unavailable",
-                    retryable=True,
-                )
-            if current_diagnostic is None:
-                return _failure(
-                    ErrorCode.DIAGNOSTIC_UNAVAILABLE,
-                    "Current access-link state could not be revalidated.",
-                    "diagnostic_revalidation_unavailable",
-                    retryable=True,
-                )
+            current_diagnostic = None
+            if current_topology is not None:
+                try:
+                    current_diagnostic = await self._monitoring.run_diagnostic(
+                        tenant_id=context.tenant_id,
+                        run_id=context.run_id,
+                        diagnostic_type=DiagnosticType.ACCESS_LINK,
+                        target_id=current_topology.attachment_id,
+                    )
+                except Exception:
+                    return _failure(
+                        ErrorCode.DIAGNOSTIC_UNAVAILABLE,
+                        "Current access-link state could not be revalidated.",
+                        "diagnostic_revalidation_unavailable",
+                        retryable=True,
+                    )
 
             currentness_error = validate_approval_currentness(
                 proposal=proposal,
