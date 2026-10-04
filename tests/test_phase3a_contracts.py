@@ -9,6 +9,7 @@ from product_backend.contracts.tools import (
     GetSiteHealthRequest,
     ProposeFieldVisitRequest,
     RunDiagnosticRequest,
+    RunDiagnosticSuccess,
     SearchIncidentsRequest,
     SearchKbRequest,
     ToolCallContext,
@@ -181,3 +182,8 @@ def test_product_backend_contains_no_canonical_fixture_or_hidden_answer_constant
         text = path.read_text(encoding="utf-8")
         for value in forbidden:
             assert value not in text, (path, value)
+
+
+def test_product_diagnostic_result_preserves_phase2_required_top_level_fields() -> None:
+    names = field_names(RunDiagnosticSuccess)
+    assert {"ok", "attachment_id", "diagnostic", "observed_state"}.issubset(names)
