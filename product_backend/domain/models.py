@@ -168,4 +168,8 @@ class FieldServiceWorkOrder:
     proposal_id: str
     incident_id: str
     device_id: str
+    site_id: str
+    attachment_id: str
+    switch_id: str
+    port_id: str
     created_at: datetime
