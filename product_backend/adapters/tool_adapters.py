@@ -10,10 +10,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from product_backend.application.field_visit import FieldVisitProposalService
-from product_backend.application.read_tools import (
-    EvidenceTtlPolicy,
-    Scenario1ReadToolService,
-)
+from product_backend.application.read_tools import Scenario1ReadToolService
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetDeviceResult,
@@ -150,6 +147,5 @@ class DefaultScenario1ToolAdapter:
 
 __all__ = [
     "DefaultScenario1ToolAdapter",
-    "EvidenceTtlPolicy",
     "Scenario1ToolAdapter",
 ]
