@@ -226,7 +226,8 @@ def validate_approval_currentness(
     if current_diagnostic is None:
         return _invalid_evidence("current_access_link_diagnostic_unavailable")
     if not (
-        current_diagnostic.attachment_id == current_topology.attachment_id
+        current_diagnostic.target_id == current_topology.attachment_id
+        and current_diagnostic.attachment_id == current_topology.attachment_id
         and current_diagnostic.switch_id == current_topology.expected_switch_id
         and current_diagnostic.port_id == current_topology.expected_port_id
         and current_diagnostic.switch_reachable
