@@ -99,8 +99,8 @@ Next.js UI (Vercel) ── HTTPS/SSE ── FastAPI application (Northflank)
 | --- | --- |
 | Fixture/simulator | мир сценария, initial events, скрытый ground truth, детерминированные наблюдения |
 | Agent | выбирает гипотезы, tools и их порядок, формулирует вывод и proposal |
-| Tool adapters | узкий model-visible schema, вызов чистого domain read-model, нормализованный result |
-| Domain layer | tenant/run isolation, ID ownership, TTL evidence, state transitions, duplicates и допустимость action |
+| Tool adapters | узкий model-visible schema, thin delegation в application/domain path, нормализованный result |
+| Domain layer | pure read-model rules, tenant/run/ID invariants, TTL validation, state transitions, duplicates и допустимость action |
 | Application/API | lifecycle run, persistence, SSE, human endpoints, idempotency и auth |
 | Human | approve/reject затратного или рискованного action |
 
@@ -436,8 +436,8 @@ Product code физически отделён от runtime spike в `product_ba
 - stale и repeat-decision semantics;
 - thin `DefaultScenario1ToolAdapter`, который делегирует application services
   и не имеет прямой зависимости от repositories/source-system ports;
-- `Scenario1ReadToolService`, который выполняет type-aware ID ownership,
-  provider orchestration, evidence creation и TTL policy;
+- `Scenario1ReadToolService`, который оркестрирует repositories/providers и evidence creation;
+- pure `domain/read_model.py`, где лежат type-aware ID ownership и topology/observation rules;
 - explicit JSON-safe serialization boundary для typed tool results;
 - CI gate для architecture/domain и полного repository regression.
 
@@ -527,9 +527,9 @@ Model/UI-facing ошибки typed и не содержат raw provider excepti
 После отдельного финального аудита 3A+3B+3C GitHub Actions
 `Phase 3 domain check`:
 
-- architecture/domain gate: **67 passed**;
+- architecture/domain gate: **69 passed**;
 - pinned `requirements.txt`: `pip check` — no broken requirements;
-- полный Python regression: **75 passed, 1 dependency deprecation warning**;
+- полный Python regression: **77 passed, 1 dependency deprecation warning**;
 - retained Node spike tests: **5 passed, 0 failed**.
 
 Architecture tests отдельно запрещают framework/application/ports dependencies
