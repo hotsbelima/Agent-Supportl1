@@ -8,11 +8,12 @@ from typing import Any, Protocol
 from product_backend.contracts.events import ApplicationEvent, ApplicationEventType
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.ports.events import ApplicationEventRepository
-from product_backend.ports.repositories import RunRepository
+from product_backend.ports.repositories import EvidenceRepository, RunRepository
 
 
 class LifecycleUnitOfWork(Protocol):
     runs: RunRepository
+    evidence: EvidenceRepository
     events: ApplicationEventRepository
 
     async def __aenter__(self) -> "LifecycleUnitOfWork": ...
@@ -55,13 +56,14 @@ class ApplicationLifecycleService:
         self,
         uow: LifecycleUnitOfWork,
         context: ToolCallContext,
-    ) -> None:
+    ):
         run = await uow.runs.get(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
         )
         if run is None:
             raise ValueError("run context does not exist")
+        return run
 
     async def record_simulation_started(
         self,
@@ -72,7 +74,9 @@ class ApplicationLifecycleService:
         if not scenario_id.strip():
             raise ValueError("scenario_id is required")
         async with self._uow_factory() as uow:
-            await self._require_run(uow, context)
+            run = await self._require_run(uow, context)
+            if run.scenario_id != scenario_id:
+                raise ValueError("scenario_id does not match run context")
             event = await uow.events.append(
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,
@@ -167,6 +171,13 @@ class ApplicationLifecycleService:
             raise ValueError("finding must reference evidence")
         async with self._uow_factory() as uow:
             await self._require_run(uow, context)
+            evidence = await uow.evidence.get_many(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                evidence_ids=evidence_ids,
+            )
+            if len(evidence) != len(evidence_ids):
+                raise ValueError("finding evidence does not belong to run context")
             event = await uow.events.append(
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,
