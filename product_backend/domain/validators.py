@@ -180,6 +180,7 @@ def validate_field_visit_evidence(
 
     diagnostic_supported = any(
         isinstance(item.payload, AccessLinkDiagnosticSnapshot)
+        and item.payload.target_id == item.payload.attachment_id
         and any(
             item.payload.attachment_id == cmdb.attachment_id
             and item.payload.switch_id == cmdb.expected_switch_id
