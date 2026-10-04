@@ -32,6 +32,8 @@ from product_backend.domain.transitions import (
 )
 from product_backend.domain.validators import (
     validate_approval_currentness,
+    validate_approval_incident_currentness,
+    validate_approval_topology_currentness,
     validate_field_visit_evidence,
 )
 from product_backend.ports.repositories import (
@@ -405,21 +407,56 @@ class FieldVisitApprovalService:
                     work_order=None,
                 )
 
-            try:
-                current_topology = await self._cmdb.get_device(
-                    tenant_id=context.tenant_id,
-                    run_id=context.run_id,
-                    device_id=proposal.device_id,
-                )
-            except Exception:
-                return _failure(
-                    ErrorCode.UPSTREAM_UNAVAILABLE,
-                    "Current CMDB state could not be revalidated.",
-                    "cmdb_revalidation_unavailable",
-                    retryable=True,
-                )
+            currentness_error = validate_approval_incident_currentness(
+                proposal=proposal,
+                incident=incident,
+            )
+            equivalent_action = await uow.executed_actions.get_equivalent(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                incident_id=proposal.incident_id,
+                device_id=proposal.device_id,
+                action_type=proposal.action_type,
+            )
+            existing_work_order = await uow.work_orders.get_for_incident(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                incident_id=proposal.incident_id,
+            )
+
+            current_topology = None
             current_diagnostic = None
-            if current_topology is not None:
+            if (
+                currentness_error is None
+                and equivalent_action is None
+                and existing_work_order is None
+            ):
+                try:
+                    current_topology = await self._cmdb.get_device(
+                        tenant_id=context.tenant_id,
+                        run_id=context.run_id,
+                        device_id=proposal.device_id,
+                    )
+                except Exception:
+                    return _failure(
+                        ErrorCode.UPSTREAM_UNAVAILABLE,
+                        "Current CMDB state could not be revalidated.",
+                        "cmdb_revalidation_unavailable",
+                        retryable=True,
+                    )
+
+                currentness_error = validate_approval_topology_currentness(
+                    proposal=proposal,
+                    incident=incident,
+                    current_topology=current_topology,
+                )
+
+            if (
+                currentness_error is None
+                and equivalent_action is None
+                and existing_work_order is None
+                and current_topology is not None
+            ):
                 try:
                     current_diagnostic = await self._monitoring.run_diagnostic(
                         tenant_id=context.tenant_id,
@@ -435,24 +472,12 @@ class FieldVisitApprovalService:
                         retryable=True,
                     )
 
-            currentness_error = validate_approval_currentness(
-                proposal=proposal,
-                incident=incident,
-                current_topology=current_topology,
-                current_diagnostic=current_diagnostic,
-            )
-            equivalent_action = await uow.executed_actions.get_equivalent(
-                tenant_id=context.tenant_id,
-                run_id=context.run_id,
-                incident_id=proposal.incident_id,
-                device_id=proposal.device_id,
-                action_type=proposal.action_type,
-            )
-            existing_work_order = await uow.work_orders.get_for_incident(
-                tenant_id=context.tenant_id,
-                run_id=context.run_id,
-                incident_id=proposal.incident_id,
-            )
+                currentness_error = validate_approval_currentness(
+                    proposal=proposal,
+                    incident=incident,
+                    current_topology=current_topology,
+                    current_diagnostic=current_diagnostic,
+                )
 
             if (
                 currentness_error is not None
