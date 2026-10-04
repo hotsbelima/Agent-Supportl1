@@ -337,17 +337,10 @@ def create_app(
         tenant_id: TenantId,
     ) -> RunStateResponse:
         services = _container(request)
-        try:
-            started = await services.start_service.start(
-                tenant_id=tenant_id,
-                bootstrap=services.fixture.bootstrap(),
-            )
-        except ValueError:
-            _raise_api_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                code="INVALID_ARGUMENT",
-                message="Scenario 1 run could not be started.",
-            )
+        started = await services.start_service.start(
+            tenant_id=tenant_id,
+            bootstrap=services.fixture.bootstrap(),
+        )
 
         snapshot = await services.state_service.get(
             tenant_id=tenant_id,
