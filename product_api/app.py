@@ -60,6 +60,15 @@ _ID_PATH = Path(
     pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
 )
 
+_ERROR_RESPONSES = {
+    status.HTTP_400_BAD_REQUEST: {"model": ApiErrorResponse},
+    status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+    status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+    status.HTTP_422_UNPROCESSABLE_ENTITY: {"model": ApiErrorResponse},
+    status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ApiErrorResponse},
+    status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
+}
+
 
 @dataclass(slots=True)
 class ProductApiContainer:
@@ -310,6 +319,7 @@ def create_app(
         "/api/v1/scenario-1/runs",
         response_model=RunStateResponse,
         status_code=status.HTTP_201_CREATED,
+        responses=_ERROR_RESPONSES,
     )
     async def start_scenario1_run(
         request: Request,
@@ -344,6 +354,7 @@ def create_app(
     @app.get(
         "/api/v1/runs/{run_id}",
         response_model=RunStateResponse,
+        responses=_ERROR_RESPONSES,
     )
     async def get_run_state(
         run_id: Annotated[str, _ID_PATH],
@@ -366,6 +377,7 @@ def create_app(
     @app.get(
         "/api/v1/runs/{run_id}/events",
         response_model=TimelineResponse,
+        responses=_ERROR_RESPONSES,
     )
     async def get_run_events(
         run_id: Annotated[str, _ID_PATH],
@@ -420,6 +432,7 @@ def create_app(
     @app.post(
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
         response_model=ApprovalDecisionResponse,
+        responses=_ERROR_RESPONSES,
     )
     async def approve_proposal(
         run_id: Annotated[str, _ID_PATH],
@@ -440,6 +453,7 @@ def create_app(
     @app.post(
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/reject",
         response_model=ApprovalDecisionResponse,
+        responses=_ERROR_RESPONSES,
     )
     async def reject_proposal(
         run_id: Annotated[str, _ID_PATH],
