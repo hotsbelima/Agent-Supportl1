@@ -117,3 +117,22 @@ Final audited checkpoint:
 - full Python regression: **77 passed, 1 dependency deprecation warning**;
 - retained Node regression: **5 passed, 0 failed**;
 - `pip check`: **No broken requirements found**.
+
+### Phase 4A PostgreSQL persistence checkpoint
+
+Branch `phase-4a-postgres-persistence` adds the first implementation pass of
+the Phase 4A persistence layer defined by cumulative handoff v5.7:
+
+- Alembic PostgreSQL schema for product-owned state;
+- async SQLAlchemy repositories implementing the Phase 3 ports;
+- transactional UoWs with row locking on proposal/approval mutation paths;
+- DB uniqueness constraints for approval/action/work-order idempotency;
+- typed Evidence <-> JSONB mapping;
+- schema reservation for application events/outbox, without Phase 4B lifecycle logic.
+
+Detailed design/status:
+[`docs/contracts/PHASE_4A_POSTGRES_PERSISTENCE.md`](docs/contracts/PHASE_4A_POSTGRES_PERSISTENCE.md).
+
+**Verification is intentionally deferred:** no Phase 4A tests have been added
+or run in this implementation pass, so this branch is not yet a Phase 4 PASS.
+\n
