@@ -45,8 +45,8 @@ Product Scenario 1 теперь имеет отдельный headless domain/ap
 - `ports/repositories.py` — persistence/UoW ports и uniqueness invariants;
 - `ports/source_systems.py` — CMDB/Monitoring/ITSM/KB ports;
 - `adapters/tool_adapters.py` — thin model-facing integration шести Scenario 1 tools;
-- `application/read_tools.py` — run/entity ownership, provider orchestration,
-  evidence creation и TTL policy;
+- `application/read_tools.py` — provider/repository orchestration, evidence creation и TTL policy;
+- `domain/read_model.py` — pure type-aware ID ownership и observation/topology rules;
 - `application/field_visit.py` — proposal + human approval/execution services;
 - `application/results.py` — application result contracts;
 - `contracts/serialization.py` — JSON-safe serialization typed tool results.
@@ -158,7 +158,7 @@ implementation для защиты от конкурентных duplicate reque
 - Phase 2 top-level diagnostic fields восстановлены в product result:
   `attachment_id`, `diagnostic`, `observed_state`;
 - generic ID ownership заменён type-aware ownership для device/site;
-- read/domain orchestration вынесена из adapter в application service;
+- read orchestration вынесена из adapter в application service, а чистые ownership/topology rules — в `domain/read_model.py`;
 - authoritative absence и temporary provider outage разделены: только первое
   ведёт к STALE; outage не потребляет approval;
 - evidence `entity_ids` cross-check-ятся с typed payload;
@@ -185,7 +185,7 @@ implementation для защиты от конкурентных duplicate reque
 Полный repository regression на pinned `requirements.txt`:
 
 - `pip check`: **No broken requirements found**;
-- Python: **75 passed, 1 warning**;
+- Python: **77 passed, 1 warning**;
 - retained Node spike tests: **5 passed, 0 failed**.
 
 Единственный Python warning — dependency deprecation в FastAPI/Starlette
