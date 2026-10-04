@@ -6,6 +6,7 @@ from pathlib import Path
 from product_backend.contracts.tools import (
     MODEL_VISIBLE_TOOL_NAMES,
     GetDeviceRequest,
+    GetDeviceSuccess,
     GetSiteHealthRequest,
     ProposeFieldVisitRequest,
     RunDiagnosticRequest,
@@ -192,3 +193,8 @@ def test_product_diagnostic_result_preserves_phase2_required_top_level_fields() 
 def test_application_read_service_uses_pure_domain_read_model() -> None:
     modules = _imported_modules(Path("product_backend/application/read_tools.py"))
     assert "product_backend.domain.read_model" in modules
+
+
+def test_product_device_result_preserves_phase2_required_top_level_fields() -> None:
+    names = field_names(GetDeviceSuccess)
+    assert {"ok", "device_id", "attachment_id"}.issubset(names)
