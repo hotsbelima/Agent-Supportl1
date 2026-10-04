@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase-3b-domain-logic
+      - phase-3c-contract-integration
   workflow_dispatch:
 
 jobs:
@@ -19,5 +20,5 @@ jobs:
         run: python -m pip install pytest==8.4.2
       - name: Compile product backend
         run: python -m compileall -q product_backend
-      - name: Run Phase 3A and 3B tests
-        run: python -m pytest -q tests/test_phase3a_contracts.py tests/test_phase3b_domain_logic.py
+      - name: Run Phase 3A, 3B and 3C tests
+        run: python -m pytest -q tests/test_phase3a_contracts.py tests/test_phase3b_domain_logic.py tests/test_phase3c_contract_integration.py
