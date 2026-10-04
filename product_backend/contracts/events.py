@@ -56,16 +56,48 @@ _FORBIDDEN_KEYS = frozenset(
         "model_reasoning",
         "internal_reasoning",
         "hidden_reasoning",
+        "scratchpad",
         "api_key",
         "apikey",
         "google_api_key",
         "authorization",
         "password",
         "secret",
+        "client_secret",
         "access_token",
         "refresh_token",
+        "bearer_token",
     }
 )
+
+_FORBIDDEN_KEY_STEMS = (
+    "reasoning",
+    "chain_of_thought",
+    "model_reasoning",
+    "internal_reasoning",
+    "hidden_reasoning",
+    "scratchpad",
+    "api_key",
+    "google_api_key",
+    "authorization",
+    "password",
+    "secret",
+    "client_secret",
+    "access_token",
+    "refresh_token",
+    "bearer_token",
+)
+
+
+def _forbidden_key(normalized: str) -> bool:
+    if normalized in _FORBIDDEN_KEYS:
+        return True
+    return any(
+        normalized.startswith(f"{stem}_")
+        or normalized.endswith(f"_{stem}")
+        or f"_{stem}_" in normalized
+        for stem in _FORBIDDEN_KEY_STEMS
+    )
 
 
 def _normalize_key(key: str) -> str:
@@ -88,7 +120,7 @@ def _validate_json_value(value: Any, *, path: str) -> None:
             if not isinstance(key, str):
                 raise ValueError(f"{path} contains a non-string key")
             normalized = _normalize_key(key)
-            if normalized in _FORBIDDEN_KEYS:
+            if _forbidden_key(normalized):
                 raise ValueError(f"{path}.{key} is not allowed in persisted events")
             _validate_json_value(item, path=f"{path}.{key}")
         return
