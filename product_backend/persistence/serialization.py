@@ -96,48 +96,69 @@ def serialize_evidence_payload(
     raise ValueError(f"Unsupported evidence source type: {source_type.value}")
 
 
+def _require_str(payload: dict[str, Any], key: str) -> str:
+    value = payload[key]
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    return value
+
+
+def _require_bool(payload: dict[str, Any], key: str) -> bool:
+    value = payload[key]
+    if type(value) is not bool:
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
+def _require_str_tuple(payload: dict[str, Any], key: str) -> tuple[str, ...]:
+    value = payload[key]
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"{key} must be an array of strings")
+    return tuple(value)
+
+
 def deserialize_evidence_payload(
     source_type: EvidenceSourceType,
     payload: dict[str, Any],
 ) -> EvidencePayload:
     if source_type is EvidenceSourceType.CMDB_SNAPSHOT:
         return DeviceTopology(
-            device_id=str(payload["device_id"]),
-            site_id=str(payload["site_id"]),
-            attachment_id=str(payload["attachment_id"]),
-            device_type=str(payload["device_type"]),
-            expected_switch_id=str(payload["expected_switch_id"]),
-            expected_port_id=str(payload["expected_port_id"]),
+            device_id=_require_str(payload, "device_id"),
+            site_id=_require_str(payload, "site_id"),
+            attachment_id=_require_str(payload, "attachment_id"),
+            device_type=_require_str(payload, "device_type"),
+            expected_switch_id=_require_str(payload, "expected_switch_id"),
+            expected_port_id=_require_str(payload, "expected_port_id"),
         )
 
     if source_type is EvidenceSourceType.SITE_HEALTH:
         return SiteHealthSnapshot(
             site_id=str(payload["site_id"]),
-            site_network=HealthState(str(payload["site_network"])),
-            payment_service=HealthState(str(payload["payment_service"])),
-            peer_device_id=str(payload["peer_device_id"]),
-            peer_reachable=bool(payload["peer_reachable"]),
-            affected_device_id=str(payload["affected_device_id"]),
-            affected_device_reachable=bool(payload["affected_device_reachable"]),
+            site_network=HealthState(_require_str(payload, "site_network")),
+            payment_service=HealthState(_require_str(payload, "payment_service")),
+            peer_device_id=_require_str(payload, "peer_device_id"),
+            peer_reachable=_require_bool(payload, "peer_reachable"),
+            affected_device_id=_require_str(payload, "affected_device_id"),
+            affected_device_reachable=_require_bool(payload, "affected_device_reachable"),
         )
 
     if source_type is EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC:
         return AccessLinkDiagnosticSnapshot(
-            target_id=str(payload["target_id"]),
+            target_id=_require_str(payload, "target_id"),
             attachment_id=str(payload["attachment_id"]),
-            switch_id=str(payload["switch_id"]),
-            port_id=str(payload["port_id"]),
-            switch_reachable=bool(payload["switch_reachable"]),
-            admin_state=AdminState(str(payload["admin_state"])),
-            operational_state=OperationalState(str(payload["operational_state"])),
-            port_security=PortSecurityState(str(payload["port_security"])),
-            configuration=ConfigurationState(str(payload["configuration"])),
+            switch_id=_require_str(payload, "switch_id"),
+            port_id=_require_str(payload, "port_id"),
+            switch_reachable=_require_bool(payload, "switch_reachable"),
+            admin_state=AdminState(_require_str(payload, "admin_state")),
+            operational_state=OperationalState(_require_str(payload, "operational_state")),
+            port_security=PortSecurityState(_require_str(payload, "port_security")),
+            configuration=ConfigurationState(_require_str(payload, "configuration")),
         )
 
     if source_type is EvidenceSourceType.INCIDENT_SEARCH:
         return IncidentSearchSnapshot(
-            scope=IncidentSearchScope(str(payload["scope"])),
-            entity_id=str(payload["entity_id"]),
+            scope=IncidentSearchScope(_require_str(payload, "scope")),
+            entity_id=_require_str(payload, "entity_id"),
             open_incident_ids=tuple(
                 str(value) for value in payload["open_incident_ids"]
             ),
@@ -145,14 +166,14 @@ def deserialize_evidence_payload(
 
     if source_type is EvidenceSourceType.KB_ARTICLE:
         return KbArticle(
-            article_id=str(payload["article_id"]),
-            title=str(payload["title"]),
-            approved=bool(payload["approved"]),
+            article_id=_require_str(payload, "article_id"),
+            title=_require_str(payload, "title"),
+            approved=_require_bool(payload, "approved"),
             diagnosis_codes=tuple(
-                DiagnosisCode(str(value)) for value in payload["diagnosis_codes"]
+                DiagnosisCode(value) for value in _require_str_tuple(payload, "diagnosis_codes")
             ),
             allowed_actions=tuple(
-                ActionType(str(value)) for value in payload["allowed_actions"]
+                ActionType(value) for value in _require_str_tuple(payload, "allowed_actions")
             ),
         )
 
