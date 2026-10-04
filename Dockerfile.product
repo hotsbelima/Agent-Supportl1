@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt && pip check
 COPY product_backend ./product_backend
 COPY product_api ./product_api
 COPY alembic ./alembic
+COPY scripts ./scripts
 COPY alembic.ini ./
 
 ENV PORT=8080
