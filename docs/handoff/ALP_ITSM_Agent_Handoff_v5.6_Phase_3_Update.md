@@ -180,7 +180,7 @@ implementation для защиты от конкурентных duplicate reque
 - Python 3.12;
 - `compileall product_backend`;
 - 3A + 3B + 3C tests;
-- **67 passed**.
+- **69 passed**.
 
 Полный repository regression на pinned `requirements.txt`:
 
