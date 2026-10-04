@@ -1,0 +1,16 @@
+FROM python:3.12.14-slim
+
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt && pip check
+
+COPY product_backend ./product_backend
+COPY product_api ./product_api
+COPY alembic ./alembic
+COPY alembic.ini ./
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["python", "-m", "product_api"]
