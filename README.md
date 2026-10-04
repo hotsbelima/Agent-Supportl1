@@ -1,8 +1,8 @@
 # Autonomous L1 Incident Agent
 
-## Current scope — Phase 1, Google ADK + Gemini
+## Current scope — Phases 1–2, Google ADK + Gemini
 
-This repository contains a deliberately small, local **Google ADK function-tool** spike. It replaces the old Dify/HTTP experiment as the current Phase 1 implementation. It is not the Scenario 1 backend: there is no database, FastAPI service, UI, SSE stream, approval flow, deployment or Northflank configuration.
+This repository contains a deliberately small **Google ADK function-tool** spike. Phase 1 proved the local ADK/Gemini dependency chain; Phase 2 proved the same runtime on Northflank. It is not the Scenario 1 backend: there is no database, UI, SSE stream, approval flow, persistent workflow or production API.
 
 The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evidence only; the current spike does not call them.
 
@@ -13,6 +13,7 @@ The retained `api/`, `public/`, and `docs/handoff` Dify files are historical evi
 | Python | `3.12.14` (`.python-version`) |
 | Google ADK | `2.10.0` (`requirements.txt`) |
 | Gemini | `gemini-3.5-flash-lite` (stable model ID) |
+| FastAPI host probe | `fastapi==0.141.1`, `uvicorn==0.54.0` |
 | Test runner | `pytest==8.4.2` |
 
 ### Exact tool boundary
@@ -50,4 +51,6 @@ The command returns non-zero when any observed call fails the acceptance check. 
 
 The local tests validate the two-tool boundary, absence of `attachment_id` in initial input, the fixture dependency, and rejection of an invented second argument. They do not substitute for live Gemini execution.
 
-See [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md) for the current handoff and closure criteria.
+For Phase 2 deployment verification, `Dockerfile` runs the minimal `phase2_backend` service on port 8080. Its `/health` endpoint exposes no credential, and `POST /spike/runs` returns audit-safe observed tool calls/results for this temporary runtime check.
+
+See [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md) for the current handoff, and [`docs/contracts/PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md`](docs/contracts/PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md) for the contracts fixed after the Phase 2 PASS.
