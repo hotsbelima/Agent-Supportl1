@@ -54,7 +54,7 @@ The local tests validate the two-tool boundary, absence of `attachment_id` in in
 For Phase 2 deployment verification, `Dockerfile` runs the minimal `phase2_backend` service on port 8080. Its `/health` endpoint exposes no credential, and `POST /spike/runs` returns audit-safe observed tool calls/results for this temporary runtime check.
 
 For project context, start with the canonical cumulative handoff:
-[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md).
+[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md).
 The phase documents are retained as deltas/evidence:
 [`v5.4 — Phase 1`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md)
 and [`v5.5 — Phase 2`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md).
@@ -99,8 +99,8 @@ The final Phase 3 contract is
 Phase 3 completion evidence is recorded in
 [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Phase_3_Update.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Phase_3_Update.md).
 
-The cumulative source of truth is now
-[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Cumulative.md).
+The cumulative source of truth for the next implementation stage is now
+[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md). Phase 4 is explicitly defined there as the persistent application backend foundation.
 
 The final Phase 3 audit also moved ownership/provider orchestration out of the
 model-facing adapter into `Scenario1ReadToolService`, moved pure type-aware ID/topology rules into `domain/read_model.py`, restored the Phase 2 top-level diagnostic fields, added explicit
