@@ -38,6 +38,42 @@ Delta — журнал изменений и доказательства. Cumul
 | 3. Product contracts и domain foundation | завершена | отдельный product-domain, validators, approval boundary и six-tool adapter integration прошли regression |
 | 4. Persistent application backend foundation | следующая / не начата | PostgreSQL, concrete repositories/UoW, persisted audit/events и product lifecycle/approval API; без UI и live ADK wiring |
 
+## Общий roadmap проекта
+
+Это **каноническая верхнеуровневая дорожная карта всего проекта**. Она нужна,
+чтобы новый исполнитель видел не только следующий шаг, но и конечную
+последовательность разработки. Завершённые фазы не пересматриваются без
+технически доказанной причины. Для будущих фаз high-level scope фиксирован
+здесь, а детальный implementation contract уточняется непосредственно перед
+началом соответствующей фазы.
+
+| Фаза | Название | Статус | Верхнеуровневый результат |
+| --- | --- | --- | --- |
+| **0** | Architecture / design | **DONE** | Зафиксированы архитектура, Scenario 1, fixture/world truth, evidence/approval semantics и общий product scope. |
+| **1** | Local ADK/Gemini runtime spike | **DONE** | Локально доказан реальный dependent multi-step tool calling на Google ADK + Gemini. |
+| **2** | Managed runtime spike | **DONE** | Тот же runtime и dependent tool calling доказаны вне локальной машины на Northflank. |
+| **3** | Product domain / contracts | **DONE** | Построены product-domain contracts, evidence validation, ownership/state rules, approval/execution boundary и six-tool integration layer. |
+| **4** | Persistence + application backend | **NEXT** | PostgreSQL, concrete repositories/UoW, persisted audit/events, product lifecycle API и human approval API. |
+| **5** | Persisted SSE + operational UI | **PLANNED** | Persisted event stream с cursor/reconnect и operational console для run timeline, agent activity, incident/evidence/proposal/approval state. |
+| **6** | Live six-tool Google ADK integration + Scenario 1 E2E | **PLANNED** | Все шесть Scenario 1 tools реально подключены к Google ADK; полный headless/UI vertical slice проходит end-to-end до approval/execution. |
+| **7** | Scenario 2 | **PLANNED** | Multi-event correlation, внешний dependency check и Major Incident proposal/approval flow. |
+| **8** | Scenario 3 | **PLANNED** | Disconfirmed hypothesis, replanning и новая последовательность tools по новым evidence. |
+| **9** | Polish, hardening, public deploy | **PLANNED** | Error/empty states, reset/scenario selector, security/observability hardening, финальная документация, архитектурная схема и публичный demo deploy. |
+
+### Правило детализации roadmap
+
+- Фазы **0–3** закрыты и считаются baseline.
+- Фаза **4** уже имеет детализированный scope ниже в этом handoff.
+- Фазы **5–9** сейчас зафиксированы именно как high-level roadmap.
+- Перед стартом каждой из Фаз 5–9 создаётся её собственный точный scope и
+  acceptance criteria.
+- Нельзя тащить задачи будущей фазы в текущую только потому, что они
+  технически уже возможны.
+- Если техническое ограничение действительно ломает roadmap, сначала
+  фиксируется причина и обновляется cumulative handoff, и только затем
+  меняется реализация.
+
+
 **Главный вывод:** выбранный runtime жизнеспособен: Python 3.12.14, Google ADK
 2.10.0 и `gemini-3.5-flash-lite` смогли в реальных прогонах сами выбрать
 `get_device`, извлечь из результата `attachment_id` и передать его в
