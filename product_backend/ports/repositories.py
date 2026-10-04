@@ -35,6 +35,20 @@ class IncidentRepository(Protocol):
         run_id: str,
         incident_id: str,
     ) -> Incident | None: ...
+    async def find_by_device(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        device_id: str,
+    ) -> Incident | None: ...
+    async def find_by_site(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        site_id: str,
+    ) -> Incident | None: ...
     async def save(self, incident: Incident) -> None: ...
 
 
@@ -46,6 +60,13 @@ class EvidenceRepository(Protocol):
         tenant_id: str,
         run_id: str,
         evidence_ids: tuple[str, ...],
+    ) -> tuple[Evidence, ...]: ...
+    async def find_by_entity_id(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        entity_id: str,
     ) -> tuple[Evidence, ...]: ...
 
 
@@ -118,6 +139,19 @@ class WorkOrderRepository(Protocol):
         run_id: str,
         incident_id: str,
     ) -> FieldServiceWorkOrder | None: ...
+
+
+class ToolReadUnitOfWork(Protocol):
+    """Transaction boundary for one read-tool observation + evidence write."""
+
+    runs: RunRepository
+    incidents: IncidentRepository
+    evidence: EvidenceRepository
+
+    async def __aenter__(self) -> "ToolReadUnitOfWork": ...
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
 
 
 class ProposalCreationUnitOfWork(Protocol):
