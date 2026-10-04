@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+from inspect import signature
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
@@ -974,7 +975,25 @@ def test_tool_results_have_explicit_json_safe_serialization():
     )
     kb = asyncio.run(adapter.search_kb(context, SearchKbRequest("local link")))
 
-    for result in (device, site, diagnostic, incidents, kb):
+    proposal = asyncio.run(
+        adapter.propose_field_visit(
+            context,
+            ProposeFieldVisitRequest(
+                INCIDENT_ID,
+                DEVICE,
+                DiagnosisCode.LOCAL_ACCESS_LINK_FAILURE,
+                (
+                    device.evidence.evidence_id,
+                    site.evidence.evidence_id,
+                    diagnostic.evidence.evidence_id,
+                    kb.evidence[0].evidence_id,
+                ),
+                "Request onsite inspection.",
+            ),
+        )
+    )
+
+    for result in (device, site, diagnostic, incidents, kb, proposal):
         payload = to_tool_payload(result)
         encoded = json.dumps(payload)
         assert isinstance(encoded, str)
@@ -998,3 +1017,25 @@ def test_tool_failure_is_json_safe_without_raw_exception_text():
     assert payload["ok"] is False
     assert payload["error"]["code"] == ErrorCode.UPSTREAM_UNAVAILABLE.value
     assert "secret" not in encoded.lower()
+
+
+def test_concrete_adapter_is_thin_and_depends_only_on_application_services():
+    params = signature(DefaultScenario1ToolAdapter.__init__).parameters
+    assert set(params) == {"self", "read_service", "proposal_service"}
+
+
+def test_cmdb_missing_required_topology_fields_is_rejected_before_evidence_write():
+    adapter, store, _, _, _, _ = make_adapter(
+        topology=replace(canonical_topology(), attachment_id=""),
+    )
+
+    result = asyncio.run(
+        adapter.get_device(
+            ToolCallContext(TENANT, RUN_ID),
+            GetDeviceRequest(DEVICE),
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.UPSTREAM_UNAVAILABLE
+    assert not store.evidence
