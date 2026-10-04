@@ -12,7 +12,6 @@ from typing import TypeAlias
 from .enums import (
     ActionType,
     AdminState,
-    ApprovalApplicationResult,
     ApprovalDecision,
     ConfigurationState,
     DiagnosisCode,
@@ -24,7 +23,6 @@ from .enums import (
     PortSecurityState,
     ProposalStatus,
     RunStatus,
-    WorkOrderStatus,
 )
 
 
@@ -99,7 +97,6 @@ class KbArticle:
     approved: bool
     diagnosis_codes: tuple[DiagnosisCode, ...]
     allowed_actions: tuple[ActionType, ...]
-    guidance_code: str
 
 
 EvidencePayload: TypeAlias = (
@@ -149,10 +146,8 @@ class Approval:
     run_id: str
     proposal_id: str
     decision: ApprovalDecision
-    application_result: ApprovalApplicationResult
     decided_at: datetime
     decided_by: str
-    reason_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,5 +170,4 @@ class FieldServiceWorkOrder:
     proposal_id: str
     incident_id: str
     device_id: str
-    status: WorkOrderStatus
     created_at: datetime
