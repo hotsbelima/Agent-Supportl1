@@ -165,3 +165,19 @@ def test_model_facing_adapter_does_not_reach_repositories_or_source_ports_direct
     modules = _imported_modules(Path("product_backend/adapters/tool_adapters.py"))
     assert "product_backend.ports.repositories" not in modules
     assert "product_backend.ports.source_systems" not in modules
+
+
+def test_product_backend_contains_no_canonical_fixture_or_hidden_answer_constants() -> None:
+    forbidden = (
+        "TENANT-8OCT",
+        "SITE-KZN-017",
+        "INC-1042",
+        "POS-KZN17-02",
+        "ATT-KZN17-POS02",
+        "SW-KZN17-01",
+        "PATCH_CABLE_DISCONNECTED",
+    )
+    for path in Path("product_backend").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for value in forbidden:
+            assert value not in text, (path, value)
