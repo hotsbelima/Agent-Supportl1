@@ -63,13 +63,31 @@ def _invalid_evidence(reason: str, evidence_id: str | None = None) -> DomainErro
     )
 
 
-def _expired(evidence: Evidence, now: datetime) -> bool:
-    if evidence.expires_at is None:
-        return False
+def _aware(value: datetime) -> bool:
+    return value.tzinfo is not None and value.utcoffset() is not None
+
+
+def _temporal_error(evidence: Evidence, now: datetime) -> str | None:
+    if not _aware(now) or not _aware(evidence.captured_at):
+        return "non_timezone_aware_timestamp"
     try:
-        return evidence.expires_at <= now
+        if evidence.captured_at > now:
+            return "evidence_captured_in_future"
     except TypeError:
-        return True
+        return "incomparable_timestamp"
+
+    if evidence.expires_at is None:
+        return None
+    if not _aware(evidence.expires_at):
+        return "non_timezone_aware_expiry"
+    try:
+        if evidence.expires_at <= evidence.captured_at:
+            return "invalid_evidence_ttl_window"
+        if evidence.expires_at <= now:
+            return "expired_evidence"
+    except TypeError:
+        return "incomparable_timestamp"
+    return None
 
 
 def _validate_common_evidence_set(
@@ -95,8 +113,9 @@ def _validate_common_evidence_set(
             return _invalid_evidence("source_payload_type_mismatch", item.evidence_id)
         if item.source_type in _DYNAMIC_EVIDENCE and item.expires_at is None:
             return _invalid_evidence("dynamic_evidence_without_ttl", item.evidence_id)
-        if _expired(item, now):
-            return _invalid_evidence("expired_evidence", item.evidence_id)
+        temporal_error = _temporal_error(item, now)
+        if temporal_error is not None:
+            return _invalid_evidence(temporal_error, item.evidence_id)
     return None
 
 
