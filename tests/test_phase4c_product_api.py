@@ -19,6 +19,7 @@ from product_api.scenario1_fixture import (
     Scenario1FixtureSources,
 )
 from product_backend.application.field_visit import FieldVisitProposalService
+from product_backend.application.lifecycle import ApplicationLifecycleService
 from product_backend.contracts.tools import ProposeFieldVisitRequest, ToolCallContext
 from product_backend.domain.enums import (
     ActionType,
@@ -33,12 +34,14 @@ from product_backend.persistence.database import (
     create_session_factory,
     normalize_database_url,
 )
+from product_backend.persistence.run_state import SqlAlchemyRunStateQuery
 from product_backend.persistence.tables import (
     ApprovalRow,
     ExecutedActionRow,
     FieldServiceWorkOrderRow,
 )
 from product_backend.persistence.uow import (
+    SqlAlchemyLifecycleUnitOfWork,
     SqlAlchemyProposalCreationUnitOfWork,
     SqlAlchemyToolReadUnitOfWork,
 )
@@ -354,6 +357,80 @@ def test_tenant_isolation_validation_and_timeline_cursor():
         assert empty.status_code == 200
         assert empty.json()["events"] == []
         assert empty.json()["next_cursor"] == 3
+
+
+def test_current_state_snapshot_blocks_concurrent_run_mutation_until_complete():
+    tenant_id = f"TENANT-SNAPSHOT-{uuid4().hex[:8]}"
+
+    with TestClient(create_app()) as client:
+        state = _start(client, tenant_id)
+        run_id = state["run"]["run_id"]
+
+    async def scenario() -> None:
+        engine, factory = _new_db()
+        first_query_completed = asyncio.Event()
+        release_reader = asyncio.Event()
+
+        class PausingSession:
+            def __init__(self):
+                self._session = factory()
+                self._execute_count = 0
+
+            async def __aenter__(self):
+                await self._session.__aenter__()
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return await self._session.__aexit__(exc_type, exc, tb)
+
+            async def execute(self, statement):
+                result = await self._session.execute(statement)
+                self._execute_count += 1
+                if self._execute_count == 1:
+                    first_query_completed.set()
+                    await release_reader.wait()
+                return result
+
+            async def scalar(self, statement):
+                return await self._session.scalar(statement)
+
+        def pausing_factory():
+            return PausingSession()
+
+        try:
+            query = SqlAlchemyRunStateQuery(pausing_factory)
+            lifecycle = ApplicationLifecycleService(
+                lambda: SqlAlchemyLifecycleUnitOfWork(factory)
+            )
+            context = ToolCallContext(tenant_id=tenant_id, run_id=run_id)
+
+            reader = asyncio.create_task(
+                query.get(tenant_id=tenant_id, run_id=run_id)
+            )
+            await asyncio.wait_for(first_query_completed.wait(), timeout=2)
+
+            writer = asyncio.create_task(
+                lifecycle.record_external_signal(
+                    context,
+                    signal_type="test.concurrent",
+                    details={"source": "phase4c-lock-test"},
+                )
+            )
+            await asyncio.sleep(0.1)
+            assert writer.done() is False
+
+            release_reader.set()
+            snapshot = await asyncio.wait_for(reader, timeout=2)
+            assert snapshot is not None
+            assert snapshot.latest_event_seq == 3
+
+            event = await asyncio.wait_for(writer, timeout=2)
+            assert event.seq == 4
+        finally:
+            release_reader.set()
+            await engine.dispose()
+
+    asyncio.run(scenario())
 
 
 def test_approve_replay_conflict_and_cross_tenant_are_safe_and_idempotent():
