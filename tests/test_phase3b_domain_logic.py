@@ -747,10 +747,11 @@ def test_approve_when_equivalent_action_already_exists_marks_stale_no_second_act
         T0,
     )
     store.actions[existing.action_id] = existing
-    service = approval_service(
+    service = _approval_service_with_ports(
         store,
-        clock=Clock(T0 + timedelta(minutes=2)),
-        ids=ids,
+        ids,
+        RaisingCmdb(),
+        FakeMonitoring(store.evidence["E-DIAG"].payload),
     )
 
     result = asyncio.run(
@@ -830,10 +831,11 @@ def test_approve_when_incident_is_no_longer_open_records_approved_but_marks_stal
         incident,
         status=IncidentStatus.ESCALATED,
     )
-    service = approval_service(
+    service = _approval_service_with_ports(
         store,
-        clock=Clock(T0 + timedelta(minutes=2)),
-        ids=ids,
+        ids,
+        RaisingCmdb(),
+        FakeMonitoring(store.evidence["E-DIAG"].payload),
     )
 
     result = asyncio.run(
@@ -871,10 +873,11 @@ def test_approve_when_work_order_already_exists_marks_stale_no_second_work_order
         T0,
     )
     store.workorders[existing.work_order_id] = existing
-    service = approval_service(
+    service = _approval_service_with_ports(
         store,
-        clock=Clock(T0 + timedelta(minutes=2)),
-        ids=ids,
+        ids,
+        RaisingCmdb(),
+        FakeMonitoring(store.evidence["E-DIAG"].payload),
     )
 
     result = asyncio.run(
