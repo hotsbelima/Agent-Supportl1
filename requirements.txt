@@ -5,7 +5,7 @@ python-dotenv==1.2.4
 # 1.42.1.  0.141.1 is the newest compatible FastAPI release for the pinned ADK.
 fastapi==0.141.1
 uvicorn==0.54.0
-pytest==8.4.2\n
+pytest==8.4.2
 # Phase 4A PostgreSQL persistence.  Keep SQLAlchemy on the mature 2.0 line;
 # google-adk 2.10.0 allows SQLAlchemy >=2,<3.
 SQLAlchemy==2.0.54
