@@ -155,7 +155,7 @@ on top of verified Phase 4A:
 - explicit protection against persisting hidden reasoning/credential fields.
 
 PostgreSQL 16 CI is green: Phase 3 **69/69**, Phase 4A **7/7**, Phase 4B
-**5/5**, full Python **89/89** (one retained dependency warning), Node
+**8/8**, full Python **92/92** (one retained dependency warning), Node
 **5/5**.
 
 Detailed checkpoint:
