@@ -1,7 +1,8 @@
 # Фаза 3A — Domain design и tool contracts Scenario 1
 
 Дата: 4 октября 2026 года.  
-Статус: **3A implementation checkpoint / design freeze**.
+Статус: **исторический 3A implementation checkpoint / design freeze**.  
+Актуальный финальный contract после завершения и аудита всей Фазы 3: `PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md`.
 
 Документ основан на canonical cumulative handoff v5.5 и
 `PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md`. Он фиксирует продуктовую модель
