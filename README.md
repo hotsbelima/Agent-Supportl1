@@ -140,3 +140,27 @@ Approve idempotency. The verified result is 7/7 Phase 4A integration tests,
 tests. Managed Northflank infrastructure acceptance is still separate, and
 Phase 4 itself is not PASS until 4B/4C and that final acceptance are complete.
 \n
+
+### Phase 4B persisted lifecycle checkpoint
+
+Branch `phase-4b-persisted-lifecycle` adds the persisted lifecycle/audit layer
+on top of verified Phase 4A:
+
+- safe closed-set application event contracts;
+- server-side UTC timestamps and monotonic per-run sequence;
+- transactional one-event/one-outbox persistence;
+- timeline cursor reads for the future SSE layer;
+- tool start/finish audit;
+- proposal, approval, action and run-status events;
+- explicit protection against persisting hidden reasoning/credential fields.
+
+PostgreSQL 16 CI is green: Phase 3 **69/69**, Phase 4A **7/7**, Phase 4B
+**5/5**, full Python **89/89** (one retained dependency warning), Node
+**5/5**.
+
+Detailed checkpoint:
+[`docs/contracts/PHASE_4B_PERSISTED_LIFECYCLE.md`](docs/contracts/PHASE_4B_PERSISTED_LIFECYCLE.md).
+
+Phase 4 itself is not complete yet: Product FastAPI boundary 4C and the final
+managed Northflank infrastructure acceptance remain.
+
