@@ -251,9 +251,11 @@ LLM», а договор между всеми слоями:
 - security boundary запрещает модели выбирать tenant/run context, читать
   секреты и выполнять mutation.
 
-Для реального Scenario 1 эти contracts будут расширяться контрактами CMDB,
-health, diagnostic, KB, evidence и proposal. Новый mutation tool нельзя
-добавлять «по ходу» без отдельно согласованных action/approval semantics.
+В Фазе 3 эти минимальные spike-contracts **уже расширены** отдельными
+product-contracts CMDB, health, diagnostic, KB, evidence и proposal. Phase 2
+документ остаётся историческим контрактом двух-tool runtime spike. Новый
+mutation tool по-прежнему нельзя добавлять «по ходу» без отдельно
+согласованных action/approval semantics.
 
 ## Canonical Scenario 1
 
@@ -410,9 +412,8 @@ SSE будет передавать сохранённые events с после�
 - Каждое изменение ADK/model pin требует живого повторного запуска, потому
   что tool-use поведение — взаимодействие runtime и модели, не только Python
   unit test.
-- Cost/timeouts/tool errors становятся частью будущих contracts: domain and
-  API errors должны быть typed и безопасны для показа модели/UI, raw exception
-  и secrets наружу не уходят.
+- Domain/tool errors уже typed и безопасны для model boundary; mapping в
+  будущий product API ещё предстоит. Raw exception и secrets наружу не уходят.
 
 ## Фаза 3: Product contracts и domain foundation — PASS
 
@@ -433,9 +434,12 @@ Product code физически отделён от runtime spike в `product_ba
 - deterministic proposal validator;
 - human approval/execution service;
 - stale и repeat-decision semantics;
-- concrete `DefaultScenario1ToolAdapter`, который создаёт evidence и не
-  позволяет model-selected IDs обходить run/domain ownership;
-- CI gate для domain и полного repository regression.
+- thin `DefaultScenario1ToolAdapter`, который делегирует application services
+  и не имеет прямой зависимости от repositories/source-system ports;
+- `Scenario1ReadToolService`, который выполняет type-aware ID ownership,
+  provider orchestration, evidence creation и TTL policy;
+- explicit JSON-safe serialization boundary для typed tool results;
+- CI gate для architecture/domain и полного repository regression.
 
 Финальный technical contract:
 `docs/contracts/PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md`.
@@ -455,20 +459,33 @@ Validator читает typed payload, entity IDs, tenant/run ownership и TTL; L
 
 Dynamic `SITE_HEALTH` и `ACCESS_LINK_DIAGNOSTIC` evidence имеют обязательный
 положительный TTL. Конкретная длительность задаётся application configuration,
-а не моделью и не зашита в domain contract.
+а не моделью и не зашита в domain contract. Validator дополнительно отвергает
+future/naive/non-comparable timestamps, expiry <= captured_at и уже истёкшие
+records.
 
-### Adapter safety и data dependency
+### Tool boundary, ownership и data dependency
 
-До provider call adapter проверяет, что выбранный device/site/entity уже
-принадлежит текущему run или был открыт предыдущим evidence.
+Model-facing adapter остаётся тонким. Ownership и provider orchestration
+выполняет application/domain path.
+
+Device и site проверяются **по типу сущности**: наличие строки в чужом evidence
+само по себе не делает её разрешённым device/site ID. Поэтому, например, KB
+article ID или найденный incident ID нельзя использовать как device.
 
 Diagnostic можно запустить только по attachment, ранее полученному из
-`CMDB_SNAPSHOT`. Provider result до записи evidence cross-check-ится с
+`CMDB_SNAPSHOT`. Если для attachment есть несколько snapshots, используется
+самый новый известный. Provider result до записи evidence cross-check-ится с
 canonical topology: device/site, attachment, switch и port не могут тихо
-подмениться.
+подмениться; неполный CMDB topology также не становится evidence.
 
-Таким образом исходный принцип data dependency переносится из двух-tool spike
+Product `run_diagnostic` сохраняет Phase 2 обязательные top-level output fields
+`attachment_id`, `diagnostic`, `observed_state`; canonical down observation
+по-прежнему сериализуется как `LINK_DOWN`.
+
+Таким образом исходный принцип data dependency переносится из two-tool spike
 в настоящий Scenario 1, но без жёстко заданной последовательности всех tools.
+Regression содержит отдельный success-case с другим допустимым порядком
+read-tools.
 
 ### Proposal / approval
 
@@ -507,12 +524,18 @@ Model/UI-facing ошибки typed и не содержат raw provider excepti
 
 ### Проверки Фазы 3
 
-GitHub Actions `Phase 3 domain check` на финальном checkpoint:
+После отдельного финального аудита 3A+3B+3C GitHub Actions
+`Phase 3 domain check`:
 
-- domain gate: **51 passed**;
+- architecture/domain gate: **67 passed**;
 - pinned `requirements.txt`: `pip check` — no broken requirements;
-- полный Python regression: **59 passed, 1 dependency deprecation warning**;
+- полный Python regression: **75 passed, 1 dependency deprecation warning**;
 - retained Node spike tests: **5 passed, 0 failed**.
+
+Architecture tests отдельно запрещают framework/application/ports dependencies
+в pure domain, direct repository/source-port access из model-facing adapter и
+canonical fixture/hidden root-cause constants в `product_backend/`. Typed
+tool results проверяются на JSON-safe serialization.
 
 Warning относится к FastAPI/Starlette TestClient dependency surface.
 
