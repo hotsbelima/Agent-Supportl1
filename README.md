@@ -133,6 +133,10 @@ the Phase 4A persistence layer defined by cumulative handoff v5.7:
 Detailed design/status:
 [`docs/contracts/PHASE_4A_POSTGRES_PERSISTENCE.md`](docs/contracts/PHASE_4A_POSTGRES_PERSISTENCE.md).
 
-**Verification is intentionally deferred:** no Phase 4A tests have been added
-or run in this implementation pass, so this branch is not yet a Phase 4 PASS.
+Phase 4A now has a PostgreSQL 16 CI gate covering migrations, repository
+round-trip, tenant/run isolation, cross-context FK protection and concurrent
+Approve idempotency. The verified result is 7/7 Phase 4A integration tests,
+84/84 full Python tests (with the retained dependency warning) and 5/5 Node
+tests. Managed Northflank infrastructure acceptance is still separate, and
+Phase 4 itself is not PASS until 4B/4C and that final acceptance are complete.
 \n
