@@ -135,4 +135,5 @@ class SqlAlchemyLifecycleUnitOfWork(_SqlAlchemyUnitOfWorkBase):
     ) -> None:
         super().__init__(session_factory)
         self.runs = SqlAlchemyRunRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
         self.events = SqlAlchemyApplicationEventRepository(self._session)
