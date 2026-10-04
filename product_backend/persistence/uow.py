@@ -54,6 +54,19 @@ class _SqlAlchemyUnitOfWorkBase:
             await self._session.close()
 
 
+class SqlAlchemyRunStartUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Create one Scenario 1 run, initial incident and start events atomically."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(self._session)
+        self.incidents = SqlAlchemyIncidentRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
+
+
 class SqlAlchemyToolReadUnitOfWork(_SqlAlchemyUnitOfWorkBase):
     """One read-tool observation plus evidence write in one transaction."""
 
