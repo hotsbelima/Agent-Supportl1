@@ -12,9 +12,10 @@ import os
 import re
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, Query, Request, status
+from fastapi import Depends, FastAPI, Header, Path, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from product_backend.application.field_visit import FieldVisitApprovalService
@@ -53,6 +54,11 @@ from .schemas import (
 
 
 _TENANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_ID_PATH = Path(
+    min_length=1,
+    max_length=128,
+    pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+)
 
 
 @dataclass(slots=True)
@@ -253,6 +259,23 @@ def create_app(
             content=body.model_dump(mode="json"),
         )
 
+    @app.exception_handler(SQLAlchemyError)
+    async def database_error_handler(
+        request: Request,
+        exc: SQLAlchemyError,
+    ) -> JSONResponse:
+        body = ApiErrorResponse(
+            error=ApiErrorBody(
+                code="DATABASE_UNAVAILABLE",
+                message="Persistent product state is temporarily unavailable.",
+                retryable=True,
+            )
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=body.model_dump(mode="json"),
+        )
+
     @app.exception_handler(Exception)
     async def unexpected_error_handler(
         request: Request,
@@ -323,7 +346,7 @@ def create_app(
         response_model=RunStateResponse,
     )
     async def get_run_state(
-        run_id: str,
+        run_id: Annotated[str, _ID_PATH],
         request: Request,
         tenant_id: TenantId,
     ) -> RunStateResponse:
@@ -345,7 +368,7 @@ def create_app(
         response_model=TimelineResponse,
     )
     async def get_run_events(
-        run_id: str,
+        run_id: Annotated[str, _ID_PATH],
         request: Request,
         tenant_id: TenantId,
         after_seq: Annotated[int, Query(ge=0)] = 0,
@@ -399,8 +422,8 @@ def create_app(
         response_model=ApprovalDecisionResponse,
     )
     async def approve_proposal(
-        run_id: str,
-        proposal_id: str,
+        run_id: Annotated[str, _ID_PATH],
+        proposal_id: Annotated[str, _ID_PATH],
         body: HumanDecisionRequest,
         request: Request,
         tenant_id: TenantId,
@@ -419,8 +442,8 @@ def create_app(
         response_model=ApprovalDecisionResponse,
     )
     async def reject_proposal(
-        run_id: str,
-        proposal_id: str,
+        run_id: Annotated[str, _ID_PATH],
+        proposal_id: Annotated[str, _ID_PATH],
         body: HumanDecisionRequest,
         request: Request,
         tenant_id: TenantId,
