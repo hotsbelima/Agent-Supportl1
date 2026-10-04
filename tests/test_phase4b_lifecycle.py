@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import os
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 
 from product_backend.adapters.tool_adapters import DefaultScenario1ToolAdapter
 from product_backend.application.field_visit import (
@@ -397,6 +399,18 @@ def test_safe_event_payload_rejects_hidden_reasoning_and_secrets():
         validate_safe_event_payload(
             {"nested": {"api_key": "must-not-persist"}}
         )
+    with pytest.raises(ValueError, match="reasoning_trace"):
+        validate_safe_event_payload(
+            {"nested": {"reasoning_trace": "must-not-persist"}}
+        )
+    with pytest.raises(ValueError, match="client_secret_value"):
+        validate_safe_event_payload(
+            {"nested": {"client_secret_value": "must-not-persist"}}
+        )
+    with pytest.raises(ValueError, match="thought_trace"):
+        validate_safe_event_payload(
+            {"nested": {"thought_trace": "must-not-persist"}}
+        )
 
 
 def test_concurrent_event_writers_allocate_contiguous_per_run_sequence_and_outbox():
@@ -472,6 +486,10 @@ def test_lifecycle_service_uses_server_time_validates_context_and_supports_curso
             assert before <= signal.occurred_at <= after
             assert before <= finding.occurred_at <= after
             assert [started.seq, signal.seq, finding.seq] == [1, 2, 3]
+            assert started.payload == {
+                "scenario_id": "scenario-1",
+                "status": "ACTIVE",
+            }
 
             tail = await lifecycle.timeline(context, after_seq=1, limit=2)
             assert [item.seq for item in tail] == [2, 3]
@@ -479,6 +497,17 @@ def test_lifecycle_service_uses_server_time_validates_context_and_supports_curso
                 ApplicationEventType.EXTERNAL_SIGNAL,
                 ApplicationEventType.FINDING_RECORDED,
             ]
+
+            with pytest.raises(ValueError, match="unique"):
+                await lifecycle.record_finding(
+                    context,
+                    finding_code="DUPLICATE",
+                    summary="Must not persist duplicate references.",
+                    evidence_ids=(
+                        evidence[0].evidence_id,
+                        evidence[0].evidence_id,
+                    ),
+                )
 
             with pytest.raises(ValueError, match="evidence"):
                 await lifecycle.record_finding(
@@ -546,6 +575,139 @@ def test_tool_adapter_persists_started_and_finished_for_success_and_failure():
                 == "CONTEXT_MISMATCH"
             )
             assert await _event_outbox_counts(factory, ids) == (4, 4)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_database_constraints_and_read_boundary_reject_invalid_event_records():
+    async def scenario() -> None:
+        ids = _ids()
+        engine, factory = _new_db()
+        try:
+            await _seed(factory, ids)
+            lifecycle = ApplicationLifecycleService(
+                lambda: SqlAlchemyLifecycleUnitOfWork(factory)
+            )
+            context = ToolCallContext(ids["tenant"], ids["run"])
+            event = await lifecycle.record_external_signal(
+                context,
+                signal_type="test.signal",
+                details={"ok": True},
+            )
+
+            async with factory() as session:
+                session.add(
+                    ApplicationEventRow(
+                        tenant_id=ids["tenant"],
+                        run_id=ids["run"],
+                        seq=event.seq + 1,
+                        event_id=f"EVENT-BAD-{uuid4().hex}",
+                        event_type="unknown.event",
+                        occurred_at=datetime.now(UTC),
+                        payload={},
+                    )
+                )
+                with pytest.raises(IntegrityError):
+                    await session.commit()
+                await session.rollback()
+
+            async with factory() as session:
+                session.add(
+                    ApplicationOutboxRow(
+                        tenant_id=ids["tenant"],
+                        run_id=ids["run"],
+                        outbox_id=f"OUTBOX-BAD-{uuid4().hex}",
+                        event_seq=None,
+                        topic="application.event",
+                        payload={},
+                        created_at=datetime.now(UTC),
+                        available_at=datetime.now(UTC),
+                        delivered_at=None,
+                        attempt_count=0,
+                    )
+                )
+                with pytest.raises(IntegrityError):
+                    await session.commit()
+                await session.rollback()
+
+            async with factory() as session:
+                await session.execute(
+                    update(ApplicationEventRow)
+                    .where(
+                        ApplicationEventRow.tenant_id == ids["tenant"],
+                        ApplicationEventRow.run_id == ids["run"],
+                        ApplicationEventRow.seq == event.seq,
+                    )
+                    .values(payload={"reasoning_trace": "corrupt raw write"})
+                )
+                await session.commit()
+
+            with pytest.raises(ValueError, match="reasoning_trace"):
+                await lifecycle.timeline(context)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_stale_approval_event_records_deterministic_reason():
+    async def scenario() -> None:
+        ids = _ids()
+        evidence = _required_evidence(ids)
+        engine, factory = _new_db()
+        try:
+            await _seed(factory, ids, evidence=evidence)
+            lifecycle, adapter, _ = _services(factory, ids)
+            context = ToolCallContext(ids["tenant"], ids["run"])
+            proposed = await adapter.propose_field_visit(
+                context,
+                ProposeFieldVisitRequest(
+                    incident_id=ids["incident"],
+                    device_id=ids["device"],
+                    diagnosis=DiagnosisCode.LOCAL_ACCESS_LINK_FAILURE,
+                    evidence_ids=tuple(item.evidence_id for item in evidence),
+                    rationale="Request onsite physical-path inspection.",
+                ),
+            )
+            assert proposed.ok is True
+
+            recovered = replace(
+                _diagnostic(ids),
+                operational_state=OperationalState.UP,
+            )
+            approval_service = FieldVisitApprovalService(
+                lambda: SqlAlchemyApprovalExecutionUnitOfWork(factory),
+                cmdb=StaticCmdb(_topology(ids)),
+                monitoring=StaticMonitoring(ids, recovered),
+                clock=lambda: T0 + timedelta(minutes=3),
+                id_factory=lambda prefix: f"{prefix.upper()}-{uuid4().hex}",
+            )
+            result = await approval_service.decide(
+                context,
+                proposal_id=proposed.proposal.proposal_id,
+                decision=ApprovalDecision.APPROVED,
+                decided_by="human-operator",
+            )
+
+            assert result.ok is True
+            assert result.proposal.status is ProposalStatus.STALE
+            assert result.executed_action is None
+            assert result.work_order is None
+
+            timeline = await lifecycle.timeline(context)
+            approval_event = next(
+                item
+                for item in timeline
+                if item.event_type is ApplicationEventType.APPROVAL_DECIDED
+            )
+            assert approval_event.payload["decision"] == "APPROVED"
+            assert approval_event.payload["proposal_status"] == "STALE"
+            assert (
+                approval_event.payload["stale_reason"]
+                == "link_no_longer_matches_down_pattern"
+            )
         finally:
             await engine.dispose()
 
