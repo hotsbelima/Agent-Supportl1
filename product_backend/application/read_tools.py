@@ -293,6 +293,19 @@ class Scenario1ReadToolService:
                         "CMDB returned an inconsistent device result.",
                         "cmdb_identity_mismatch",
                     )
+                if not all(
+                    (
+                        topology.site_id.strip(),
+                        topology.attachment_id.strip(),
+                        topology.expected_switch_id.strip(),
+                        topology.expected_port_id.strip(),
+                    )
+                ):
+                    return _failure(
+                        ErrorCode.UPSTREAM_UNAVAILABLE,
+                        "CMDB returned incomplete topology.",
+                        "cmdb_topology_incomplete",
+                    )
                 if not await self._known_site(uow, context, topology.site_id):
                     return _failure(
                         ErrorCode.UPSTREAM_UNAVAILABLE,
@@ -374,6 +387,12 @@ class Scenario1ReadToolService:
                         ErrorCode.SITE_HEALTH_UNAVAILABLE,
                         "Monitoring returned an inconsistent site result.",
                         "site_identity_mismatch",
+                    )
+                if not snapshot.peer_device_id.strip() or not snapshot.affected_device_id.strip():
+                    return _failure(
+                        ErrorCode.SITE_HEALTH_UNAVAILABLE,
+                        "Monitoring returned incomplete device identities.",
+                        "site_health_identity_incomplete",
                     )
                 if not await self._known_device(
                     uow,
