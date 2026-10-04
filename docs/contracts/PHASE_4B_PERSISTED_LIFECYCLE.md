@@ -50,7 +50,11 @@
 
 Payload validator принимает только JSON primitives/arrays/objects, отвергает
 non-finite numbers и запрещает persistence ключей, относящихся к hidden model
-reasoning или credential material, включая:
+reasoning или credential material. Проверка применяется как на write boundary,
+так и повторно при чтении persisted events, чтобы raw/corrupt DB write не
+вернулся в operational timeline. Блокируются как exact keys, так и семейства
+ключей вроде `reasoning_trace`, `model_reasoning_text`,
+`client_secret_value` и `x_api_key`, включая:
 
 - `thought` / `thoughts`
 - `reasoning`
@@ -98,8 +102,12 @@ DB transaction.
 
 4B migration добавляет:
 
+- `event_seq NOT NULL` — outbox row не может существовать без event link;
 - FK `tenant_id/run_id/event_seq -> application_events`;
-- UNIQUE `tenant_id/run_id/event_seq`.
+- UNIQUE `tenant_id/run_id/event_seq`;
+- CHECK, допускающий только event types, объявленные
+  `ApplicationEventType`;
+- CHECK `application_events.seq > 0`.
 
 Outbox payload содержит safe event envelope:
 
@@ -161,7 +169,11 @@ Approve со stale condition сохраняет:
 - APPROVED decision;
 - proposal -> `STALE`;
 - zero execution;
-- `approval.decided`;
+- `approval.decided` с deterministic `stale_reason` из уже выполненной
+  currentness-проверки (например, `incident_not_open`,
+  `current_cmdb_relationship_changed`,
+  `link_no_longer_matches_down_pattern`,
+  `equivalent_action_exists`, `work_order_exists`);
 - `run.status_changed`.
 
 Valid Approve transaction сохраняет:
@@ -189,10 +201,12 @@ Replay уже сохранённого human decision не создаёт нов
 - `record_finding`;
 - `timeline(after_seq, limit)`.
 
-`simulation.started` проверяет соответствие `scenario_id` owning Run.
+`simulation.started` проверяет соответствие `scenario_id` owning Run и
+сохраняет стартовый `RunStatus`, поэтому начальное operational state видно
+не только в product tables, но и в event timeline.
 
-`finding.recorded` требует Evidence IDs текущего tenant/run; foreign/missing
-evidence не может попасть в timeline.
+`finding.recorded` требует уникальные Evidence IDs текущего tenant/run;
+foreign/missing/duplicate evidence references не могут попасть в timeline.
 
 Timeline читается исключительно из persisted `application_events` и всегда
 возвращается по возрастанию `seq`.
@@ -217,7 +231,10 @@ CI проверяет полный:
 
 `Phase 4B persisted lifecycle check`
 
-GitHub Actions run: `37226065005`.
+Verification выполняется workflow `Phase 4B persisted lifecycle check`.
+Конкретный run ID намеренно не фиксируется в этом документе: изменение самого
+checkpoint-документа также запускает workflow и мгновенно делает такой ID
+устаревшим.
 
 Environment:
 
@@ -232,19 +249,25 @@ Environment:
 - migrations upgrade/check/downgrade/re-upgrade: PASS;
 - Phase 3 architecture/domain regression: **69 passed**;
 - Phase 4A PostgreSQL regression: **7 passed**;
-- Phase 4B lifecycle suite: **5 passed**;
-- full Python regression: **89 passed, 1 existing dependency warning**;
+- Phase 4B lifecycle suite: **8 passed**;
+- full Python regression: **92 passed, 1 existing dependency warning**;
 - retained Node regression: **5 passed, 0 failed**.
 
 4B suite доказывает:
 
-- hidden reasoning/credential keys блокируются;
+- hidden reasoning/credential key families блокируются на write и read;
+- PostgreSQL CHECK синхронизирован со всеми current
+  `ApplicationEventType`;
+- unknown DB event type блокируется;
+- outbox `event_seq=NULL` блокируется DB;
 - 12 concurrent writers одного run получают contiguous `seq 1..12`;
 - каждый event получает ровно один outbox row;
 - server UTC timestamp authoritative;
+- `simulation.started` содержит исходный run status;
 - cursor `after_seq` работает;
-- cross-run/foreign finding evidence блокируется;
+- cross-run/foreign/duplicate finding evidence блокируется;
 - successful и failed tool calls имеют persisted start/finish;
+- stale approval сохраняет deterministic reason;
 - proposal -> approval -> action timeline полный;
 - approval replay не создаёт повторных events/outbox records.
 
