@@ -7,6 +7,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from product_backend.contracts.events import ApplicationEventType
+from product_backend.contracts.serialization import to_tool_payload
 from product_backend.contracts.tools import ProposeFieldVisitRequest, ToolCallContext
 from product_backend.domain.enums import (
     ActionType,
@@ -42,6 +44,7 @@ from product_backend.ports.repositories import (
 )
 from product_backend.ports.source_systems import CmdbPort, MonitoringPort
 
+from .lifecycle import append_uow_event
 from .results import (
     ApprovalDecisionResult,
     ApprovalProcessed,
@@ -214,13 +217,50 @@ class FieldVisitProposalService:
                 updated_at=now,
             )
 
+            updated_run = replace(
+                run,
+                status=RunStatus.WAITING_APPROVAL,
+                updated_at=now,
+            )
             await uow.proposals.add(proposal)
-            await uow.runs.save(
-                replace(
-                    run,
-                    status=RunStatus.WAITING_APPROVAL,
-                    updated_at=now,
-                )
+            await uow.runs.save(updated_run)
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.PROPOSAL_CREATED,
+                payload={
+                    "proposal_id": proposal.proposal_id,
+                    "incident_id": proposal.incident_id,
+                    "device_id": proposal.device_id,
+                    "diagnosis": proposal.diagnosis.value,
+                    "action_type": proposal.action_type.value,
+                    "evidence_ids": list(proposal.evidence_ids),
+                    "rationale": proposal.rationale,
+                    "status": proposal.status.value,
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                payload={
+                    "previous_status": run.status.value,
+                    "status": updated_run.status.value,
+                    "cause": "proposal_created",
+                    "proposal_id": proposal.proposal_id,
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.TOOL_FINISHED,
+                payload={
+                    "tool_name": "propose_field_visit",
+                    "result": {
+                        "ok": True,
+                        "proposal": to_tool_payload(proposal),
+                    },
+                },
             )
             await uow.commit()
             return ProposalCreated(ok=True, proposal=proposal)
@@ -388,14 +428,36 @@ class FieldVisitApprovalService:
                     status=ProposalStatus.REJECTED,
                     updated_at=now,
                 )
+                updated_run = replace(
+                    run,
+                    status=RunStatus.ACTIVE,
+                    updated_at=now,
+                )
                 await uow.approvals.add(approval)
                 await uow.proposals.save(updated_proposal)
-                await uow.runs.save(
-                    replace(
-                        run,
-                        status=RunStatus.ACTIVE,
-                        updated_at=now,
-                    )
+                await uow.runs.save(updated_run)
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.APPROVAL_DECIDED,
+                    payload={
+                        "approval_id": approval.approval_id,
+                        "proposal_id": proposal.proposal_id,
+                        "decision": approval.decision.value,
+                        "decided_by": approval.decided_by,
+                        "proposal_status": updated_proposal.status.value,
+                    },
+                )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                    payload={
+                        "previous_status": run.status.value,
+                        "status": updated_run.status.value,
+                        "cause": "approval_rejected",
+                        "proposal_id": proposal.proposal_id,
+                    },
                 )
                 await uow.commit()
                 return ApprovalProcessed(
@@ -500,14 +562,37 @@ class FieldVisitApprovalService:
                     status=ProposalStatus.STALE,
                     updated_at=now,
                 )
+                updated_run = replace(
+                    run,
+                    status=RunStatus.ACTIVE,
+                    updated_at=now,
+                )
                 await uow.approvals.add(approval)
                 await uow.proposals.save(updated_proposal)
-                await uow.runs.save(
-                    replace(
-                        run,
-                        status=RunStatus.ACTIVE,
-                        updated_at=now,
-                    )
+                await uow.runs.save(updated_run)
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.APPROVAL_DECIDED,
+                    payload={
+                        "approval_id": approval.approval_id,
+                        "proposal_id": proposal.proposal_id,
+                        "decision": approval.decision.value,
+                        "decided_by": approval.decided_by,
+                        "proposal_status": updated_proposal.status.value,
+                        "execution": "skipped_stale",
+                    },
+                )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                    payload={
+                        "previous_status": run.status.value,
+                        "status": updated_run.status.value,
+                        "cause": "approval_stale",
+                        "proposal_id": proposal.proposal_id,
+                    },
                 )
                 await uow.commit()
                 return ApprovalProcessed(
@@ -574,17 +659,53 @@ class FieldVisitApprovalService:
                 updated_at=now,
             )
 
+            updated_run = replace(
+                run,
+                status=RunStatus.ACTIVE,
+                updated_at=now,
+            )
             await uow.approvals.add(approval)
             await uow.executed_actions.add(action)
             await uow.work_orders.add(work_order)
             await uow.proposals.save(updated_proposal)
             await uow.incidents.save(updated_incident)
-            await uow.runs.save(
-                replace(
-                    run,
-                    status=RunStatus.ACTIVE,
-                    updated_at=now,
-                )
+            await uow.runs.save(updated_run)
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.APPROVAL_DECIDED,
+                payload={
+                    "approval_id": approval.approval_id,
+                    "proposal_id": proposal.proposal_id,
+                    "decision": approval.decision.value,
+                    "decided_by": approval.decided_by,
+                    "proposal_status": updated_proposal.status.value,
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.ACTION_EXECUTED,
+                payload={
+                    "action_id": action.action_id,
+                    "proposal_id": action.proposal_id,
+                    "incident_id": action.incident_id,
+                    "device_id": action.device_id,
+                    "action_type": action.action_type.value,
+                    "work_order_id": work_order.work_order_id,
+                    "incident_status": updated_incident.status.value,
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                payload={
+                    "previous_status": run.status.value,
+                    "status": updated_run.status.value,
+                    "cause": "approval_executed",
+                    "proposal_id": proposal.proposal_id,
+                },
             )
             await uow.commit()
 
