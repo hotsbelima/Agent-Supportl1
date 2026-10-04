@@ -69,6 +69,7 @@ class ProposalRepository(Protocol):
 
 
 class ApprovalRepository(Protocol):
+    # Persistent implementations must enforce at most one approval per proposal.
     async def add(self, approval: Approval) -> None: ...
     async def get_for_proposal(
         self,
@@ -80,6 +81,7 @@ class ApprovalRepository(Protocol):
 
 
 class ExecutedActionRepository(Protocol):
+    # Persistent implementations must enforce proposal/equivalent-action uniqueness.
     async def add(self, action: ExecutedAction) -> None: ...
     async def get_for_proposal(
         self,
@@ -100,6 +102,7 @@ class ExecutedActionRepository(Protocol):
 
 
 class WorkOrderRepository(Protocol):
+    # Persistent implementations must enforce one equivalent Scenario 1 work order.
     async def add(self, work_order: FieldServiceWorkOrder) -> None: ...
     async def get_for_proposal(
         self,
