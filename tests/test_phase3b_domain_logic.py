@@ -994,3 +994,16 @@ def test_approve_when_current_cmdb_relationship_changed_marks_stale():
     assert result.proposal.status is ProposalStatus.STALE
     assert not store.actions
     assert not store.workorders
+
+
+def test_evidence_entity_ids_must_match_typed_payload_relationships():
+    store = make_store()
+    store.evidence["E-CMDB"] = replace(
+        store.evidence["E-CMDB"],
+        entity_ids=(DEVICE, SITE),
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
