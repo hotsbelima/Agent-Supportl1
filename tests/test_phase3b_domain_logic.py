@@ -1187,3 +1187,108 @@ def test_diagnostic_exception_is_normalized_and_keeps_proposal_pending():
     assert "secret" not in result.error.message.lower()
     assert store.proposals[proposal_id].status is ProposalStatus.PENDING_APPROVAL
     assert not store.approvals
+
+
+def test_cross_tenant_evidence_is_rejected():
+    store = make_store()
+    store.evidence["E-KB"] = replace(
+        store.evidence["E-KB"],
+        tenant_id="TENANT-OTHER",
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_dynamic_evidence_without_ttl_is_rejected():
+    store = make_store()
+    store.evidence["E-SITE"] = replace(
+        store.evidence["E-SITE"],
+        expires_at=None,
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_unapproved_kb_cannot_authorize_field_visit():
+    store = make_store()
+    kb = store.evidence["E-KB"]
+    store.evidence["E-KB"] = replace(
+        kb,
+        payload=replace(kb.payload, approved=False),
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_source_type_payload_mismatch_is_rejected():
+    store = make_store()
+    store.evidence["E-KB"] = replace(
+        store.evidence["E-KB"],
+        payload=store.evidence["E-CMDB"].payload,
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_free_text_facts_cannot_override_invalid_typed_payload():
+    store = make_store()
+    diagnostic = store.evidence["E-DIAG"]
+    store.evidence["E-DIAG"] = replace(
+        diagnostic,
+        payload=replace(
+            diagnostic.payload,
+            operational_state=OperationalState.UP,
+        ),
+        facts=(
+            "Switch reachable; admin UP; operational DOWN; onsite inspection required.",
+        ),
+    )
+
+    result = create_proposal(store)
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE
+
+
+def test_device_ownership_change_before_approve_marks_proposal_stale():
+    store = make_store()
+    ids = Ids()
+    created = create_proposal(store, ids=ids)
+    proposal_id = created.proposal.proposal_id
+    incident = store.incidents[(TENANT, RUN_ID, INCIDENT_ID)]
+    store.incidents[(TENANT, RUN_ID, INCIDENT_ID)] = replace(
+        incident,
+        reported_device_id="POS-KZN17-99",
+    )
+    service = approval_service(
+        store,
+        clock=Clock(T0 + timedelta(minutes=2)),
+        ids=ids,
+    )
+
+    result = asyncio.run(
+        service.decide(
+            ToolCallContext(TENANT, RUN_ID),
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="human-1",
+        )
+    )
+
+    assert result.ok
+    assert result.approval.decision is ApprovalDecision.APPROVED
+    assert result.proposal.status is ProposalStatus.STALE
+    assert not store.actions
+    assert not store.workorders
