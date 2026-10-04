@@ -348,4 +348,9 @@ class ApplicationOutboxRow(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    attempt_count: Mapped[int] = mapped_column(\n        Integer,\n        nullable=False,\n        default=0,\n        server_default=text("0"),\n    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
