@@ -243,6 +243,12 @@ class FieldVisitApprovalService:
     ) -> ApprovalDecisionResult:
         now = self._clock()
 
+        if not isinstance(decision, ApprovalDecision):
+            return _failure(
+                ErrorCode.INVALID_ARGUMENT,
+                "Approval decision is invalid.",
+                "invalid_decision",
+            )
         if not decided_by.strip():
             return _failure(
                 ErrorCode.INVALID_ARGUMENT,
@@ -503,6 +509,10 @@ class FieldVisitApprovalService:
                 proposal_id=proposal_id,
                 incident_id=proposal.incident_id,
                 device_id=proposal.device_id,
+                site_id=current_topology.site_id,
+                attachment_id=current_topology.attachment_id,
+                switch_id=current_topology.expected_switch_id,
+                port_id=current_topology.expected_port_id,
                 created_at=now,
             )
             updated_proposal = replace(
