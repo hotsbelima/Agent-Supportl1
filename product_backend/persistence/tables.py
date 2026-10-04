@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
     Index,
@@ -303,6 +304,7 @@ class ApplicationEventRow(Base):
             "event_id",
             name="uq_application_events_event_id",
         ),
+        CheckConstraint("seq > 0", name="ck_application_events_seq_positive"),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -325,6 +327,21 @@ class ApplicationOutboxRow(Base):
             ["tenant_id", "run_id"],
             ["runs.tenant_id", "runs.run_id"],
             name="fk_application_outbox_run",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "event_seq"],
+            [
+                "application_events.tenant_id",
+                "application_events.run_id",
+                "application_events.seq",
+            ],
+            name="fk_application_outbox_event",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "event_seq",
+            name="uq_application_outbox_event",
         ),
         Index(
             "ix_application_outbox_pending",
