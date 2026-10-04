@@ -413,6 +413,37 @@ def test_safe_event_payload_rejects_hidden_reasoning_and_secrets():
         )
 
 
+def test_database_constraint_accepts_every_declared_event_type():
+    async def scenario() -> None:
+        ids = _ids()
+        engine, factory = _new_db()
+        try:
+            await _seed(factory, ids)
+            async with SqlAlchemyLifecycleUnitOfWork(factory) as uow:
+                for event_type in ApplicationEventType:
+                    await uow.events.append(
+                        tenant_id=ids["tenant"],
+                        run_id=ids["run"],
+                        event_type=event_type,
+                        payload={"contract_test": event_type.value},
+                    )
+                await uow.commit()
+
+            lifecycle = ApplicationLifecycleService(
+                lambda: SqlAlchemyLifecycleUnitOfWork(factory)
+            )
+            timeline = await lifecycle.timeline(
+                ToolCallContext(ids["tenant"], ids["run"])
+            )
+            assert tuple(item.event_type for item in timeline) == tuple(
+                ApplicationEventType
+            )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_concurrent_event_writers_allocate_contiguous_per_run_sequence_and_outbox():
     async def scenario() -> None:
         ids = _ids()
