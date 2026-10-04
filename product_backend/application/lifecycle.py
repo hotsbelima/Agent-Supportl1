@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from product_backend.contracts.events import ApplicationEvent, ApplicationEventType
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.ports.events import ApplicationEventRepository
+from product_backend.domain.models import Run
 from product_backend.ports.repositories import EvidenceRepository, RunRepository
 
 
@@ -56,7 +57,7 @@ class ApplicationLifecycleService:
         self,
         uow: LifecycleUnitOfWork,
         context: ToolCallContext,
-    ):
+    ) -> Run:
         run = await uow.runs.get(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
@@ -81,7 +82,10 @@ class ApplicationLifecycleService:
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,
                 event_type=ApplicationEventType.SIMULATION_STARTED,
-                payload={"scenario_id": scenario_id},
+                payload={
+                    "scenario_id": scenario_id,
+                    "status": run.status.value,
+                },
             )
             await uow.commit()
             return event
@@ -95,6 +99,8 @@ class ApplicationLifecycleService:
     ) -> ApplicationEvent:
         if not signal_type.strip():
             raise ValueError("signal_type is required")
+        if not isinstance(details, dict):
+            raise ValueError("external signal details must be an object")
         async with self._uow_factory() as uow:
             await self._require_run(uow, context)
             event = await uow.events.append(
@@ -118,6 +124,8 @@ class ApplicationLifecycleService:
     ) -> ApplicationEvent:
         if not tool_name.strip():
             raise ValueError("tool_name is required")
+        if not isinstance(arguments, dict):
+            raise ValueError("tool arguments must be an object")
         async with self._uow_factory() as uow:
             await self._require_run(uow, context)
             event = await uow.events.append(
@@ -141,6 +149,8 @@ class ApplicationLifecycleService:
     ) -> ApplicationEvent:
         if not tool_name.strip():
             raise ValueError("tool_name is required")
+        if not isinstance(result, dict):
+            raise ValueError("tool result must be an object")
         async with self._uow_factory() as uow:
             await self._require_run(uow, context)
             event = await uow.events.append(
@@ -169,6 +179,8 @@ class ApplicationLifecycleService:
             raise ValueError("finding summary is required")
         if not evidence_ids:
             raise ValueError("finding must reference evidence")
+        if len(set(evidence_ids)) != len(evidence_ids):
+            raise ValueError("finding evidence IDs must be unique")
         async with self._uow_factory() as uow:
             await self._require_run(uow, context)
             evidence = await uow.evidence.get_many(
