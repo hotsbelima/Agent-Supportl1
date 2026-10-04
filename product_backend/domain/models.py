@@ -12,9 +12,9 @@ from typing import TypeAlias
 from .enums import (
     ActionType,
     AdminState,
+    ApprovalApplicationResult,
     ApprovalDecision,
     ConfigurationState,
-    DeviceResolutionState,
     DiagnosisCode,
     EvidenceSourceType,
     HealthState,
@@ -149,8 +149,10 @@ class Approval:
     run_id: str
     proposal_id: str
     decision: ApprovalDecision
+    application_result: ApprovalApplicationResult
     decided_at: datetime
     decided_by: str
+    reason_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,12 +177,3 @@ class FieldServiceWorkOrder:
     device_id: str
     status: WorkOrderStatus
     created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class DeviceResolution:
-    tenant_id: str
-    run_id: str
-    device_id: str
-    state: DeviceResolutionState
-    updated_at: datetime
