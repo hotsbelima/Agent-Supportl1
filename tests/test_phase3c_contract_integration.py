@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
@@ -11,6 +12,7 @@ from product_backend.application.read_tools import (
     EvidenceTtlPolicy,
     Scenario1ReadToolService,
 )
+from product_backend.contracts.serialization import to_tool_payload
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetSiteHealthRequest,
@@ -828,3 +830,171 @@ def test_ttl_policy_rejects_non_positive_values():
         pass
     else:
         raise AssertionError("negative diagnostic TTL must be rejected")
+
+
+def test_read_tools_do_not_require_one_global_hardcoded_order():
+    adapter, store, _, _, _, _ = make_adapter()
+    context = ToolCallContext(TENANT, RUN_ID)
+
+    incidents = asyncio.run(
+        adapter.search_incidents(
+            context,
+            SearchIncidentsRequest(IncidentSearchScope.DEVICE, DEVICE),
+        )
+    )
+    kb = asyncio.run(adapter.search_kb(context, SearchKbRequest("local link failure")))
+    site = asyncio.run(adapter.get_site_health(context, GetSiteHealthRequest(SITE)))
+    device = asyncio.run(adapter.get_device(context, GetDeviceRequest(DEVICE)))
+    diagnostic = asyncio.run(
+        adapter.run_diagnostic(
+            context,
+            RunDiagnosticRequest(DiagnosticType.ACCESS_LINK, device.attachment_id),
+        )
+    )
+
+    assert incidents.ok and kb.ok and site.ok and device.ok and diagnostic.ok
+
+    proposal = asyncio.run(
+        adapter.propose_field_visit(
+            context,
+            ProposeFieldVisitRequest(
+                INCIDENT_ID,
+                DEVICE,
+                DiagnosisCode.LOCAL_ACCESS_LINK_FAILURE,
+                (
+                    device.evidence.evidence_id,
+                    site.evidence.evidence_id,
+                    diagnostic.evidence.evidence_id,
+                    kb.evidence[0].evidence_id,
+                ),
+                "Evidence supports local access-link failure.",
+            ),
+        )
+    )
+
+    assert proposal.ok
+    assert proposal.proposal.status is ProposalStatus.PENDING_APPROVAL
+    assert store.runs[(TENANT, RUN_ID)].status is RunStatus.WAITING_APPROVAL
+
+
+def test_entity_ids_from_other_evidence_types_do_not_become_devices():
+    adapter, store, cmdb, _, _, _ = make_adapter()
+    context = ToolCallContext(TENANT, RUN_ID)
+    kb = asyncio.run(adapter.search_kb(context, SearchKbRequest("local link")))
+    assert kb.ok
+    calls_before = cmdb.calls
+
+    result = asyncio.run(
+        adapter.get_device(
+            context,
+            GetDeviceRequest(kb.articles[0].article_id),
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.CONTEXT_MISMATCH
+    assert cmdb.calls == calls_before
+    assert len(store.evidence) == 1
+
+
+def test_open_incident_id_does_not_become_a_site_identifier():
+    adapter, store, _, monitoring, _, _ = make_adapter()
+    context = ToolCallContext(TENANT, RUN_ID)
+    incidents = asyncio.run(
+        adapter.search_incidents(
+            context,
+            SearchIncidentsRequest(IncidentSearchScope.DEVICE, DEVICE),
+        )
+    )
+    assert incidents.ok
+    calls_before = monitoring.health_calls
+
+    result = asyncio.run(
+        adapter.get_site_health(
+            context,
+            GetSiteHealthRequest(INCIDENT_ID),
+        )
+    )
+
+    assert result.ok is False
+    assert result.error.code is ErrorCode.CONTEXT_MISMATCH
+    assert monitoring.health_calls == calls_before
+    assert len(store.evidence) == 1
+
+
+def test_diagnostic_uses_latest_known_cmdb_snapshot_for_attachment():
+    adapter, store, _, monitoring, _, _ = make_adapter()
+    context = ToolCallContext(TENANT, RUN_ID)
+    first = asyncio.run(adapter.get_device(context, GetDeviceRequest(DEVICE)))
+    assert first.ok
+
+    newer_topology = replace(canonical_topology(), expected_port_id="Gi1/0/19")
+    store.evidence["E-NEWER-CMDB"] = Evidence(
+        "E-NEWER-CMDB",
+        TENANT,
+        RUN_ID,
+        EvidenceSourceType.CMDB_SNAPSHOT,
+        T0 + timedelta(seconds=1),
+        (DEVICE, SITE, ATTACHMENT, SWITCH, "Gi1/0/19"),
+        newer_topology,
+    )
+    monitoring.diagnostic = replace(
+        canonical_diagnostic(),
+        port_id="Gi1/0/19",
+    )
+
+    result = asyncio.run(
+        adapter.run_diagnostic(
+            context,
+            RunDiagnosticRequest(DiagnosticType.ACCESS_LINK, ATTACHMENT),
+        )
+    )
+
+    assert result.ok
+    assert result.snapshot.port_id == "Gi1/0/19"
+
+
+def test_tool_results_have_explicit_json_safe_serialization():
+    adapter, _, _, _, _, _ = make_adapter()
+    context = ToolCallContext(TENANT, RUN_ID)
+
+    device = asyncio.run(adapter.get_device(context, GetDeviceRequest(DEVICE)))
+    site = asyncio.run(adapter.get_site_health(context, GetSiteHealthRequest(SITE)))
+    diagnostic = asyncio.run(
+        adapter.run_diagnostic(
+            context,
+            RunDiagnosticRequest(DiagnosticType.ACCESS_LINK, ATTACHMENT),
+        )
+    )
+    incidents = asyncio.run(
+        adapter.search_incidents(
+            context,
+            SearchIncidentsRequest(IncidentSearchScope.DEVICE, DEVICE),
+        )
+    )
+    kb = asyncio.run(adapter.search_kb(context, SearchKbRequest("local link")))
+
+    for result in (device, site, diagnostic, incidents, kb):
+        payload = to_tool_payload(result)
+        encoded = json.dumps(payload)
+        assert isinstance(encoded, str)
+        assert payload["ok"] is True
+
+    assert to_tool_payload(diagnostic)["attachment_id"] == ATTACHMENT
+
+
+def test_tool_failure_is_json_safe_without_raw_exception_text():
+    adapter, _, _, _, _, _ = make_adapter(cmdb_raises=True)
+    result = asyncio.run(
+        adapter.get_device(
+            ToolCallContext(TENANT, RUN_ID),
+            GetDeviceRequest(DEVICE),
+        )
+    )
+
+    payload = to_tool_payload(result)
+    encoded = json.dumps(payload)
+
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ErrorCode.UPSTREAM_UNAVAILABLE.value
+    assert "secret" not in encoded.lower()
