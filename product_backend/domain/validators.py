@@ -237,20 +237,32 @@ def validate_field_visit_evidence(
     return None
 
 
-def validate_approval_currentness(
+def validate_approval_incident_currentness(
     *,
     proposal: ActionProposal,
     incident: Incident,
-    current_topology: DeviceTopology | None,
-    current_diagnostic: AccessLinkDiagnosticSnapshot | None,
 ) -> DomainError | None:
-    """Revalidate the conditions required at human Approve using fresh backend reads."""
     if incident.tenant_id != proposal.tenant_id or incident.run_id != proposal.run_id:
         return _invalid_evidence("incident_context_mismatch")
     if incident.status is not IncidentStatus.OPEN:
         return _invalid_evidence("incident_not_open")
     if incident.reported_device_id != proposal.device_id:
         return _invalid_evidence("device_no_longer_belongs_to_incident")
+    return None
+
+
+def validate_approval_topology_currentness(
+    *,
+    proposal: ActionProposal,
+    incident: Incident,
+    current_topology: DeviceTopology | None,
+) -> DomainError | None:
+    incident_error = validate_approval_incident_currentness(
+        proposal=proposal,
+        incident=incident,
+    )
+    if incident_error:
+        return incident_error
     if current_topology is None:
         return _invalid_evidence("current_cmdb_topology_unavailable")
     if (
@@ -261,6 +273,26 @@ def validate_approval_currentness(
         or not current_topology.expected_port_id
     ):
         return _invalid_evidence("current_cmdb_relationship_changed")
+    return None
+
+
+def validate_approval_currentness(
+    *,
+    proposal: ActionProposal,
+    incident: Incident,
+    current_topology: DeviceTopology | None,
+    current_diagnostic: AccessLinkDiagnosticSnapshot | None,
+) -> DomainError | None:
+    """Revalidate the conditions required at human Approve using fresh backend reads."""
+    topology_error = validate_approval_topology_currentness(
+        proposal=proposal,
+        incident=incident,
+        current_topology=current_topology,
+    )
+    if topology_error:
+        return topology_error
+    assert current_topology is not None
+
     if current_diagnostic is None:
         return _invalid_evidence("current_access_link_diagnostic_unavailable")
     if not (
