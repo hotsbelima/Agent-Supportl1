@@ -11,6 +11,7 @@ from typing import Any
 
 
 AGENT_DISPATCH_TOPIC = "agent.dispatch.operational-event"
+SCENARIO2_AGENT_DISPATCH_TOPIC = "agent.dispatch.scenario2-operational-signal"
 
 
 class ApplicationEventType(StrEnum):
@@ -155,6 +156,7 @@ def validate_safe_event_payload(payload: dict[str, Any]) -> None:
 
 __all__ = [
     "AGENT_DISPATCH_TOPIC",
+    "SCENARIO2_AGENT_DISPATCH_TOPIC",
     "ApplicationEvent",
     "ApplicationEventType",
     "ApplicationOutboxRecord",
