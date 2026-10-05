@@ -808,8 +808,8 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                No proposal exists. This is expected before the live Phase 6
-                agent creates an evidence-backed proposal.
+                No proposal exists yet. The event-driven agent will create one
+                only after sufficient persisted evidence is collected.
               </EmptyPanel>
             )}
           </article>
