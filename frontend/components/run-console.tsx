@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -150,14 +150,11 @@ export function RunConsole({ runId }: { runId: string }) {
   const incident = state?.incidents[0] ?? null;
   const lastSeq = events.at(-1)?.seq ?? 0;
 
-  const latestProposal = useMemo<ProposalView | null>(() => {
-    if (!state?.proposals.length) return null;
-    return (
-      [...state.proposals]
+  const latestProposal: ProposalView | null = state?.proposals.length
+    ? [...state.proposals]
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
-    );
-  }, [state?.proposals]);
+    : null;
 
   async function handleDecision(
     proposal: ProposalView,
