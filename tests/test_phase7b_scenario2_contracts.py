@@ -739,7 +739,6 @@ class _ProposalRepo:
         self,
         *,
         tenant_id: str,
-        run_id: str,
         service_key: str,
         correlation_key: str,
         dependency_id: str,
@@ -749,7 +748,6 @@ class _ProposalRepo:
                 item
                 for item in self.store.proposals.values()
                 if item.tenant_id == tenant_id
-                and item.run_id == run_id
                 and item.service_key == service_key
                 and item.correlation_key == correlation_key
                 and item.dependency_id == dependency_id
