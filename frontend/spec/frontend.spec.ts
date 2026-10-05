@@ -4,6 +4,7 @@ import {
   connectionTone,
   eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
+  observationState,
   proposalTone,
   STALE_PROPOSAL_NOTE,
 } from "../lib/presentation";
@@ -13,7 +14,7 @@ import {
   createSseParser,
   type SseFrame,
 } from "../lib/sse";
-import type { ApplicationEventView } from "../lib/types";
+import type { ApplicationEventView, EvidenceView } from "../lib/types";
 
 function event(
   eventType: string,
@@ -47,6 +48,35 @@ describe("operational presentation", () => {
   it("refreshes authoritative state when a Product observation arrives", () => {
     expect(isStateRefreshEvent(event("observation.recorded"))).toBe(true);
     expect(isStateRefreshEvent(event("external.signal"))).toBe(false);
+  });
+
+  it("shows safe observation state when the typed evidence has one", () => {
+    const base: EvidenceView = {
+      evidence_id: "E-1",
+      tenant_id: "TENANT-8OCT",
+      run_id: "RUN-1",
+      source_type: "ACCESS_LINK_DIAGNOSTIC",
+      captured_at: "2026-10-05T00:00:00Z",
+      entity_ids: ["ATT-1"],
+      payload: { operational_state: "DOWN" },
+      facts: [],
+      expires_at: null,
+    };
+    expect(observationState(base)).toBe("DOWN");
+    expect(
+      observationState({
+        ...base,
+        source_type: "KB_ARTICLE",
+        payload: { approved: true },
+      }),
+    ).toBe("APPROVED");
+    expect(
+      observationState({
+        ...base,
+        source_type: "CMDB_SNAPSHOT",
+        payload: { site_id: "SITE-1" },
+      }),
+    ).toBeNull();
   });
 
   it("keeps important states visually distinct", () => {
