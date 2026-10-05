@@ -8,6 +8,9 @@ import type {
 export const FIELD_SERVICE_OUTCOME_NOTE =
   "Onsite field-service work order registered. This is not proof of repair.";
 
+export const STALE_PROPOSAL_NOTE =
+  "Approval was recorded, but fresh authoritative conditions no longer allowed execution. No field-service action was created.";
+
 function stringValue(
   payload: Record<string, JsonValue>,
   key: string,
