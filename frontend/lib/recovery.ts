@@ -361,7 +361,8 @@ export function decisionRecoveryStatus(
   }
 
   if (proposal.status === "REJECTED") {
-    return approvals.length === 1 &&
+    return state.run.status === "ACTIVE" &&
+      approvals.length === 1 &&
       approvals[0]?.decision === "REJECTED" &&
       actions.length === 0 &&
       workOrders.length === 0
@@ -370,7 +371,8 @@ export function decisionRecoveryStatus(
   }
 
   if (proposal.status === "STALE") {
-    return approvals.length === 1 &&
+    return state.run.status === "ACTIVE" &&
+      approvals.length === 1 &&
       approvals[0]?.decision === "APPROVED" &&
       actions.length === 0 &&
       workOrders.length === 0
@@ -385,7 +387,8 @@ export function decisionRecoveryStatus(
     const action = actions[0];
     const workOrder = workOrders[0];
 
-    return approvals.length === 1 &&
+    return state.run.status === "ACTIVE" &&
+      approvals.length === 1 &&
       approvals[0]?.decision === "APPROVED" &&
       actions.length === 1 &&
       workOrders.length === 1 &&
