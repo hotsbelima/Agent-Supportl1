@@ -45,7 +45,8 @@ class _HumanDecisionCorrelation:
     session_id: str
     invocation_id: str
     function_call_id: str
-    resolved: bool
+    response_delivered: bool
+    completed: bool
 
 
 def _safe_event_text(event: object) -> str | None:
@@ -81,30 +82,22 @@ def _latest_final_answer(
 
 
 def _find_human_decision_correlation(
-    events: list[object],
+    events: list[Any],
     *,
     session_id: str,
     proposal_id: str,
 ) -> _HumanDecisionCorrelation | None:
     """Resolve Product proposal -> native ADK invocation/function-call link.
 
-    The correlation is already durable in the persistent ADK Session Event
-    stream: await_human_decision carries proposal_id as its argument while the
-    event carries invocation_id and the native function-call id. A later
-    user-authored FunctionResponse with that same id proves resume delivery.
+    Correlation lives in the persistent native ADK Session Event stream:
+    proposal_id is an argument of await_human_decision, while invocation_id and
+    function-call id are framework-owned event metadata. A matching user
+    FunctionResponse proves decision delivery. Completion is separate: a
+    provider failure may happen after the FunctionResponse was persisted.
     """
-    resolved_ids: set[str] = set()
-    candidates: list[_HumanDecisionCorrelation] = []
+    candidates: list[tuple[int, _HumanDecisionCorrelation]] = []
 
-    for event in events:
-        for response in event.get_function_responses():
-            if (
-                getattr(event, "author", None) == "user"
-                and response.name == WAIT_FOR_HUMAN_DECISION_TOOL
-                and response.id
-            ):
-                resolved_ids.add(response.id)
-
+    for index, event in enumerate(events):
         for call in event.get_function_calls():
             if (
                 call.name != WAIT_FOR_HUMAN_DECISION_TOOL
@@ -116,25 +109,65 @@ def _find_human_decision_correlation(
             if args.get("proposal_id") != proposal_id:
                 continue
             candidates.append(
-                _HumanDecisionCorrelation(
-                    proposal_id=proposal_id,
-                    session_id=session_id,
-                    invocation_id=event.invocation_id,
-                    function_call_id=call.id,
-                    resolved=False,
+                (
+                    index,
+                    _HumanDecisionCorrelation(
+                        proposal_id=proposal_id,
+                        session_id=session_id,
+                        invocation_id=event.invocation_id,
+                        function_call_id=call.id,
+                        response_delivered=False,
+                        completed=False,
+                    ),
                 )
             )
 
     if not candidates:
         return None
 
-    latest = candidates[-1]
+    _, latest = candidates[-1]
+    response_index: int | None = None
+    for index, event in enumerate(events):
+        if getattr(event, "invocation_id", None) != latest.invocation_id:
+            continue
+        if getattr(event, "author", None) != "user":
+            continue
+        if any(
+            response.name == WAIT_FOR_HUMAN_DECISION_TOOL
+            and response.id == latest.function_call_id
+            for response in event.get_function_responses()
+        ):
+            response_index = index
+
+    if response_index is None:
+        return latest
+
+    completed = False
+    for event in events[response_index + 1 :]:
+        if getattr(event, "invocation_id", None) != latest.invocation_id:
+            continue
+        if getattr(event, "author", None) == "user":
+            continue
+        actions = getattr(event, "actions", None)
+        if actions is not None and getattr(actions, "end_of_agent", False):
+            completed = True
+            break
+        if (
+            not event.get_function_calls()
+            and not event.get_function_responses()
+            and not set(event.long_running_tool_ids or [])
+            and _safe_event_text(event)
+        ):
+            completed = True
+            break
+
     return _HumanDecisionCorrelation(
         proposal_id=latest.proposal_id,
         session_id=latest.session_id,
         invocation_id=latest.invocation_id,
         function_call_id=latest.function_call_id,
-        resolved=latest.function_call_id in resolved_ids,
+        response_delivered=True,
+        completed=completed,
     )
 
 
@@ -300,7 +333,7 @@ class Scenario1AgentRuntime:
                 "Persisted ADK human-decision correlation was not found."
             )
 
-        if correlation.resolved:
+        if correlation.completed:
             return AgentResumeResult(
                 invocation_id=correlation.invocation_id,
                 function_call_id=correlation.function_call_id,
@@ -311,18 +344,26 @@ class Scenario1AgentRuntime:
                 already_resumed=True,
             )
 
-        resume_message = types.Content(
-            role="user",
-            parts=[
-                types.Part(
-                    function_response=types.FunctionResponse(
-                        id=correlation.function_call_id,
-                        name=WAIT_FOR_HUMAN_DECISION_TOOL,
-                        response=decision_payload,
+        resume_message: types.Content | None
+        if correlation.response_delivered:
+            # The business result was already injected into the durable ADK
+            # event history, but the invocation did not complete (for example,
+            # provider quota failed after session append). Native resumability
+            # continues from persisted history without injecting it twice.
+            resume_message = None
+        else:
+            resume_message = types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=correlation.function_call_id,
+                            name=WAIT_FOR_HUMAN_DECISION_TOOL,
+                            response=decision_payload,
+                        )
                     )
-                )
-            ],
-        )
+                ],
+            )
 
         final_answer: str | None = None
         async for event in self._runner.run_async(
