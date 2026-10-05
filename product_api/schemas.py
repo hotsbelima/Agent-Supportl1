@@ -190,14 +190,6 @@ class OperationalSignalView(BaseModel):
     incident_id: str | None = None
 
 
-class Scenario2FixtureStateView(BaseModel):
-    tenant_id: str
-    run_id: str
-    dependency_status: str
-    matching_major_incident_id: str | None
-    updated_at: datetime
-
-
 class Scenario2IngestionStateResponse(BaseModel):
     run: RunView
     service_incidents: list[ServiceIncidentView]
