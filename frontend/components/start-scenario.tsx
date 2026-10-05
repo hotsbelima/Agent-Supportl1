@@ -18,18 +18,18 @@ type Readiness =
 
 export function StartScenario() {
   const router = useRouter();
-  const [readiness, setReadiness] = useState<Readiness>({
-    kind: "checking",
-    message: "Checking product API…",
+  const [readiness, setReadiness] = useState<Readiness>(() => {
+    const issue = configurationIssue();
+    return issue
+      ? { kind: "unavailable", message: issue }
+      : { kind: "checking", message: "Checking product API…" };
   });
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    const issue = configurationIssue();
-    if (issue) {
-      setReadiness({ kind: "unavailable", message: issue });
+    if (configurationIssue()) {
       return () => controller.abort();
     }
 
