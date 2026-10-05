@@ -169,6 +169,7 @@ export function RunConsole({ runId }: { runId: string }) {
           publishState(bootstrapped.state);
           publishTimeline(bootstrapped.timeline);
           failureCount = 0;
+          setConnection("Reconnecting");
           setPageError(null);
           setLoading(false);
           break;
@@ -230,6 +231,7 @@ export function RunConsole({ runId }: { runId: string }) {
             );
             publishState(recovered.state);
             publishTimeline(merged);
+            setConnection("Reconnecting");
           }
 
           const cursor = cursorByRunRef.current.get(runId) ?? 0;
