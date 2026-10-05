@@ -145,6 +145,15 @@ class TimelineResponse(BaseModel):
     next_cursor: int
 
 
+class AgentInvocationResponse(BaseModel):
+    run_id: str
+    session_id: str
+    invocation_id: str | None
+    model: str
+    run_status: str
+    final_answer: str | None
+
+
 class ApprovalDecisionResponse(BaseModel):
     approval: ApprovalView
     proposal: ProposalView
@@ -237,6 +246,7 @@ def error_response(error: DomainError) -> ApiErrorResponse:
 
 
 __all__ = [
+    "AgentInvocationResponse",
     "ApiErrorResponse",
     "ApprovalDecisionResponse",
     "HumanDecisionRequest",
