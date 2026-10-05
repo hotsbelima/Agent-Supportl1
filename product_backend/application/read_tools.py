@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from product_backend.application.lifecycle import append_uow_event
+from product_backend.contracts.events import ApplicationEventType
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetDeviceResult,
@@ -106,6 +108,30 @@ def _failure(
 def _diagnostic_code(state: OperationalState) -> str:
     """Backward-compatible compact observation code for the tool result."""
     return f"LINK_{state.value}"
+
+
+async def _record_observation(
+    uow: object,
+    *,
+    context: ToolCallContext,
+    evidence: Evidence,
+) -> None:
+    await append_uow_event(
+        uow,
+        context=context,
+        event_type=ApplicationEventType.OBSERVATION_RECORDED,
+        payload={
+            "evidence_id": evidence.evidence_id,
+            "source_type": evidence.source_type.value,
+            "captured_at": evidence.captured_at.isoformat(),
+            "entity_ids": list(evidence.entity_ids),
+            "expires_at": (
+                evidence.expires_at.isoformat()
+                if evidence.expires_at is not None
+                else None
+            ),
+        },
+    )
 
 
 class Scenario1ReadToolService:
@@ -273,6 +299,11 @@ class Scenario1ReadToolService:
                     payload=topology,
                 )
                 await uow.evidence.add(evidence)
+                await _record_observation(
+                    uow,
+                    context=context,
+                    evidence=evidence,
+                )
                 result = GetDeviceSuccess(
                     ok=True,
                     device_id=topology.device_id,
@@ -358,6 +389,11 @@ class Scenario1ReadToolService:
                     expires_at=now + self._ttl.site_health,
                 )
                 await uow.evidence.add(evidence)
+                await _record_observation(
+                    uow,
+                    context=context,
+                    evidence=evidence,
+                )
                 result = GetSiteHealthSuccess(
                     ok=True,
                     site_id=snapshot.site_id,
@@ -448,6 +484,11 @@ class Scenario1ReadToolService:
                     expires_at=now + self._ttl.access_link_diagnostic,
                 )
                 await uow.evidence.add(evidence)
+                await _record_observation(
+                    uow,
+                    context=context,
+                    evidence=evidence,
+                )
                 result = RunDiagnosticSuccess(
                     ok=True,
                     diagnostic_type=request.diagnostic_type,
@@ -533,6 +574,11 @@ class Scenario1ReadToolService:
                     payload=snapshot,
                 )
                 await uow.evidence.add(evidence)
+                await _record_observation(
+                    uow,
+                    context=context,
+                    evidence=evidence,
+                )
                 result = SearchIncidentsSuccess(
                     ok=True,
                     scope=request.scope,
@@ -594,6 +640,11 @@ class Scenario1ReadToolService:
                 )
                 for evidence in evidence_items:
                     await uow.evidence.add(evidence)
+                    await _record_observation(
+                        uow,
+                        context=context,
+                        evidence=evidence,
+                    )
                 result = SearchKbSuccess(
                     ok=True,
                     query=request.query,
