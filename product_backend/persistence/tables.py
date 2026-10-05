@@ -77,6 +77,33 @@ class IncidentRow(Base):
     )
 
 
+class Scenario2FixtureStateRow(Base):
+    """Persisted deterministic Scenario 2 hidden world state."""
+
+    __tablename__ = "scenario2_fixture_states"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.run_id"],
+            name="fk_scenario2_fixture_states_run",
+        ),
+        CheckConstraint(
+            "dependency_status IN ('HEALTHY', 'DEGRADED', 'DOWN')",
+            name="ck_scenario2_fixture_dependency_status_known",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    dependency_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    matching_major_incident_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class ServiceIncidentRow(Base):
     """Scenario 2 site/service incident; deliberately has no device identity."""
 
