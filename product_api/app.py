@@ -1,8 +1,8 @@
-"""Persistent Product API boundary with Phase 6B native ADK/Gemini wiring.
+"""Persistent Product API boundary with Phase 6C native ADK resumability.
 
-Product business state remains in the existing application/domain layer while
-Google ADK owns agent execution, persistent runtime sessions/events/state and
-native tool invocation lifecycle.
+Product business state and human decisions remain in the existing
+application/domain layer. Google ADK owns agent execution, persistent runtime
+sessions/events, the long-running wait point and invocation resume mechanics.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
+import logging
 import os
 import re
 from typing import Annotated, Any, AsyncIterator
@@ -37,7 +38,7 @@ from product_backend.application.read_tools import (
     EvidenceTtlPolicy,
     Scenario1ReadToolService,
 )
-from product_backend.application.results import OperationFailure
+from product_backend.application.results import ApprovalProcessed, OperationFailure
 from product_backend.application.run_lifecycle import Scenario1RunStartService
 from product_backend.application.run_state import RunStateService
 from product_backend.contracts.tools import ToolCallContext
@@ -60,6 +61,7 @@ from product_backend.persistence.uow import (
 from .scenario1_fixture import Scenario1FixtureSources
 from .schemas import (
     AgentInvocationResponse,
+    AgentResumeView,
     ApiErrorBody,
     ApiErrorResponse,
     ApprovalDecisionResponse,
@@ -78,6 +80,9 @@ from .sse import (
     frontend_origins_from_env,
     resolve_sse_cursor,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 _TENANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -275,6 +280,41 @@ def _require_tenant_id(
 TenantId = Annotated[str, Depends(_require_tenant_id)]
 
 
+def _agent_decision_payload(result: ApprovalProcessed) -> dict[str, Any]:
+    """Build the minimal safe Product result returned to the paused ADK call."""
+    executed_action = (
+        {
+            "action_id": result.executed_action.action_id,
+            "action_type": result.executed_action.action_type.value,
+        }
+        if result.executed_action is not None
+        else None
+    )
+    work_order = (
+        {
+            "work_order_id": result.work_order.work_order_id,
+            "site_id": result.work_order.site_id,
+            "device_id": result.work_order.device_id,
+            "switch_id": result.work_order.switch_id,
+            "port_id": result.work_order.port_id,
+        }
+        if result.work_order is not None
+        else None
+    )
+    return {
+        "status": "human_decision_committed",
+        "decision": result.approval.decision.value,
+        "proposal_id": result.proposal.proposal_id,
+        "proposal_status": result.proposal.status.value,
+        "incident_id": result.incident.incident_id,
+        "incident_status": result.incident.status.value,
+        "executed_action": executed_action,
+        "work_order": work_order,
+        "repair_confirmed": False,
+        "replayed": result.replayed,
+    }
+
+
 def create_app(
     container: ProductApiContainer | None = None,
     *,
@@ -302,10 +342,11 @@ def create_app(
 
     app = FastAPI(
         title="Autonomous L1 Incident Agent Product API",
-        version="0.6.1",
+        version="0.6.2",
         description=(
-            "Phase 6B product boundary with one native Google ADK agent, "
-            "Gemini 3.5 Flash-Lite and six Product-backed tools."
+            "Phase 6C product boundary with native Google ADK resumability: "
+            "six Product-backed Scenario 1 tools plus one long-running human "
+            "decision wait point."
         ),
         lifespan=lifespan,
     )
@@ -401,11 +442,16 @@ def create_app(
         return {
             "status": "ok",
             "phase": 6,
-            "checkpoint": "6B",
+            "checkpoint": "6C",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
             "adk_wired": services.agent_runtime is not None,
             "adk_session_persistence_wired": services.adk_session_service is not None,
+            "adk_resumability_wired": (
+                services.agent_runtime.resumability_wired
+                if services.agent_runtime is not None
+                else False
+            ),
             "gemini_configured": (
                 services.agent_runtime.gemini_configured
                 if services.agent_runtime is not None
@@ -536,6 +582,8 @@ def create_app(
             model=services.agent_runtime.model,
             run_status=refreshed.run.status.value,
             final_answer=result.final_answer,
+            awaiting_human_decision=result.awaiting_human_decision,
+            pending_proposal_id=result.pending_proposal_id,
         )
 
     @app.get(
@@ -701,6 +749,11 @@ def create_app(
         decided_by: str,
     ) -> ApprovalDecisionResponse:
         services = _container(request)
+
+        # Product commits the human decision and any idempotent business side
+        # effect first. ADK resume is intentionally post-commit: a provider or
+        # runtime failure must never make the durable Product decision appear
+        # rolled back to the caller.
         result = await services.approval_service.decide(
             ToolCallContext(tenant_id=tenant_id, run_id=run_id),
             proposal_id=proposal_id,
@@ -709,7 +762,44 @@ def create_app(
         )
         if isinstance(result, OperationFailure):
             _raise_domain_error(result.error)
-        return approval_response(result)
+
+        agent_resume = AgentResumeView(
+            status="deferred",
+            retryable=True,
+        )
+        if services.agent_runtime is not None:
+            try:
+                resumed = await services.agent_runtime.resume_human_decision(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    proposal_id=proposal_id,
+                    decision_payload=_agent_decision_payload(result),
+                )
+            except Exception:
+                # The Product decision is already committed. Returning it with
+                # deferred resume preserves business truth. Replaying the same
+                # existing Approve/Reject endpoint is the reconciliation path:
+                # Product idempotency replays the stored decision, while native
+                # ADK event history prevents duplicate FunctionResponse delivery.
+                logger.warning(
+                    "Native ADK resume deferred for run=%s proposal=%s",
+                    run_id,
+                    proposal_id,
+                )
+            else:
+                agent_resume = AgentResumeView(
+                    status=(
+                        "already_resumed"
+                        if resumed.already_resumed
+                        else "resumed"
+                    ),
+                    invocation_id=resumed.invocation_id,
+                    function_call_id=resumed.function_call_id,
+                    final_answer=resumed.final_answer,
+                    retryable=False,
+                )
+
+        return approval_response(result, agent_resume=agent_resume)
 
     @app.post(
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
