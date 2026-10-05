@@ -25,6 +25,17 @@ class ApiErrorResponse(BaseModel):
     error: ApiErrorBody
 
 
+class AcceptanceAccessLinkStateRequest(BaseModel):
+    operational_state: Literal["UP", "DOWN"]
+
+
+class AcceptanceAccessLinkStateResponse(BaseModel):
+    tenant_id: str
+    run_id: str
+    operational_state: Literal["UP", "DOWN"]
+    scope: Literal["phase6d_acceptance_only"] = "phase6d_acceptance_only"
+
+
 class HumanDecisionRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -264,6 +275,8 @@ def error_response(error: DomainError) -> ApiErrorResponse:
 __all__ = [
     "AgentInvocationResponse",
     "AgentResumeView",
+    "AcceptanceAccessLinkStateRequest",
+    "AcceptanceAccessLinkStateResponse",
     "ApiErrorResponse",
     "ApprovalDecisionResponse",
     "HumanDecisionRequest",
