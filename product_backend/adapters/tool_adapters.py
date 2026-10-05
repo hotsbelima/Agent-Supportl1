@@ -1,9 +1,8 @@
 """Thin model-facing adapters for the six Scenario 1 tool contracts.
 
 Ownership, provider orchestration, TTL and evidence creation live in the
-application/domain layer. This adapter delegates typed requests/results,
-persists the Phase 4B tool-start audit boundary when configured, and prevents
-unexpected exceptions from crossing the model boundary.
+application/domain layer. This adapter delegates typed requests/results and
+normalizes unexpected exceptions without owning generic agent runtime lifecycle.
 """
 
 from __future__ import annotations
@@ -12,9 +11,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, TypeVar
 
 from product_backend.application.field_visit import FieldVisitProposalService
-from product_backend.application.lifecycle import ApplicationLifecycleService
 from product_backend.application.read_tools import Scenario1ReadToolService
-from product_backend.contracts.serialization import to_tool_payload
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetDeviceResult,
@@ -84,55 +81,9 @@ class DefaultScenario1ToolAdapter:
         *,
         read_service: Scenario1ReadToolService,
         proposal_service: FieldVisitProposalService,
-        lifecycle_service: ApplicationLifecycleService | None = None,
     ) -> None:
         self._read_service = read_service
         self._proposal_service = proposal_service
-        self._lifecycle_service = lifecycle_service
-
-    async def _record_started(
-        self,
-        *,
-        tool_name: str,
-        context: ToolCallContext,
-        request: object,
-    ) -> ToolFailure | None:
-        if self._lifecycle_service is None:
-            return None
-        try:
-            arguments = to_tool_payload(request)
-            if not isinstance(arguments, dict):
-                raise TypeError("tool request must serialize to an object")
-            await self._lifecycle_service.record_tool_started(
-                context,
-                tool_name=tool_name,
-                arguments=arguments,
-            )
-        except Exception:
-            return _unexpected_failure("tool_audit_start_failed")
-        return None
-
-    async def _record_failed_finish(
-        self,
-        *,
-        tool_name: str,
-        context: ToolCallContext,
-        result: ToolFailure,
-    ) -> ToolFailure:
-        if self._lifecycle_service is None:
-            return result
-        try:
-            payload = to_tool_payload(result)
-            if not isinstance(payload, dict):
-                raise TypeError("tool result must serialize to an object")
-            await self._lifecycle_service.record_tool_finished(
-                context,
-                tool_name=tool_name,
-                result=payload,
-            )
-            return result
-        except Exception:
-            return _unexpected_failure("tool_audit_finish_failed")
 
     async def _invoke(
         self,
@@ -143,31 +94,13 @@ class DefaultScenario1ToolAdapter:
         operation: Callable[[], Awaitable[T]],
         unexpected_reason: str,
     ) -> T | ToolFailure:
-        start_failure = await self._record_started(
-            tool_name=tool_name,
-            context=context,
-            request=request,
-        )
-        if start_failure is not None:
-            return start_failure
-
+        # ADK owns generic tool invocation lifecycle. This Product boundary
+        # only delegates typed calls and normalizes unexpected failures.
+        del tool_name, context, request
         try:
-            result = await operation()
+            return await operation()
         except Exception:
-            failure = _unexpected_failure(unexpected_reason)
-            return await self._record_failed_finish(
-                tool_name=tool_name,
-                context=context,
-                result=failure,
-            )
-
-        if getattr(result, "ok", None) is False:
-            return await self._record_failed_finish(
-                tool_name=tool_name,
-                context=context,
-                result=result,
-            )
-        return result
+            return _unexpected_failure(unexpected_reason)
 
     async def get_device(
         self,
