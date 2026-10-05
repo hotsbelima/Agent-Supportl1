@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypeAlias
 from uuid import uuid4
 
@@ -23,11 +23,17 @@ from product_backend.contracts.scenario2_ingestion import (
     Scenario2SignalIngested,
     Scenario2SignalInput,
 )
-from product_backend.domain.enums import HealthState, IncidentStatus, RunStatus
+from product_backend.domain.enums import (
+    EvidenceSourceType,
+    HealthState,
+    IncidentStatus,
+    RunStatus,
+)
 from product_backend.domain.errors import DomainError, ErrorCode
-from product_backend.domain.models import Run
+from product_backend.domain.models import Evidence, Run
 from product_backend.domain.scenario2 import (
     OperationalSignal,
+    OperationalSignalEvidenceSnapshot,
     Scenario2FixtureState,
     ServiceIncident,
 )
@@ -47,6 +53,7 @@ FixtureUowFactory = Callable[[], Scenario2FixtureStateUnitOfWork]
 RunStartResult: TypeAlias = Scenario2RunStarted | OperationFailure
 SignalIngestionResult: TypeAlias = Scenario2SignalIngested | OperationFailure
 FixtureTransitionResult: TypeAlias = Scenario2FixtureState | OperationFailure
+DEFAULT_SIGNAL_EVIDENCE_TTL = timedelta(minutes=15)
 _UNCHANGED = object()
 
 
@@ -84,10 +91,14 @@ class Scenario2RunStartService:
         *,
         clock: Clock = _utc_now,
         id_factory: IdFactory = _id,
+        signal_evidence_ttl: timedelta = DEFAULT_SIGNAL_EVIDENCE_TTL,
     ) -> None:
+        if signal_evidence_ttl <= timedelta(0):
+            raise ValueError("signal_evidence_ttl must be positive")
         self._uow_factory = uow_factory
         self._clock = clock
         self._id_factory = id_factory
+        self._signal_evidence_ttl = signal_evidence_ttl
 
     async def start(self, *, tenant_id: str) -> RunStartResult:
         tenant = _clean(tenant_id)
@@ -221,9 +232,32 @@ class Scenario2SignalIngestionService:
                         "Persisted signal lost its ServiceIncident association.",
                         "signal_incident_missing",
                     )
+                signal_evidence = tuple(
+                    item
+                    for item in await uow.evidence.find_by_entity_id(
+                        tenant_id=tenant,
+                        run_id=run_key,
+                        entity_id=existing.signal_id,
+                    )
+                    if (
+                        item.source_type is EvidenceSourceType.OPERATIONAL_SIGNAL
+                        and isinstance(
+                            item.payload,
+                            OperationalSignalEvidenceSnapshot,
+                        )
+                        and item.payload.signal_id == existing.signal_id
+                    )
+                )
+                if len(signal_evidence) != 1:
+                    return _failure(
+                        ErrorCode.CONTEXT_MISMATCH,
+                        "Persisted signal Evidence is missing or ambiguous.",
+                        "signal_evidence_missing_or_ambiguous",
+                    )
                 return Scenario2SignalIngested(
                     signal=existing,
                     service_incident=incident,
+                    evidence=signal_evidence[0],
                     event=None,
                     dispatch=None,
                     replayed=True,
@@ -290,9 +324,34 @@ class Scenario2SignalIngestionService:
             )
             await uow.signals.add(signal)
 
+            evidence = Evidence(
+                evidence_id=self._id_factory("evidence"),
+                tenant_id=tenant,
+                run_id=run_key,
+                source_type=EvidenceSourceType.OPERATIONAL_SIGNAL,
+                captured_at=now,
+                entity_ids=(
+                    signal.signal_id,
+                    signal.site_id,
+                    signal.service_key,
+                    signal.symptom_key,
+                ),
+                payload=OperationalSignalEvidenceSnapshot(
+                    signal_id=signal.signal_id,
+                    source=signal.source,
+                    site_id=signal.site_id,
+                    service_key=signal.service_key,
+                    symptom_key=signal.symptom_key,
+                    source_ref=signal.source_ref,
+                ),
+                expires_at=now + self._signal_evidence_ttl,
+            )
+            await uow.evidence.add(evidence)
+
             event_payload = {
                 "scenario_id": "scenario-2",
                 "signal_id": signal.signal_id,
+                "evidence_id": evidence.evidence_id,
                 "source": signal.source.value,
                 "source_ref": signal.source_ref,
                 "site_id": signal.site_id,
@@ -318,6 +377,7 @@ class Scenario2SignalIngestionService:
                     "event_seq": event.seq,
                     "scenario_id": "scenario-2",
                     "signal_id": signal.signal_id,
+                    "evidence_id": evidence.evidence_id,
                 },
             )
             await uow.runs.save(replace(run, updated_at=now))
@@ -326,6 +386,7 @@ class Scenario2SignalIngestionService:
         return Scenario2SignalIngested(
             signal=signal,
             service_incident=incident,
+            evidence=evidence,
             event=event,
             dispatch=dispatch,
             replayed=False,
@@ -443,6 +504,7 @@ class Scenario2FixtureTransitionService:
 
 
 __all__ = [
+    "DEFAULT_SIGNAL_EVIDENCE_TTL",
     "Scenario2FixtureTransitionService",
     "Scenario2RunStartService",
     "Scenario2SignalIngestionService",
