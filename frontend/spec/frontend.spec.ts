@@ -7,6 +7,7 @@ import {
   proposalTone,
   STALE_PROPOSAL_NOTE,
 } from "../lib/presentation";
+import { isStateRefreshEvent } from "../lib/recovery";
 import {
   applicationEventFromFrame,
   createSseParser,
@@ -36,6 +37,16 @@ describe("operational presentation", () => {
     expect(eventSummary(event("tool.started"))).toBe("Tool started");
     expect(eventSummary(event("run.status_changed", { status: "ACTIVE" })))
       .toBe("Run status changed → ACTIVE");
+    expect(
+      eventSummary(
+        event("observation.recorded", { source_type: "CMDB_SNAPSHOT" }),
+      ),
+    ).toBe("Observation recorded: CMDB_SNAPSHOT");
+  });
+
+  it("refreshes authoritative state when a Product observation arrives", () => {
+    expect(isStateRefreshEvent(event("observation.recorded"))).toBe(true);
+    expect(isStateRefreshEvent(event("external.signal"))).toBe(false);
   });
 
   it("keeps important states visually distinct", () => {
