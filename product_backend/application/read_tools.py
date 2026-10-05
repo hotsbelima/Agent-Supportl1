@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from product_backend.contracts.events import ApplicationEventType
-from product_backend.contracts.serialization import to_tool_payload
 from product_backend.contracts.tools import (
     GetDeviceRequest,
     GetDeviceResult,
@@ -58,7 +56,6 @@ from product_backend.ports.source_systems import (
     MonitoringPort,
 )
 
-from .lifecycle import append_uow_event
 
 
 Clock = Callable[[], datetime]
@@ -285,15 +282,6 @@ class Scenario1ReadToolService:
                     topology=topology,
                     evidence=evidence,
                 )
-                await append_uow_event(
-                    uow,
-                    context=context,
-                    event_type=ApplicationEventType.TOOL_FINISHED,
-                    payload={
-                        "tool_name": "get_device",
-                        "result": to_tool_payload(result),
-                    },
-                )
                 await uow.commit()
                 return result
         except Exception:
@@ -375,15 +363,6 @@ class Scenario1ReadToolService:
                     site_id=snapshot.site_id,
                     health=snapshot,
                     evidence=evidence,
-                )
-                await append_uow_event(
-                    uow,
-                    context=context,
-                    event_type=ApplicationEventType.TOOL_FINISHED,
-                    payload={
-                        "tool_name": "get_site_health",
-                        "result": to_tool_payload(result),
-                    },
                 )
                 await uow.commit()
                 return result
@@ -479,15 +458,6 @@ class Scenario1ReadToolService:
                     snapshot=snapshot,
                     evidence=evidence,
                 )
-                await append_uow_event(
-                    uow,
-                    context=context,
-                    event_type=ApplicationEventType.TOOL_FINISHED,
-                    payload={
-                        "tool_name": "run_diagnostic",
-                        "result": to_tool_payload(result),
-                    },
-                )
                 await uow.commit()
                 return result
         except Exception:
@@ -570,15 +540,6 @@ class Scenario1ReadToolService:
                     snapshot=snapshot,
                     evidence=evidence,
                 )
-                await append_uow_event(
-                    uow,
-                    context=context,
-                    event_type=ApplicationEventType.TOOL_FINISHED,
-                    payload={
-                        "tool_name": "search_incidents",
-                        "result": to_tool_payload(result),
-                    },
-                )
                 await uow.commit()
                 return result
         except Exception:
@@ -638,15 +599,6 @@ class Scenario1ReadToolService:
                     query=request.query,
                     articles=articles,
                     evidence=evidence_items,
-                )
-                await append_uow_event(
-                    uow,
-                    context=context,
-                    event_type=ApplicationEventType.TOOL_FINISHED,
-                    payload={
-                        "tool_name": "search_kb",
-                        "result": to_tool_payload(result),
-                    },
                 )
                 await uow.commit()
                 return result
