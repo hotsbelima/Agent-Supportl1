@@ -31,7 +31,13 @@ from product_backend.contracts.events import (
     SCENARIO2_AGENT_DISPATCH_TOPIC,
 )
 from product_backend.contracts.scenario2_ingestion import Scenario2SignalInput
-from product_backend.domain.enums import HealthState
+from product_backend.domain.enums import HealthState, RunStatus
+from product_backend.domain.models import Run
+from product_backend.persistence.events import (
+    SqlAlchemyApplicationEventRepository,
+    SqlAlchemyApplicationOutboxRepository,
+)
+from product_backend.persistence.repositories import SqlAlchemyRunRepository
 from product_backend.persistence.database import (
     DatabaseSettings,
     create_engine,
@@ -95,6 +101,161 @@ async def _outbox_rows(factory, *, tenant_id: str, run_id: str):
                 .order_by(ApplicationOutboxRow.event_seq)
             )
         ).scalars().all()
+
+
+def test_outbox_preserves_per_run_event_order_across_retry_lease():
+    async def scenario() -> None:
+        suffix = uuid4().hex[:10]
+        tenant_id = f"TENANT-7C-ORDER-{suffix}"
+        run_a = f"RUN-7C-ORDER-A-{suffix}"
+        run_b = f"RUN-7C-ORDER-B-{suffix}"
+        topic = f"test.phase7c.ordered.{suffix}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        try:
+            async with factory() as session:
+                await session.begin()
+                runs = SqlAlchemyRunRepository(session)
+                events = SqlAlchemyApplicationEventRepository(session)
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                now = datetime.now(UTC)
+                await runs.add(
+                    Run(
+                        run_id=run_a,
+                        tenant_id=tenant_id,
+                        scenario_id="scenario-2",
+                        status=RunStatus.ACTIVE,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                await session.flush()
+                event_a1 = await events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_a,
+                    event_type=ApplicationEventType.EXTERNAL_SIGNAL,
+                    payload={"ordinal": 1},
+                )
+                event_a2 = await events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_a,
+                    event_type=ApplicationEventType.EXTERNAL_SIGNAL,
+                    payload={"ordinal": 2},
+                )
+                await outbox.enqueue(
+                    tenant_id=tenant_id,
+                    run_id=run_a,
+                    event_seq=event_a1.seq,
+                    topic=topic,
+                    payload={"ordinal": 1},
+                )
+                await outbox.enqueue(
+                    tenant_id=tenant_id,
+                    run_id=run_a,
+                    event_seq=event_a2.seq,
+                    topic=topic,
+                    payload={"ordinal": 2},
+                )
+                await session.commit()
+
+            async with factory() as session:
+                await session.begin()
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                claimed_a1 = await outbox.claim_next(
+                    topic=topic,
+                    lease_seconds=60,
+                )
+                assert claimed_a1 is not None
+                assert claimed_a1.run_id == run_a
+                assert claimed_a1.event_seq == event_a1.seq
+                await session.commit()
+
+            # Add another run after A1 is leased. Its head event must remain
+            # independently claimable while A2 is blocked behind A1.
+            async with factory() as session:
+                await session.begin()
+                runs = SqlAlchemyRunRepository(session)
+                events = SqlAlchemyApplicationEventRepository(session)
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                now = datetime.now(UTC)
+                await runs.add(
+                    Run(
+                        run_id=run_b,
+                        tenant_id=tenant_id,
+                        scenario_id="scenario-2",
+                        status=RunStatus.ACTIVE,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                await session.flush()
+                event_b1 = await events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_b,
+                    event_type=ApplicationEventType.EXTERNAL_SIGNAL,
+                    payload={"ordinal": 1},
+                )
+                await outbox.enqueue(
+                    tenant_id=tenant_id,
+                    run_id=run_b,
+                    event_seq=event_b1.seq,
+                    topic=topic,
+                    payload={"ordinal": 1},
+                )
+                await session.commit()
+
+            async with factory() as session:
+                await session.begin()
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                claimed_b1 = await outbox.claim_next(
+                    topic=topic,
+                    lease_seconds=60,
+                )
+                assert claimed_b1 is not None
+                assert claimed_b1.run_id == run_b
+                assert claimed_b1.event_seq == event_b1.seq
+                await outbox.mark_delivered(
+                    tenant_id=tenant_id,
+                    run_id=run_b,
+                    outbox_id=claimed_b1.outbox_id,
+                )
+                await session.commit()
+
+            # A1 is still leased and undelivered, therefore A2 must not overtake it.
+            async with factory() as session:
+                await session.begin()
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                assert (
+                    await outbox.claim_next(topic=topic, lease_seconds=60)
+                    is None
+                )
+                await session.commit()
+
+            async with factory() as session:
+                await session.begin()
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                await outbox.mark_delivered(
+                    tenant_id=tenant_id,
+                    run_id=run_a,
+                    outbox_id=claimed_a1.outbox_id,
+                )
+                await session.commit()
+
+            async with factory() as session:
+                await session.begin()
+                outbox = SqlAlchemyApplicationOutboxRepository(session)
+                claimed_a2 = await outbox.claim_next(
+                    topic=topic,
+                    lease_seconds=60,
+                )
+                assert claimed_a2 is not None
+                assert claimed_a2.run_id == run_a
+                assert claimed_a2.event_seq == event_a2.seq
+                await session.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
 
 
 def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
