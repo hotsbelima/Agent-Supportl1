@@ -316,7 +316,8 @@ describe("reconnect preparation and backoff", () => {
       ): Promise<TimelineResponse> => {
         calls.push(afterSeq);
         if (afterSeq === 4) return page([event(5), event(6)]);
-        return page([event(7), event(8)]);
+        if (afterSeq === 6) return page([event(7), event(8)]);
+        return page([]);
       },
     );
 
