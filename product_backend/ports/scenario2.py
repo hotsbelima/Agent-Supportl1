@@ -19,6 +19,7 @@ from product_backend.domain.scenario2 import (
     ServiceIncident,
 )
 
+from .events import ApplicationEventRepository, ApplicationOutboxRepository
 from .repositories import EvidenceRepository, RunRepository
 
 
@@ -154,6 +155,40 @@ class MajorIncidentExecutionRepository(Protocol):
     ) -> MajorIncidentExecution | None: ...
 
 
+class Scenario2RunStartUnitOfWork(Protocol):
+    runs: RunRepository
+    fixture_states: Scenario2FixtureStateRepository
+    events: ApplicationEventRepository
+
+    async def __aenter__(self) -> "Scenario2RunStartUnitOfWork": ...
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
+class Scenario2SignalIngestionUnitOfWork(Protocol):
+    runs: RunRepository
+    service_incidents: ServiceIncidentRepository
+    signals: OperationalSignalRepository
+    events: ApplicationEventRepository
+    outbox: ApplicationOutboxRepository
+
+    async def __aenter__(self) -> "Scenario2SignalIngestionUnitOfWork": ...
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
+class Scenario2FixtureStateUnitOfWork(Protocol):
+    runs: RunRepository
+    fixture_states: Scenario2FixtureStateRepository
+
+    async def __aenter__(self) -> "Scenario2FixtureStateUnitOfWork": ...
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
 class Scenario2ProposalUnitOfWork(Protocol):
     runs: RunRepository
     service_incidents: ServiceIncidentRepository
@@ -191,7 +226,10 @@ __all__ = [
     "MajorIncidentRepository",
     "OperationalSignalRepository",
     "Scenario2ApprovalUnitOfWork",
+    "Scenario2FixtureStateUnitOfWork",
     "Scenario2FixtureStateRepository",
     "ServiceIncidentRepository",
     "Scenario2ProposalUnitOfWork",
+    "Scenario2RunStartUnitOfWork",
+    "Scenario2SignalIngestionUnitOfWork",
 ]
