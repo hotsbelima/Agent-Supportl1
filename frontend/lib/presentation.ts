@@ -26,6 +26,12 @@ export function eventSummary(event: ApplicationEventView): string {
       return "Run started";
     case "external.signal":
       return "Incident signal received";
+    case "observation.recorded": {
+      const sourceType = stringValue(payload, "source_type");
+      return sourceType
+        ? `Observation recorded: ${sourceType}`
+        : "Observation recorded";
+    }
     case "tool.started": {
       const tool = stringValue(payload, "tool_name");
       return tool ? `Tool started: ${tool}` : "Tool started";
