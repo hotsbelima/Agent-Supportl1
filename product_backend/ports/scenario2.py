@@ -1,8 +1,4 @@
-"""Persistence ports for Product-owned Scenario 2 state.
-
-Phase 7B defines the contracts only. PostgreSQL implementations and ingestion
-transactions are introduced in later Phase 7 checkpoints.
-"""
+"""Persistence ports for Product-owned Scenario 2 state and transactions."""
 
 from __future__ import annotations
 
