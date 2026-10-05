@@ -91,14 +91,10 @@ class Scenario2RunStartService:
         *,
         clock: Clock = _utc_now,
         id_factory: IdFactory = _id,
-        signal_evidence_ttl: timedelta = DEFAULT_SIGNAL_EVIDENCE_TTL,
     ) -> None:
-        if signal_evidence_ttl <= timedelta(0):
-            raise ValueError("signal_evidence_ttl must be positive")
         self._uow_factory = uow_factory
         self._clock = clock
         self._id_factory = id_factory
-        self._signal_evidence_ttl = signal_evidence_ttl
 
     async def start(self, *, tenant_id: str) -> RunStartResult:
         tenant = _clean(tenant_id)
@@ -154,10 +150,14 @@ class Scenario2SignalIngestionService:
         *,
         clock: Clock = _utc_now,
         id_factory: IdFactory = _id,
+        signal_evidence_ttl: timedelta = DEFAULT_SIGNAL_EVIDENCE_TTL,
     ) -> None:
+        if signal_evidence_ttl <= timedelta(0):
+            raise ValueError("signal_evidence_ttl must be positive")
         self._uow_factory = uow_factory
         self._clock = clock
         self._id_factory = id_factory
+        self._signal_evidence_ttl = signal_evidence_ttl
 
     async def ingest(
         self,
