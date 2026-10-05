@@ -7,6 +7,7 @@ contains transport/configuration helpers; it does not introduce domain state.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import os
 from urllib.parse import urlsplit
 
@@ -24,10 +25,18 @@ class SseSettings:
     batch_size: int = 100
 
     def __post_init__(self) -> None:
-        if self.poll_interval_seconds <= 0:
-            raise ValueError("SSE poll interval must be positive")
-        if self.heartbeat_interval_seconds <= 0:
-            raise ValueError("SSE heartbeat interval must be positive")
+        if (
+            not math.isfinite(self.poll_interval_seconds)
+            or self.poll_interval_seconds <= 0
+        ):
+            raise ValueError("SSE poll interval must be a finite positive number")
+        if (
+            not math.isfinite(self.heartbeat_interval_seconds)
+            or self.heartbeat_interval_seconds <= 0
+        ):
+            raise ValueError(
+                "SSE heartbeat interval must be a finite positive number"
+            )
         if not 1 <= self.batch_size <= 1000:
             raise ValueError("SSE batch size must be between 1 and 1000")
 
@@ -59,8 +68,8 @@ def _positive_float_env(name: str, default: float) -> float:
         value = float(raw)
     except ValueError as exc:
         raise RuntimeError(f"{name} must be a positive number") from exc
-    if value <= 0:
-        raise RuntimeError(f"{name} must be a positive number")
+    if not math.isfinite(value) or value <= 0:
+        raise RuntimeError(f"{name} must be a finite positive number")
     return value
 
 
@@ -101,8 +110,10 @@ def frontend_origins_from_env() -> tuple[str, ...]:
 
     normalized: list[str] = []
     for value in values:
-        if value == "*":
-            raise RuntimeError("FRONTEND_ORIGINS must use exact origins, not '*'")
+        if "*" in value:
+            raise RuntimeError(
+                "FRONTEND_ORIGINS must use exact origins, not wildcards"
+            )
         parts = urlsplit(value)
         if (
             parts.scheme not in {"http", "https"}
