@@ -49,6 +49,7 @@ from product_backend.ports.scenario2_sources import (
     ExternalDependencyStatusPort,
     LocalServiceHealthPort,
     MajorIncidentDirectoryPort,
+    ServiceDependencyPort,
 )
 
 from .scenario2_results import (
@@ -361,6 +362,7 @@ class MajorIncidentApprovalService:
         uow_factory: ApprovalUowFactory,
         *,
         local_health: LocalServiceHealthPort,
+        dependency_mapping: ServiceDependencyPort,
         dependency_status: ExternalDependencyStatusPort,
         major_incident_directory: MajorIncidentDirectoryPort,
         clock: Clock = _utc_now,
@@ -368,6 +370,7 @@ class MajorIncidentApprovalService:
     ) -> None:
         self._uow_factory = uow_factory
         self._local_health = local_health
+        self._dependency_mapping = dependency_mapping
         self._dependency_status = dependency_status
         self._major_incident_directory = major_incident_directory
         self._clock = clock
@@ -558,6 +561,13 @@ class MajorIncidentApprovalService:
                             "local_health_revalidation_unavailable",
                             retryable=True,
                         )
+                    current_mappings = (
+                        await self._dependency_mapping.get_service_dependencies(
+                            tenant_id=context.tenant_id,
+                            run_id=context.run_id,
+                            service_key=proposal.service_key,
+                        )
+                    )
                     current_status = (
                         await self._dependency_status.get_external_dependency_status(
                             tenant_id=context.tenant_id,
@@ -593,6 +603,7 @@ class MajorIncidentApprovalService:
                     proposal=proposal,
                     proposal_evidence=proposal_evidence,
                     current_local_health=current_health,
+                    current_dependency_mappings=current_mappings,
                     current_dependency_status=current_status,
                     current_major_incident_search=current_search,
                     now=now,
