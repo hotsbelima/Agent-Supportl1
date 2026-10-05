@@ -1,4 +1,4 @@
-"""Persistent Product API boundary with Phase 6C native ADK resumability.
+"""Persistent Product API boundary with Phase 7A event-driven ADK dispatch.
 
 Product business state and human decisions remain in the existing
 application/domain layer. Google ADK owns agent execution, persistent runtime
@@ -42,6 +42,7 @@ from product_backend.application.read_tools import (
 from product_backend.application.results import ApprovalProcessed, OperationFailure
 from product_backend.application.run_lifecycle import Scenario1RunStartService
 from product_backend.application.run_state import RunStateService
+from product_backend.contracts.events import ApplicationEventType
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.domain.enums import (
     ApprovalDecision,
@@ -58,12 +59,14 @@ from product_backend.persistence.database import (
 from product_backend.persistence.run_state import SqlAlchemyRunStateQuery
 from product_backend.persistence.uow import (
     SqlAlchemyApprovalExecutionUnitOfWork,
+    SqlAlchemyDispatchUnitOfWork,
     SqlAlchemyLifecycleUnitOfWork,
     SqlAlchemyProposalCreationUnitOfWork,
     SqlAlchemyRunStartUnitOfWork,
     SqlAlchemyToolReadUnitOfWork,
 )
 
+from .dispatch import Scenario1DispatchWorker
 from .scenario1_fixture import Scenario1FixtureSources
 from .schemas import (
     AcceptanceAccessLinkStateRequest,
@@ -120,6 +123,7 @@ class ProductApiContainer:
     engine: AsyncEngine | None = None
     adk_session_service: DatabaseSessionService | None = None
     agent_runtime: Scenario1AgentRuntime | None = None
+    dispatch_worker: Scenario1DispatchWorker | None = None
 
     async def close(self) -> None:
         if self.agent_runtime is not None:
@@ -157,14 +161,20 @@ def build_container_from_env() -> ProductApiContainer:
         adapter=tool_adapter,
         session_service=adk_session_service,
     )
+    state_service = RunStateService(
+        SqlAlchemyRunStateQuery(session_factory)
+    )
+    dispatch_worker = Scenario1DispatchWorker(
+        uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(session_factory),
+        state_service=state_service,
+        agent_runtime=agent_runtime,
+    )
 
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
             lambda: SqlAlchemyRunStartUnitOfWork(session_factory)
         ),
-        state_service=RunStateService(
-            SqlAlchemyRunStateQuery(session_factory)
-        ),
+        state_service=state_service,
         lifecycle_service=ApplicationLifecycleService(
             lambda: SqlAlchemyLifecycleUnitOfWork(session_factory)
         ),
@@ -177,6 +187,7 @@ def build_container_from_env() -> ProductApiContainer:
         engine=engine,
         adk_session_service=adk_session_service,
         agent_runtime=agent_runtime,
+        dispatch_worker=dispatch_worker,
     )
 
 
@@ -340,21 +351,28 @@ def create_app(
     async def lifespan(app: FastAPI):
         active = container or build_container_from_env()
         app.state.product_container = active
+        worker_started = False
         try:
             if active.adk_session_service is not None:
                 await active.adk_session_service.prepare_tables()
+            if active.dispatch_worker is not None:
+                active.dispatch_worker.start()
+                active.dispatch_worker.wake()
+                worker_started = True
             yield
         finally:
+            if worker_started and active.dispatch_worker is not None:
+                await active.dispatch_worker.close()
             if container is None:
                 await active.close()
 
     app = FastAPI(
         title="Autonomous L1 Incident Agent Product API",
-        version="0.6.2",
+        version="0.7.0",
         description=(
-            "Phase 6C product boundary with native Google ADK resumability: "
-            "six Product-backed Scenario 1 tools plus one long-running human "
-            "decision wait point."
+            "Phase 7A Product boundary: persisted operational signals are "
+            "durably dispatched into the existing native Google ADK Session; "
+            "human approval/resume remains Product-first and ADK-native."
         ),
         lifespan=lifespan,
     )
@@ -449,8 +467,8 @@ def create_app(
                 await connection.execute(text("SELECT 1"))
         return {
             "status": "ok",
-            "phase": 6,
-            "checkpoint": "6C",
+            "phase": 7,
+            "checkpoint": "7A",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
             "adk_wired": services.agent_runtime is not None,
@@ -471,6 +489,7 @@ def create_app(
                 else None
             ),
             "sse_wired": True,
+            "automatic_dispatch_wired": services.dispatch_worker is not None,
         }
 
     @app.post(
@@ -506,6 +525,13 @@ def create_app(
                 message="Scenario 1 run state is unavailable after start.",
                 retryable=True,
             )
+
+        # The Product signal/outbox transaction is already committed. Waking the
+        # durable consumer is only a latency optimization; restart/poll recovery
+        # does not depend on this in-process notification.
+        if services.dispatch_worker is not None:
+            services.dispatch_worker.wake()
+
         return run_state_response(snapshot)
 
     @app.post(
@@ -565,9 +591,34 @@ def create_app(
             ],
         }
 
-        result = await services.agent_runtime.invoke(
+        timeline = await services.lifecycle_service.timeline(
+            ToolCallContext(tenant_id=tenant_id, run_id=run_id),
+            after_seq=0,
+            limit=1000,
+        )
+        source_event = next(
+            (
+                event
+                for event in reversed(timeline)
+                if event.event_type is ApplicationEventType.EXTERNAL_SIGNAL
+            ),
+            None,
+        )
+        if source_event is None:
+            _raise_api_error(
+                status_code=status.HTTP_409_CONFLICT,
+                code="OPERATIONAL_EVENT_NOT_FOUND",
+                message="No persisted operational signal is available for this run.",
+            )
+
+        operational_signal["event_id"] = source_event.event_id
+        operational_signal["event_seq"] = source_event.seq
+        operational_signal["signal"] = source_event.payload
+
+        result = await services.agent_runtime.invoke_operational_event(
             tenant_id=tenant_id,
             run_id=run_id,
+            operational_event_id=source_event.event_id,
             operational_signal=operational_signal,
         )
 
