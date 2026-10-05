@@ -141,7 +141,12 @@ export type HealthResponse = {
   database_configured: boolean;
   database_reachable: boolean;
   adk_wired: boolean;
+  adk_session_persistence_wired: boolean;
+  adk_resumability_wired: boolean;
+  gemini_configured: boolean;
+  adk_model: string | null;
   sse_wired: boolean;
+  automatic_dispatch_wired: boolean;
 };
 
 export type ConnectionState =
