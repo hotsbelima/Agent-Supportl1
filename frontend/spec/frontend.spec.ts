@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectionTone,
   eventSummary,
+  FIELD_SERVICE_OUTCOME_NOTE,
   proposalTone,
 } from "../lib/presentation";
 import {
@@ -42,6 +43,15 @@ describe("operational presentation", () => {
     expect(proposalTone("EXECUTED")).toBe("executed");
     expect(connectionTone("Live")).toBe("live");
     expect(connectionTone("Offline/Unavailable")).toBe("offline");
+  });
+
+  it("never presents a registered work order as a completed repair", () => {
+    expect(FIELD_SERVICE_OUTCOME_NOTE).toBe(
+      "Onsite field-service work order registered. This is not proof of repair.",
+    );
+    expect(FIELD_SERVICE_OUTCOME_NOTE.toLowerCase()).not.toContain(
+      "incident resolved",
+    );
   });
 });
 
