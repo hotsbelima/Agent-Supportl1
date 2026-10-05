@@ -99,6 +99,11 @@ export function RunConsole({ runId }: { runId: string }) {
   const cursorByRunRef = useRef(new Map<string, number>());
   const stateSeqByRunRef = useRef(new Map<string, number>());
 
+  useEffect(() => {
+    setSelectedIncidentId(null);
+    setSelectedObservationId(null);
+  }, [runId]);
+
   const publishState = useCallback(
     (current: RunStateResponse) => {
       const previousSeq = stateSeqByRunRef.current.get(runId) ?? -1;
