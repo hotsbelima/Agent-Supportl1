@@ -739,3 +739,41 @@ def test_stale_approve_resumes_with_no_execution_and_no_repair_claim():
         assert len(state["approvals"]) == 1
         assert state["executed_actions"] == []
         assert state["work_orders"] == []
+
+
+def test_retryable_revalidation_failure_consumes_no_decision_and_does_not_resume():
+    tenant_id = f"TENANT-6C-RETRYABLE-{uuid4().hex[:8]}"
+
+    with TestClient(create_app()) as client:
+        run_id, proposal_id = _start_and_seed(client, tenant_id)
+        container = client.app.state.product_container
+
+        async def unavailable_diagnostic(**kwargs):
+            del kwargs
+            raise RuntimeError("simulated monitoring outage")
+
+        container.fixture.run_diagnostic = unavailable_diagnostic
+
+        runtime = _RecordingRuntime()
+        _replace_runtime(client, runtime)
+
+        approved = client.post(
+            f"/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
+            headers=_headers(tenant_id),
+            json={"decided_by": "human-operator"},
+        )
+        assert approved.status_code == 503, approved.text
+        body = approved.json()
+        assert body["error"]["code"] == "DIAGNOSTIC_UNAVAILABLE"
+        assert body["error"]["retryable"] is True
+        assert runtime.calls == []
+
+        state = client.get(
+            f"/api/v1/runs/{run_id}",
+            headers=_headers(tenant_id),
+        ).json()
+        assert state["run"]["status"] == "WAITING_APPROVAL"
+        assert state["proposals"][0]["status"] == "PENDING_APPROVAL"
+        assert state["approvals"] == []
+        assert state["executed_actions"] == []
+        assert state["work_orders"] == []
