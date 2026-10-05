@@ -245,6 +245,29 @@ export async function prepareReconnect(options: {
   return { state, backfill };
 }
 
+export type TransportFailurePlan = {
+  failureCount: number;
+  connection: ConnectionState;
+  delayMs: number;
+};
+
+export function nextTransportFailure(
+  previousFailureCount: number,
+): TransportFailurePlan {
+  if (
+    !Number.isSafeInteger(previousFailureCount) ||
+    previousFailureCount < 0
+  ) {
+    throw new Error("Previous failure count must be a non-negative integer.");
+  }
+  const failureCount = previousFailureCount + 1;
+  return {
+    failureCount,
+    connection: connectionStateForFailure(failureCount),
+    delayMs: reconnectDelayMs(failureCount),
+  };
+}
+
 export function reconnectDelayMs(failureCount: number): number {
   if (!Number.isSafeInteger(failureCount) || failureCount < 1) {
     throw new Error("Reconnect failure count must be a positive integer.");
@@ -296,6 +319,7 @@ export function abortableDelay(
 
 export function isStateRefreshEvent(event: ApplicationEventView): boolean {
   return (
+    event.event_type === "tool.finished" ||
     event.event_type === "proposal.created" ||
     event.event_type === "approval.decided" ||
     event.event_type === "action.executed" ||
@@ -306,6 +330,7 @@ export function isStateRefreshEvent(event: ApplicationEventView): boolean {
 export type DecisionRecoveryStatus =
   | "persisted"
   | "still-pending"
+  | "inconsistent"
   | "missing";
 
 export function decisionRecoveryStatus(
@@ -317,20 +342,52 @@ export function decisionRecoveryStatus(
   );
   if (!proposal) return "missing";
 
-  const approvalExists = state.approvals.some(
+  const approvals = state.approvals.filter(
+    (item) => item.proposal_id === proposalId,
+  );
+  const actions = state.executed_actions.filter(
+    (item) => item.proposal_id === proposalId,
+  );
+  const workOrders = state.work_orders.filter(
     (item) => item.proposal_id === proposalId,
   );
 
-  if (
-    approvalExists &&
-    ["REJECTED", "STALE", "EXECUTED"].includes(proposal.status)
-  ) {
-    return "persisted";
+  if (proposal.status === "PENDING_APPROVAL") {
+    return approvals.length === 0 &&
+      actions.length === 0 &&
+      workOrders.length === 0
+      ? "still-pending"
+      : "inconsistent";
   }
 
-  return proposal.status === "PENDING_APPROVAL"
-    ? "still-pending"
-    : "missing";
+  if (proposal.status === "REJECTED") {
+    return approvals.length === 1 &&
+      approvals[0]?.decision === "REJECTED" &&
+      actions.length === 0 &&
+      workOrders.length === 0
+      ? "persisted"
+      : "inconsistent";
+  }
+
+  if (proposal.status === "STALE") {
+    return approvals.length === 1 &&
+      approvals[0]?.decision === "APPROVED" &&
+      actions.length === 0 &&
+      workOrders.length === 0
+      ? "persisted"
+      : "inconsistent";
+  }
+
+  if (proposal.status === "EXECUTED") {
+    return approvals.length === 1 &&
+      approvals[0]?.decision === "APPROVED" &&
+      actions.length === 1 &&
+      workOrders.length === 1
+      ? "persisted"
+      : "inconsistent";
+  }
+
+  return "missing";
 }
 
 export function replayNotice(replayed: boolean): string {
