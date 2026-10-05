@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -195,8 +196,10 @@ def test_start_stays_successful_when_eager_adk_session_provisioning_fails(
     async def fail_session_provisioning(*args, **kwargs):
         raise RuntimeError("synthetic ADK session provisioning failure")
 
+    app_module = importlib.import_module("product_api.app")
     monkeypatch.setattr(
-        "product_api.app.ensure_run_session",
+        app_module,
+        "ensure_run_session",
         fail_session_provisioning,
     )
     tenant_id = f"TENANT-7A-START-RECOVERY-{uuid4().hex[:8]}"
