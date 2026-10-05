@@ -576,6 +576,7 @@ class MajorIncidentApprovalService:
                         await self._major_incident_directory.search_major_incidents(
                             tenant_id=context.tenant_id,
                             run_id=context.run_id,
+                            service_key=proposal.service_key,
                             correlation_key=proposal.correlation_key,
                             dependency_id=proposal.dependency_id,
                         )
