@@ -182,16 +182,19 @@ class Scenario2FixtureWorld:
     def major_incident_search(
         self,
         *,
+        service_key: str,
         correlation_key: str,
         dependency_id: str,
     ) -> MajorIncidentSearchSnapshot:
         open_ids: tuple[str, ...] = ()
         if (
-            correlation_key == CORRELATION_KEY
+            service_key == SERVICE_KEY
+            and correlation_key == CORRELATION_KEY
             and dependency_id == ACMEPAY_DEPENDENCY_ID
         ):
             open_ids = self._open_major_incident_ids
         return MajorIncidentSearchSnapshot(
+            service_key=service_key,
             correlation_key=correlation_key,
             dependency_id=dependency_id,
             open_major_incident_ids=open_ids,
