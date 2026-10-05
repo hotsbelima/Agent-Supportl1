@@ -32,7 +32,7 @@ from product_backend.contracts.events import (
     SCENARIO2_AGENT_DISPATCH_TOPIC,
 )
 from product_backend.contracts.scenario2_ingestion import Scenario2SignalInput
-from product_backend.domain.enums import HealthState, RunStatus
+from product_backend.domain.enums import EvidenceSourceType, HealthState, RunStatus
 from product_backend.domain.models import Run
 from product_backend.persistence.events import (
     SqlAlchemyApplicationEventRepository,
@@ -50,6 +50,7 @@ from product_backend.persistence.tables import (
     ActionProposalRow,
     ApplicationEventRow,
     ApplicationOutboxRow,
+    EvidenceRow,
     FieldServiceWorkOrderRow,
     OperationalSignalRow,
     ServiceIncidentRow,
@@ -88,6 +89,20 @@ def _services(factory):
         ),
         PersistedScenario2FixtureSources(state),
     )
+
+
+async def _evidence_rows(factory, *, tenant_id: str, run_id: str):
+    async with factory() as session:
+        return (
+            await session.execute(
+                select(EvidenceRow)
+                .where(
+                    EvidenceRow.tenant_id == tenant_id,
+                    EvidenceRow.run_id == run_id,
+                )
+                .order_by(EvidenceRow.captured_at, EvidenceRow.evidence_id)
+            )
+        ).scalars().all()
 
 
 async def _outbox_rows(factory, *, tenant_id: str, run_id: str):
@@ -291,6 +306,7 @@ def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
         body = step.json()
         assert body["next_index"] == 1
         assert body["ingested"]["dispatch_queued"] is True
+        assert body["ingested"]["evidence_id"]
         assert body["ingested"]["signal"]["received_at"].endswith(
             ("Z", "+00:00")
         )
@@ -413,6 +429,11 @@ def test_each_signal_persists_fact_event_and_separate_dispatch_envelope():
             assert result.event.event_type is ApplicationEventType.EXTERNAL_SIGNAL
             assert result.dispatch.topic == SCENARIO2_AGENT_DISPATCH_TOPIC
             assert result.dispatch.delivered_at is None
+            assert result.evidence.source_type is EvidenceSourceType.OPERATIONAL_SIGNAL
+            assert result.evidence.payload.signal_id == result.signal.signal_id
+            assert result.evidence.captured_at == result.signal.received_at
+            assert result.evidence.expires_at is not None
+            assert result.evidence.expires_at > result.evidence.captured_at
             assert result.signal.received_at.tzinfo is not None
             assert result.signal.received_at.astimezone(UTC).utcoffset().total_seconds() == 0
 
@@ -434,6 +455,17 @@ def test_each_signal_persists_fact_event_and_separate_dispatch_envelope():
             assert rows[0].topic == SCENARIO2_AGENT_DISPATCH_TOPIC
             assert rows[0].event_seq == result.event.seq
             assert rows[0].payload["signal_id"] == result.signal.signal_id
+            assert rows[0].payload["evidence_id"] == result.evidence.evidence_id
+
+            evidence_rows = await _evidence_rows(
+                factory,
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert len(evidence_rows) == 1
+            assert evidence_rows[0].evidence_id == result.evidence.evidence_id
+            assert evidence_rows[0].source_type == EvidenceSourceType.OPERATIONAL_SIGNAL.value
+            assert evidence_rows[0].payload["signal_id"] == result.signal.signal_id
         finally:
             await engine.dispose()
 
@@ -549,6 +581,7 @@ def test_signal_replay_is_idempotent_and_conflicting_replay_is_rejected():
             assert replay.event is None
             assert replay.dispatch is None
             assert replay.signal.signal_id == first.signal.signal_id
+            assert replay.evidence.evidence_id == first.evidence.evidence_id
 
             conflict = await ingestion.ingest(
                 tenant_id=tenant_id,
@@ -578,6 +611,12 @@ def test_signal_replay_is_idempotent_and_conflicting_replay_is_rejected():
                 run_id=run_id,
             )
             assert len(outbox) == 1
+            evidence_rows = await _evidence_rows(
+                factory,
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert len(evidence_rows) == 1
         finally:
             await engine.dispose()
 
