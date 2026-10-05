@@ -388,7 +388,6 @@ class Scenario2FixtureTransitionService:
     ) -> FixtureTransitionResult:
         tenant = _clean(tenant_id)
         run_key = _clean(run_id)
-        now = self._clock()
 
         async with self._uow_factory() as uow:
             run = await uow.runs.get(tenant_id=tenant, run_id=run_key)
@@ -408,6 +407,8 @@ class Scenario2FixtureTransitionService:
                     "Scenario 2 fixture state was not found.",
                     "fixture_state_missing",
                 )
+
+            now = self._clock()
 
             matching = state.matching_major_incident_id
             if matching_major_incident_id_marker is not _UNCHANGED:
