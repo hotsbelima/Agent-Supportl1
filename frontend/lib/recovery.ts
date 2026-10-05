@@ -379,10 +379,21 @@ export function decisionRecoveryStatus(
   }
 
   if (proposal.status === "EXECUTED") {
+    const incident = state.incidents.find(
+      (item) => item.incident_id === proposal.incident_id,
+    );
+    const action = actions[0];
+    const workOrder = workOrders[0];
+
     return approvals.length === 1 &&
       approvals[0]?.decision === "APPROVED" &&
       actions.length === 1 &&
-      workOrders.length === 1
+      workOrders.length === 1 &&
+      incident?.status === "ESCALATED" &&
+      action?.incident_id === proposal.incident_id &&
+      action?.device_id === proposal.device_id &&
+      workOrder?.incident_id === proposal.incident_id &&
+      workOrder?.device_id === proposal.device_id
       ? "persisted"
       : "inconsistent";
   }
