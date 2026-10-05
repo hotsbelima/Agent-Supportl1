@@ -57,6 +57,10 @@ def test_controlled_seed_is_not_exposed_as_public_http_endpoint():
     assert set(paths) == {
         "/health",
         "/api/v1/scenario-1/runs",
+        "/api/v1/scenario-2/runs",
+        "/api/v1/scenario-2/runs/{run_id}",
+        "/api/v1/scenario-2/runs/{run_id}/signals",
+        "/api/v1/scenario-2/runs/{run_id}/simulator/next",
         "/api/v1/runs/{run_id}",
         "/api/v1/runs/{run_id}/events",
         "/api/v1/runs/{run_id}/events/stream",
@@ -65,6 +69,22 @@ def test_controlled_seed_is_not_exposed_as_public_http_endpoint():
     }
     assert "/api/v1/runs/{run_id}/agent/invoke" not in paths
     assert "/api/v1/runs/{run_id}/agent/invoke" in internal_paths
+    assert (
+        "/api/v1/scenario-2/runs/{run_id}/acceptance/dependency-status"
+        not in paths
+    )
+    assert (
+        "/api/v1/scenario-2/runs/{run_id}/acceptance/dependency-status"
+        in internal_paths
+    )
+    assert (
+        "/api/v1/scenario-2/runs/{run_id}/acceptance/matching-major-incident"
+        not in paths
+    )
+    assert (
+        "/api/v1/scenario-2/runs/{run_id}/acceptance/matching-major-incident"
+        in internal_paths
+    )
 
 
 def test_controlled_seed_creates_real_persisted_pending_proposal_and_events():
