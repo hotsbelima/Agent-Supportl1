@@ -998,6 +998,34 @@ def test_product_approve_creates_one_record_and_replay_creates_no_duplicate():
     asyncio.run(scenario())
 
 
+def test_equivalent_pending_proposal_is_blocked_across_runs():
+    async def scenario() -> None:
+        store = _Store()
+        existing = _proposal()
+        store.proposals[existing.proposal_id] = replace(
+            existing,
+            run_id="OTHER-RUN",
+            proposal_id="MIP-OTHER-RUN",
+        )
+        service = MajorIncidentProposalService(
+            lambda: _Uow(store),
+            clock=lambda: NOW,
+            id_factory=lambda prefix: "SHOULD-NOT-BE-CREATED",
+        )
+        result = await service.create(
+            ToolCallContext(tenant_id=TENANT, run_id=RUN_ID),
+            _request(),
+        )
+        assert result.ok is False
+        assert (
+            dict(result.error.details)["reason"]
+            == "duplicate_pending_major_incident_proposal"
+        )
+        assert len(store.proposals) == 1
+
+    asyncio.run(scenario())
+
+
 def test_existing_equivalent_major_incident_blocks_new_proposal():
     async def scenario() -> None:
         store = _Store()
