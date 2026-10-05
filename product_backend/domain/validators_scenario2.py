@@ -266,6 +266,7 @@ def validate_major_incident_approval_currentness(
     proposal: MajorIncidentProposal,
     proposal_evidence: tuple[Evidence, ...],
     current_local_health: tuple[LocalServiceHealthSnapshot, ...],
+    current_dependency_mappings: tuple[ServiceDependencyMappingSnapshot, ...],
     current_dependency_status: ExternalDependencyStatusSnapshot | None,
     current_major_incident_search: MajorIncidentSearchSnapshot | None,
     now: datetime,
@@ -293,6 +294,16 @@ def validate_major_incident_approval_currentness(
         for item in health_by_site.values()
     ):
         return _invalid("current_local_site_not_healthy")
+
+    mapping_current = any(
+        item.service_key == proposal.service_key
+        and item.dependency_id == proposal.dependency_id
+        and item.dependency_name == proposal.dependency_name
+        and item.dependency_kind is DependencyKind.EXTERNAL_PROVIDER
+        for item in current_dependency_mappings
+    )
+    if not mapping_current:
+        return _invalid("current_dependency_mapping_changed")
 
     if current_dependency_status is None:
         return _invalid("current_dependency_status_unavailable")
