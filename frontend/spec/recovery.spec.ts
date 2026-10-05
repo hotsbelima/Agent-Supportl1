@@ -234,7 +234,6 @@ describe("persisted timeline pagination and bootstrap", () => {
       async (
         _runId: string,
         afterSeq: number,
-        _limit: number,
       ): Promise<TimelineResponse> =>
         afterSeq === 0
           ? page([event(1), event(2)])
