@@ -243,10 +243,12 @@ def validate_major_incident_proposal_evidence(
 
     duplicate_search_supported = any(
         isinstance(item.payload, MajorIncidentSearchSnapshot)
+        and item.payload.service_key == proposal.service_key
         and item.payload.correlation_key == proposal.correlation_key
         and item.payload.dependency_id == proposal.dependency_id
         and not item.payload.open_major_incident_ids
         and {
+            item.payload.service_key,
             item.payload.correlation_key,
             item.payload.dependency_id,
         }.issubset(set(item.entity_ids))
@@ -305,7 +307,8 @@ def validate_major_incident_approval_currentness(
     if current_major_incident_search is None:
         return _invalid("current_major_incident_search_unavailable")
     if (
-        current_major_incident_search.correlation_key != proposal.correlation_key
+        current_major_incident_search.service_key != proposal.service_key
+        or current_major_incident_search.correlation_key != proposal.correlation_key
         or current_major_incident_search.dependency_id != proposal.dependency_id
     ):
         return _invalid("current_major_incident_search_mismatch")
