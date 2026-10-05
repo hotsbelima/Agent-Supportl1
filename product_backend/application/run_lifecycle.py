@@ -20,7 +20,10 @@ from product_backend.contracts.tools import ToolCallContext
 from product_backend.domain.enums import IncidentStatus, RunStatus
 from product_backend.domain.models import Incident, Run
 from product_backend.domain.transitions import RUN_TRANSITIONS, can_transition
-from product_backend.ports.events import ApplicationEventRepository
+from product_backend.ports.events import (
+    ApplicationEventRepository,
+    ApplicationOutboxRepository,
+)
 from product_backend.ports.repositories import IncidentRepository, RunRepository
 
 
@@ -40,6 +43,7 @@ class RunStartUnitOfWork(Protocol):
     runs: RunRepository
     incidents: IncidentRepository
     events: ApplicationEventRepository
+    outbox: ApplicationOutboxRepository
 
     async def __aenter__(self) -> "RunStartUnitOfWork": ...
     async def __aexit__(self, exc_type, exc, tb) -> None: ...
@@ -152,19 +156,17 @@ class Scenario1RunStartService:
                 event_type=ApplicationEventType.EXTERNAL_SIGNAL,
                 payload=signal_payload,
             )
-            outbox = getattr(uow, "outbox", None)
-            if outbox is not None:
-                await outbox.enqueue(
-                    tenant_id=context.tenant_id,
-                    run_id=context.run_id,
-                    event_seq=signal_event.seq,
-                    topic=AGENT_DISPATCH_TOPIC,
-                    payload={
-                        "event_id": signal_event.event_id,
-                        "event_seq": signal_event.seq,
-                        "signal": signal_payload,
-                    },
-                )
+            await uow.outbox.enqueue(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                event_seq=signal_event.seq,
+                topic=AGENT_DISPATCH_TOPIC,
+                payload={
+                    "event_id": signal_event.event_id,
+                    "event_seq": signal_event.seq,
+                    "signal": signal_payload,
+                },
+            )
             await uow.runs.save(active_run)
             await uow.events.append(
                 tenant_id=context.tenant_id,
