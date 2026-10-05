@@ -5,6 +5,9 @@ import type {
   ProposalView,
 } from "./types";
 
+export const FIELD_SERVICE_OUTCOME_NOTE =
+  "Onsite field-service work order registered. This is not proof of repair.";
+
 function stringValue(
   payload: Record<string, JsonValue>,
   key: string,
