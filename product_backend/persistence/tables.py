@@ -88,7 +88,7 @@ class Scenario2FixtureStateRow(Base):
             name="fk_scenario2_fixture_states_run",
         ),
         CheckConstraint(
-            "dependency_status IN ('HEALTHY', 'DEGRADED', 'DOWN')",
+            "dependency_status IN ('HEALTHY', 'DEGRADED')",
             name="ck_scenario2_fixture_dependency_status_known",
         ),
     )
