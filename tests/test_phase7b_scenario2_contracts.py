@@ -316,6 +316,47 @@ def test_cross_tenant_or_cross_run_evidence_is_rejected():
     assert dict(error.details)["reason"] == "foreign_tenant_or_run"
 
 
+def test_same_run_fabricated_signal_evidence_without_persisted_signal_is_rejected():
+    async def scenario() -> None:
+        store = _Store()
+        fabricated = replace(
+            store.evidence["EV-SIG-KZN"],
+            evidence_id="EV-SIG-FAKE",
+            payload=OperationalSignalEvidenceSnapshot(
+                signal_id="SIG-NOT-PERSISTED",
+                source=Scenario2SignalSource.MONITORING,
+                site_id=SITE_KZN,
+                service_key=SERVICE_KEY,
+                symptom_key=CORRELATION_KEY,
+                source_ref="MON-FAKE",
+            ),
+            entity_ids=(
+                "SIG-NOT-PERSISTED",
+                SITE_KZN,
+                SERVICE_KEY,
+                CORRELATION_KEY,
+            ),
+        )
+        store.evidence[fabricated.evidence_id] = fabricated
+        evidence_ids = tuple(
+            "EV-SIG-FAKE" if item == "EV-SIG-KZN" else item
+            for item in _proposal().evidence_ids
+        )
+        service = MajorIncidentProposalService(
+            lambda: _Uow(store),
+            clock=lambda: NOW + timedelta(minutes=1),
+            id_factory=lambda prefix: "MIP-FAKE",
+        )
+        result = await service.create(
+            ToolCallContext(tenant_id=TENANT, run_id=RUN_ID),
+            replace(_request(), evidence_ids=evidence_ids),
+        )
+        assert result.ok is False
+        assert dict(result.error.details)["reason"] == "persisted_signal_not_found"
+
+    asyncio.run(scenario())
+
+
 def test_fabricated_or_unresolved_evidence_id_is_rejected():
     evidence = _valid_evidence()
     proposal = replace(
@@ -424,6 +465,34 @@ class _Store:
             updated_at=NOW,
         )
         self.evidence = {item.evidence_id: item for item in _valid_evidence()}
+        self.signals = {
+            SIGNAL_1_ID: OperationalSignal(
+                signal_id=SIGNAL_1_ID,
+                tenant_id=TENANT,
+                run_id=RUN_ID,
+                source=Scenario2SignalSource.MONITORING,
+                site_id=SITE_KZN,
+                service_key=SERVICE_KEY,
+                symptom_key=CORRELATION_KEY,
+                source_ref="MON-ALERT-KZN-901",
+                received_at=NOW,
+                safe_payload={"kind": "payment_timeout_rate"},
+                incident_id=INCIDENT_KZN,
+            ),
+            SIGNAL_3_ID: OperationalSignal(
+                signal_id=SIGNAL_3_ID,
+                tenant_id=TENANT,
+                run_id=RUN_ID,
+                source=Scenario2SignalSource.MONITORING,
+                site_id=SITE_SAM,
+                service_key=SERVICE_KEY,
+                symptom_key=CORRELATION_KEY,
+                source_ref="MON-ALERT-SAM-337",
+                received_at=NOW,
+                safe_payload={"kind": "payment_timeout_rate"},
+                incident_id=INCIDENT_SAM,
+            ),
+        }
         self.proposals: dict[str, MajorIncidentProposal] = {}
         self.approvals: dict[str, MajorIncidentApproval] = {}
         self.major_incidents: dict[str, MajorIncidentRecord] = {}
@@ -441,6 +510,27 @@ class _RunRepo:
 
     async def save(self, run: Run) -> None:
         self.store.run = run
+
+
+class _SignalRepo:
+    def __init__(self, store: _Store) -> None:
+        self.store = store
+
+    async def get(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        signal_id: str,
+    ):
+        signal = self.store.signals.get(signal_id)
+        if (
+            signal is not None
+            and signal.tenant_id == tenant_id
+            and signal.run_id == run_id
+        ):
+            return signal
+        return None
 
 
 class _EvidenceRepo:
@@ -584,7 +674,7 @@ class _Uow:
     def __init__(self, store: _Store) -> None:
         self.runs = _RunRepo(store)
         self.service_incidents = _NullRepo()
-        self.signals = _NullRepo()
+        self.signals = _SignalRepo(store)
         self.evidence = _EvidenceRepo(store)
         self.major_incident_proposals = _ProposalRepo(store)
         self.major_incident_approvals = _ApprovalRepo(store)
