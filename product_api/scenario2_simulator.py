@@ -104,11 +104,25 @@ class Scenario2SimulatorService:
                 ),
             )
 
+        refreshed_identities = {
+            (signal.source, signal.source_ref)
+            for signal in refreshed.operational_signals
+        }
+        next_after_ingest = next(
+            (
+                index
+                for index, candidate in enumerate(CANONICAL_SIGNAL_SEQUENCE)
+                if (candidate.source, candidate.source_ref)
+                not in refreshed_identities
+            ),
+            len(CANONICAL_SIGNAL_SEQUENCE),
+        )
+
         return Scenario2SimulatorStep(
             state=refreshed,
             ingested=ingested,
-            complete=next_index + 1 >= len(CANONICAL_SIGNAL_SEQUENCE),
-            next_index=next_index + 1,
+            complete=next_after_ingest >= len(CANONICAL_SIGNAL_SEQUENCE),
+            next_index=next_after_ingest,
         )
 
 
