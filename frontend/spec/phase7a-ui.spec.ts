@@ -25,7 +25,7 @@ describe("Phase 7A operational UI contract", () => {
 
   it("uses same-panel list to detail navigation for incidents and observations", () => {
     expect(consoleSource).toContain("<h2>Incidents</h2>");
-    expect(consoleSource).toContain("<h2>Evidence</h2>");
+    expect(consoleSource).toContain("<h2>Observations</h2>");
     expect(consoleSource.match(/Подробнее/g)?.length).toBeGreaterThanOrEqual(2);
     expect(consoleSource.match(/← Назад к списку/g)?.length).toBeGreaterThanOrEqual(2);
     expect(consoleSource).toContain("setSelectedIncidentId");
