@@ -280,6 +280,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 }
 .facts-list { margin: 14px 0; padding-left: 18px; color: #c3d2da; font-size: 12px; line-height: 1.55; }
 .muted-copy, .expiry { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.payload-label { display: block; margin-top: 14px; }
 .payload-block, .event-details pre {
   max-height: 260px; margin: 13px 0 0; padding: 12px; overflow: auto;
   border: 1px solid var(--line); border-radius: 10px; color: #a8bdc9;
