@@ -153,7 +153,7 @@ class Scenario2ProposalUnitOfWork(Protocol):
 
 class Scenario2ApprovalUnitOfWork(Protocol):
     runs: RunRepository
-    incidents: IncidentRepository
+    service_incidents: ServiceIncidentRepository
     signals: OperationalSignalRepository
     evidence: EvidenceRepository
     major_incident_proposals: MajorIncidentProposalRepository
