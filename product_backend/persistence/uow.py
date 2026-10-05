@@ -89,6 +89,7 @@ class SqlAlchemyScenario2SignalIngestionUnitOfWork(_SqlAlchemyUnitOfWorkBase):
         )
         self.service_incidents = SqlAlchemyServiceIncidentRepository(self._session)
         self.signals = SqlAlchemyOperationalSignalRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
         self.events = SqlAlchemyApplicationEventRepository(self._session)
         self.outbox = SqlAlchemyApplicationOutboxRepository(self._session)
 
