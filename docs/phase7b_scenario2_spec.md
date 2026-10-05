@@ -99,6 +99,7 @@ Proposal identity includes:
 
 - tenant/run;
 - correlation key;
+- business service key;
 - affected site IDs (at least two distinct sites);
 - dependency ID/name;
 - evidence IDs;
