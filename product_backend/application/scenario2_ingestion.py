@@ -46,6 +46,7 @@ FixtureUowFactory = Callable[[], Scenario2FixtureStateUnitOfWork]
 RunStartResult: TypeAlias = Scenario2RunStarted | OperationFailure
 SignalIngestionResult: TypeAlias = Scenario2SignalIngested | OperationFailure
 FixtureTransitionResult: TypeAlias = Scenario2FixtureState | OperationFailure
+_UNCHANGED = object()
 
 
 def _utc_now() -> datetime:
@@ -340,7 +341,7 @@ class Scenario2FixtureTransitionService:
             tenant_id=tenant_id,
             run_id=run_id,
             dependency_status=status,
-            matching_major_incident_id_marker=...,
+            matching_major_incident_id_marker=_UNCHANGED,
         )
 
     async def set_matching_major_incident(
@@ -364,7 +365,7 @@ class Scenario2FixtureTransitionService:
         tenant_id: str,
         run_id: str,
         dependency_status: HealthState | None,
-        matching_major_incident_id_marker: str | None | type(...),
+        matching_major_incident_id_marker: object,
     ) -> FixtureTransitionResult:
         tenant = _clean(tenant_id)
         run_key = _clean(run_id)
@@ -390,7 +391,16 @@ class Scenario2FixtureTransitionService:
                 )
 
             matching = state.matching_major_incident_id
-            if matching_major_incident_id_marker is not ...:
+            if matching_major_incident_id_marker is not _UNCHANGED:
+                if (
+                    matching_major_incident_id_marker is not None
+                    and not isinstance(matching_major_incident_id_marker, str)
+                ):
+                    return _failure(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "Matching Major Incident fixture value is invalid.",
+                        "invalid_matching_major_incident_marker",
+                    )
                 matching = matching_major_incident_id_marker
 
             updated = replace(
