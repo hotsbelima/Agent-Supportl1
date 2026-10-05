@@ -334,6 +334,9 @@ export function RunConsole({ runId }: { runId: string }) {
                           <strong>{formatTimestamp(evidence.expires_at)}</strong>
                         </p>
                       ) : null}
+                      <span className="subtle-label payload-label">
+                        Typed safe payload
+                      </span>
                       <pre className="payload-block">
                         {JSON.stringify(evidence.payload, null, 2)}
                       </pre>
