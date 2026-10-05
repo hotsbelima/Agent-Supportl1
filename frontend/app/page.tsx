@@ -51,7 +51,7 @@ export default function HomePage() {
         <article>
           <span>03</span>
           <strong>Persistent audit</strong>
-          <p>Run state and timeline survive process restarts and reloads.</p>
+          <p>Run state and timeline come from persisted backend state, not the React session.</p>
         </article>
       </section>
     </main>
