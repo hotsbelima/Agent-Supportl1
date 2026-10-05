@@ -99,6 +99,7 @@ class MajorIncidentProposal:
     tenant_id: str
     run_id: str
     correlation_key: str
+    service_key: str
     affected_site_ids: tuple[str, ...]
     dependency_id: str
     dependency_name: str
