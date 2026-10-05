@@ -139,6 +139,19 @@ def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
         assert restored.status_code == 200
         assert len(restored.json()["operational_signals"]) == 1
 
+        # The running Scenario 1 worker must not consume the separate Scenario 2
+        # topic. This row is the explicit handoff point to the later ADK worker.
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        queued = asyncio.run(
+            _outbox_rows(factory, tenant_id=tenant_id, run_id=run_id)
+        )
+        asyncio.run(engine.dispose())
+        assert len(queued) == 1
+        assert queued[0].topic == SCENARIO2_AGENT_DISPATCH_TOPIC
+        assert queued[0].delivered_at is None
+        assert queued[0].attempt_count == 0
+
         timeline = client.get(
             f"/api/v1/runs/{run_id}/events",
             headers=headers,
