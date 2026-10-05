@@ -162,12 +162,15 @@ successful Major Incident execution.
 
 ## Phase boundaries
 
-7B defines the types, canonical fixture, validation rules, and repository/tool
-contracts. It does **not**:
+7B defines the types, canonical fixture, validation rules, repository/tool
+contracts, and PostgreSQL representation for ServiceIncident/OperationalSignal.
+It does **not**:
 
 - add event ingestion endpoints or simulator sequencing (7C);
 - dispatch Scenario 2 events to ADK (7C);
 - expose live Scenario 2 ADK tools (7D);
 - implement human pause/resume for Scenario 2 (7D);
-- create database migrations/tables for Scenario 2 state (7C/7D as required);
+- implement Scenario 2 ingestion/simulator transactions over those tables (7C);
+- add persistence tables for Major Incident proposal/approval/execution (later
+  implementation checkpoint when those Product operations are wired);
 - run managed Gemini acceptance (7E).
