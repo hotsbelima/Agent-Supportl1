@@ -457,20 +457,17 @@ class MajorIncidentApprovalService:
 
             if equivalent is None:
                 try:
-                    current_health = tuple(
-                        item
-                        for item in (
-                            [
-                                await self._local_health.get_local_service_health(
-                                    tenant_id=context.tenant_id,
-                                    run_id=context.run_id,
-                                    site_id=site_id,
-                                    service_key=proposal.service_key,
-                                )
-                                for site_id in proposal.affected_site_ids
-                            ]
+                    health_results = [
+                        await self._local_health.get_local_service_health(
+                            tenant_id=context.tenant_id,
+                            run_id=context.run_id,
+                            site_id=site_id,
+                            service_key=proposal.service_key,
                         )
-                        if item is not None
+                        for site_id in proposal.affected_site_ids
+                    ]
+                    current_health = tuple(
+                        item for item in health_results if item is not None
                     )
                     if len(current_health) != len(proposal.affected_site_ids):
                         return _failure(
