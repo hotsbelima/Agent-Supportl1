@@ -58,10 +58,10 @@ class SqlAlchemyApplicationEventRepository:
     """Allocate per-run sequence under a run-row lock.
 
     Locking the owning run serializes writers for that run. Different runs may
-    append concurrently. Phase 6A deliberately does not enqueue generic
-    application-event outbox rows: no consumer exists for them. The legacy
-    outbox table remains schema-only until Phase 6C either introduces a
-    dedicated durable ADK-resume consumer or deprecates it permanently.
+    append concurrently. Generic application events still do not create outbox
+    rows. Phase 7A uses the existing outbox table only for the concrete durable
+    operational-event -> ADK dispatch bridge, enqueued atomically by the
+    Scenario 1 start transaction for the persisted external signal.
     """
 
     def __init__(
