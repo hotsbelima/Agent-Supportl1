@@ -1,7 +1,7 @@
-"""Canonical deterministic Scenario 2 world for Phase 7B.
+"""Canonical deterministic Scenario 2 world and incoming fact templates.
 
-This file defines fixture truth and exact incoming templates only. It is not
-wired to Product ingestion or ADK in Phase 7B.
+Phase 7C wires these templates to Product ingestion. ADK consumption remains a
+separate handoff.
 """
 
 from __future__ import annotations
