@@ -1,4 +1,5 @@
 name: Phase 7A event dispatch and operational UI
+# Gate must run on the exact Phase 7A head after UI-contract tests.
 
 on:
   push:
