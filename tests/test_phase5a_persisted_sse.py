@@ -290,6 +290,36 @@ def test_cursor_parser_has_last_event_id_precedence_and_rejects_invalid_values()
             resolve_sse_cursor(last_event_id=value, after_seq="3")
 
 
+def test_sse_config_rejects_non_finite_intervals_and_non_exact_cors(
+    monkeypatch,
+):
+    for invalid in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            SseSettings(
+                poll_interval_seconds=invalid,
+                heartbeat_interval_seconds=15.0,
+                batch_size=100,
+            )
+        with pytest.raises(ValueError):
+            SseSettings(
+                poll_interval_seconds=0.75,
+                heartbeat_interval_seconds=invalid,
+                batch_size=100,
+            )
+
+    monkeypatch.setenv("SSE_POLL_INTERVAL_SECONDS", "nan")
+    with pytest.raises(RuntimeError, match="finite positive"):
+        SseSettings.from_env()
+
+    monkeypatch.delenv("SSE_POLL_INTERVAL_SECONDS", raising=False)
+    monkeypatch.setenv(
+        "FRONTEND_ORIGINS",
+        "https://*.vercel.app",
+    )
+    with pytest.raises(RuntimeError, match="exact origins"):
+        create_app(_fake_container())
+
+
 def test_stream_unknown_run_foreign_tenant_and_invalid_cursor_are_safe():
     tenant_id = f"TENANT-SSE-{uuid4().hex[:8]}"
     other_tenant = f"TENANT-SSE-OTHER-{uuid4().hex[:8]}"
@@ -439,6 +469,24 @@ def test_real_http_stream_orders_persisted_events_and_honors_cursor_precedence()
 
         assert frame["id"] == "3"
         assert frame["data"]["seq"] == 3
+
+        connection, response = _open_sse(
+            base_url,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            after_seq="1",
+        )
+        try:
+            assert response.status == 200
+            after_cursor = [
+                _read_next_application_event(response)
+                for _ in range(2)
+            ]
+        finally:
+            response.close()
+            connection.close()
+
+        assert [frame["data"]["seq"] for frame in after_cursor] == [2, 3]
 
 
 def test_heartbeat_is_transport_only_and_does_not_advance_persisted_sequence():
@@ -610,3 +658,43 @@ def test_stream_isolated_by_run_and_safe_payload_contains_no_reasoning_or_secret
             "super_secret",
         ):
             assert forbidden not in serialized
+
+        first_cursor = first["latest_event_seq"]
+        connection, response = _open_sse(
+            base_url,
+            tenant_id=tenant_id,
+            run_id=first_run,
+            after_seq=str(first_cursor),
+        )
+        try:
+            asyncio.run(
+                _record_external_signal(
+                    tenant_id=tenant_id,
+                    run_id=second_run,
+                    marker="must-not-leak",
+                )
+            )
+            frame = _read_sse_frame(response)
+            assert frame == {
+                "comment": "keepalive",
+                "raw": [": keepalive"],
+            }
+
+            first_event = asyncio.run(
+                _record_external_signal(
+                    tenant_id=tenant_id,
+                    run_id=first_run,
+                    marker="belongs-to-first-run",
+                )
+            )
+            delivered = _read_next_application_event(response)
+        finally:
+            response.close()
+            connection.close()
+
+        assert delivered["id"] == str(first_event.seq)
+        assert delivered["data"]["run_id"] == first_run
+        assert (
+            delivered["data"]["payload"]["details"]["marker"]
+            == "belongs-to-first-run"
+        )
