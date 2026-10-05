@@ -1,8 +1,4 @@
-"""SQLAlchemy persistence for Phase 7B Scenario 2 operational facts.
-
-Only ServiceIncident and OperationalSignal persistence is implemented here.
-Event ingestion/orchestration remains Phase 7C.
-"""
+"""SQLAlchemy persistence for Scenario 2 operational and fixture state."""
 
 from __future__ import annotations
 
