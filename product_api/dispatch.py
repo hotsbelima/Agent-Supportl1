@@ -179,10 +179,14 @@ class Scenario1DispatchWorker:
                 timeout=self._invocation_timeout,
             )
         except asyncio.CancelledError:
-            # Release the durable lease immediately on graceful shutdown. If ADK
-            # already persisted the invocation/pause, redelivery reconciles from
-            # native Session history instead of starting a second invocation.
-            await self._reschedule(record)
+            # Release the durable lease immediately on graceful shutdown when
+            # possible. If the DB is unavailable during shutdown, do not turn
+            # process termination into a new failure: the existing lease will
+            # expire and durable redelivery will reconcile from ADK history.
+            try:
+                await self._reschedule(record)
+            except Exception:
+                pass
             raise
         except Exception:
             # Do not log provider payloads/secrets. The durable row remains the
