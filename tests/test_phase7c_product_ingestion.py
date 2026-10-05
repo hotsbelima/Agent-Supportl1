@@ -506,6 +506,53 @@ def test_manual_ingest_of_canonical_source_identity_advances_simulator():
     asyncio.run(scenario())
 
 
+def test_simulator_completion_handles_out_of_order_manual_canonical_fact():
+    async def scenario() -> None:
+        suffix = uuid4().hex[:10]
+        tenant_id = f"TENANT-7C-OUT-OF-ORDER-{suffix}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        start, ingestion, _, simulator, _, _ = _services(factory)
+        try:
+            started = await start.start(tenant_id=tenant_id)
+            assert not isinstance(started, OperationFailure)
+            run_id = started.run.run_id
+
+            for index in (0, 2):
+                template = CANONICAL_SIGNAL_SEQUENCE[index]
+                result = await ingestion.ingest(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    signal_input=Scenario2SignalInput(
+                        source=template.source,
+                        site_id=template.site_id,
+                        service_key=template.service_key,
+                        symptom_key=template.symptom_key,
+                        source_ref=template.source_ref,
+                        safe_payload=dict(template.safe_payload),
+                    ),
+                )
+                assert not isinstance(result, OperationFailure)
+
+            step = await simulator.next(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert not isinstance(step, OperationFailure)
+            assert step.ingested is not None
+            assert (
+                step.ingested.signal.source_ref
+                == CANONICAL_SIGNAL_SEQUENCE[1].source_ref
+            )
+            assert step.complete is True
+            assert step.next_index == 3
+            assert len(step.state.operational_signals) == 3
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_controlled_fixture_transitions_are_persisted_and_source_visible_after_restart():
     async def scenario() -> None:
         suffix = uuid4().hex[:10]
