@@ -182,11 +182,12 @@ class SimulatedNotificationRecord:
 def major_incident_equivalence_key(
     *,
     tenant_id: str,
+    service_key: str,
     correlation_key: str,
     dependency_id: str,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     """Canonical duplicate-prevention key for an equivalent Major Incident."""
-    return (tenant_id, correlation_key, dependency_id)
+    return (tenant_id, service_key, correlation_key, dependency_id)
 
 
 __all__ = [
