@@ -135,7 +135,7 @@ def test_retry_plugin_reflects_only_product_retryable_failures():
             },
         )
         assert retryable is not None
-        assert retryable["response_type"] == "tool_error"
+        assert retryable["response_type"] == "ERROR_HANDLED_BY_REFLECT_AND_RETRY_PLUGIN"
         assert retryable["retry_count"] == 1
 
         non_retryable = await plugin.after_tool_callback(
