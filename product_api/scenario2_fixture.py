@@ -41,6 +41,30 @@ STALE_MATCHING_MAJOR_INCIDENT_ID = "MI-ACMEPAY-EXISTING-001"
 
 
 @dataclass(frozen=True, slots=True)
+class Scenario2ServiceIncidentTemplate:
+    incident_id: str
+    site_id: str
+    service_key: str
+    symptom_key: str
+
+
+CANONICAL_SERVICE_INCIDENTS = (
+    Scenario2ServiceIncidentTemplate(
+        incident_id=INCIDENT_KZN,
+        site_id=SITE_KZN,
+        service_key=SERVICE_KEY,
+        symptom_key=CORRELATION_KEY,
+    ),
+    Scenario2ServiceIncidentTemplate(
+        incident_id=INCIDENT_SAM,
+        site_id=SITE_SAM,
+        service_key=SERVICE_KEY,
+        symptom_key=CORRELATION_KEY,
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
 class Scenario2SignalTemplate:
     signal_id: str
     source: Scenario2SignalSource
@@ -191,6 +215,7 @@ class Scenario2FixtureWorld:
 __all__ = [
     "ACMEPAY_DEPENDENCY_ID",
     "ACMEPAY_NAME",
+    "CANONICAL_SERVICE_INCIDENTS",
     "CANONICAL_SIGNAL_SEQUENCE",
     "CORRELATION_KEY",
     "INCIDENT_KZN",
@@ -204,5 +229,6 @@ __all__ = [
     "SITE_SAM",
     "STALE_MATCHING_MAJOR_INCIDENT_ID",
     "Scenario2FixtureWorld",
+    "Scenario2ServiceIncidentTemplate",
     "Scenario2SignalTemplate",
 ]
