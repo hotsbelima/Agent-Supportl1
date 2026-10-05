@@ -145,6 +145,7 @@ class MajorIncidentRecord:
     run_id: str
     proposal_id: str
     correlation_key: str
+    service_key: str
     affected_site_ids: tuple[str, ...]
     dependency_id: str
     dependency_name: str
