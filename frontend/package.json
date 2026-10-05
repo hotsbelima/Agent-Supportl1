@@ -10,7 +10,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "vitest run spec/*.spec.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
