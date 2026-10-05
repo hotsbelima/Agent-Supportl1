@@ -143,8 +143,9 @@ class OperationalSignalRow(Base):
         UniqueConstraint(
             "tenant_id",
             "run_id",
+            "source",
             "source_ref",
-            name="uq_operational_signals_source_ref",
+            name="uq_operational_signals_source_identity",
         ),
         CheckConstraint(
             "source IN ('MONITORING', 'ITSM')",
