@@ -85,10 +85,20 @@ function isEventView(value: unknown): value is ApplicationEventView {
 export function applicationEventFromFrame(
   frame: SseFrame,
 ): ApplicationEventView | null {
-  if (frame.comment !== undefined && !frame.data) return null;
-  if (frame.event !== "application.event" || !frame.data || !frame.id) {
-    return null;
+  const commentOnly =
+    frame.comment !== undefined &&
+    frame.id === undefined &&
+    frame.event === undefined &&
+    frame.data === undefined;
+  if (commentOnly) return null;
+
+  if (frame.event !== "application.event") {
+    throw new Error("Unexpected SSE frame type.");
   }
+  if (!frame.data || !frame.id) {
+    throw new Error("Incomplete application.event SSE frame.");
+  }
+
   const id = Number(frame.id);
   if (!Number.isSafeInteger(id) || id < 0) {
     throw new Error("Invalid SSE event id.");
