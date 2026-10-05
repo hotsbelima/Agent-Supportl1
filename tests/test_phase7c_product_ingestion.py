@@ -332,7 +332,8 @@ def test_scenario2_start_is_product_only_and_persists_restart_safe_state():
     async def scenario() -> None:
         suffix = uuid4().hex[:10]
         tenant_id = f"TENANT-7C-START-{suffix}"
-        engine = create_engine(DatabaseSettings(url=_database_url()))
+        database_url = _database_url()
+        engine = create_engine(DatabaseSettings(url=database_url))
         factory = create_session_factory(engine)
         start, _, state_service, _, _, _ = _services(factory)
         try:
@@ -352,7 +353,11 @@ def test_scenario2_start_is_product_only_and_persists_restart_safe_state():
             assert snapshot.latest_event_seq == 1
             assert snapshot.fixture_state.dependency_status is HealthState.DEGRADED
 
-            # Rebuild the read service to model a process restart.
+            # Drop all SQLAlchemy process-local state and reconnect only
+            # from DATABASE_URL, then prove Product state is still complete.
+            await engine.dispose()
+            engine = create_engine(DatabaseSettings(url=database_url))
+            factory = create_session_factory(engine)
             restarted_state = Scenario2StateService(
                 SqlAlchemyScenario2StateQuery(factory)
             )
@@ -583,7 +588,8 @@ def test_simulator_progress_survives_service_recreation_between_every_event():
     async def scenario() -> None:
         suffix = uuid4().hex[:10]
         tenant_id = f"TENANT-7C-RESTART-{suffix}"
-        engine = create_engine(DatabaseSettings(url=_database_url()))
+        database_url = _database_url()
+        engine = create_engine(DatabaseSettings(url=database_url))
         factory = create_session_factory(engine)
         start, _, _, simulator, _, _ = _services(factory)
         try:
@@ -599,7 +605,11 @@ def test_simulator_progress_survives_service_recreation_between_every_event():
                 assert not isinstance(step, OperationFailure)
                 assert len(step.state.operational_signals) == expected_count
 
-                # Recreate all Product services before the next event.
+                # Simulate a process restart: dispose the engine and reconstruct
+                # every Product service from PostgreSQL before the next event.
+                await engine.dispose()
+                engine = create_engine(DatabaseSettings(url=database_url))
+                factory = create_session_factory(engine)
                 _, _, _, simulator, _, _ = _services(factory)
 
             done = await simulator.next(
