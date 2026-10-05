@@ -23,6 +23,15 @@ from product_backend.domain.models import (
     KbArticle,
     SiteHealthSnapshot,
 )
+from product_backend.domain.scenario2 import (
+    DependencyKind,
+    ExternalDependencyStatusSnapshot,
+    LocalServiceHealthSnapshot,
+    MajorIncidentSearchSnapshot,
+    OperationalSignalEvidenceSnapshot,
+    Scenario2SignalSource,
+    ServiceDependencyMappingSnapshot,
+)
 
 
 def serialize_evidence_payload(
@@ -91,6 +100,68 @@ def serialize_evidence_payload(
             "approved": payload.approved,
             "diagnosis_codes": [value.value for value in payload.diagnosis_codes],
             "allowed_actions": [value.value for value in payload.allowed_actions],
+        }
+
+    if source_type is EvidenceSourceType.OPERATIONAL_SIGNAL:
+        if not isinstance(payload, OperationalSignalEvidenceSnapshot):
+            raise ValueError(
+                "OPERATIONAL_SIGNAL requires OperationalSignalEvidenceSnapshot payload"
+            )
+        return {
+            "signal_id": payload.signal_id,
+            "source": payload.source.value,
+            "site_id": payload.site_id,
+            "symptom_key": payload.symptom_key,
+            "source_ref": payload.source_ref,
+        }
+
+    if source_type is EvidenceSourceType.LOCAL_SERVICE_HEALTH:
+        if not isinstance(payload, LocalServiceHealthSnapshot):
+            raise ValueError(
+                "LOCAL_SERVICE_HEALTH requires LocalServiceHealthSnapshot payload"
+            )
+        return {
+            "site_id": payload.site_id,
+            "service_key": payload.service_key,
+            "network_health": payload.network_health.value,
+            "local_service_health": payload.local_service_health.value,
+        }
+
+    if source_type is EvidenceSourceType.SERVICE_DEPENDENCY_MAPPING:
+        if not isinstance(payload, ServiceDependencyMappingSnapshot):
+            raise ValueError(
+                "SERVICE_DEPENDENCY_MAPPING requires "
+                "ServiceDependencyMappingSnapshot payload"
+            )
+        return {
+            "service_key": payload.service_key,
+            "dependency_id": payload.dependency_id,
+            "dependency_name": payload.dependency_name,
+            "dependency_kind": payload.dependency_kind.value,
+        }
+
+    if source_type is EvidenceSourceType.EXTERNAL_DEPENDENCY_STATUS:
+        if not isinstance(payload, ExternalDependencyStatusSnapshot):
+            raise ValueError(
+                "EXTERNAL_DEPENDENCY_STATUS requires "
+                "ExternalDependencyStatusSnapshot payload"
+            )
+        return {
+            "dependency_id": payload.dependency_id,
+            "dependency_name": payload.dependency_name,
+            "status": payload.status.value,
+            "status_detail": payload.status_detail,
+        }
+
+    if source_type is EvidenceSourceType.MAJOR_INCIDENT_SEARCH:
+        if not isinstance(payload, MajorIncidentSearchSnapshot):
+            raise ValueError(
+                "MAJOR_INCIDENT_SEARCH requires MajorIncidentSearchSnapshot payload"
+            )
+        return {
+            "correlation_key": payload.correlation_key,
+            "dependency_id": payload.dependency_id,
+            "open_major_incident_ids": list(payload.open_major_incident_ids),
         }
 
     raise ValueError(f"Unsupported evidence source type: {source_type.value}")
@@ -177,6 +248,53 @@ def deserialize_evidence_payload(
             allowed_actions=tuple(
                 ActionType(value)
                 for value in _require_str_tuple(payload, "allowed_actions")
+            ),
+        )
+
+    if source_type is EvidenceSourceType.OPERATIONAL_SIGNAL:
+        return OperationalSignalEvidenceSnapshot(
+            signal_id=_require_str(payload, "signal_id"),
+            source=Scenario2SignalSource(_require_str(payload, "source")),
+            site_id=_require_str(payload, "site_id"),
+            symptom_key=_require_str(payload, "symptom_key"),
+            source_ref=_require_str(payload, "source_ref"),
+        )
+
+    if source_type is EvidenceSourceType.LOCAL_SERVICE_HEALTH:
+        return LocalServiceHealthSnapshot(
+            site_id=_require_str(payload, "site_id"),
+            service_key=_require_str(payload, "service_key"),
+            network_health=HealthState(_require_str(payload, "network_health")),
+            local_service_health=HealthState(
+                _require_str(payload, "local_service_health")
+            ),
+        )
+
+    if source_type is EvidenceSourceType.SERVICE_DEPENDENCY_MAPPING:
+        return ServiceDependencyMappingSnapshot(
+            service_key=_require_str(payload, "service_key"),
+            dependency_id=_require_str(payload, "dependency_id"),
+            dependency_name=_require_str(payload, "dependency_name"),
+            dependency_kind=DependencyKind(
+                _require_str(payload, "dependency_kind")
+            ),
+        )
+
+    if source_type is EvidenceSourceType.EXTERNAL_DEPENDENCY_STATUS:
+        return ExternalDependencyStatusSnapshot(
+            dependency_id=_require_str(payload, "dependency_id"),
+            dependency_name=_require_str(payload, "dependency_name"),
+            status=HealthState(_require_str(payload, "status")),
+            status_detail=_require_str(payload, "status_detail"),
+        )
+
+    if source_type is EvidenceSourceType.MAJOR_INCIDENT_SEARCH:
+        return MajorIncidentSearchSnapshot(
+            correlation_key=_require_str(payload, "correlation_key"),
+            dependency_id=_require_str(payload, "dependency_id"),
+            open_major_incident_ids=_require_str_tuple(
+                payload,
+                "open_major_incident_ids",
             ),
         )
 
