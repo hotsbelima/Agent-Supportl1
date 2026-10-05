@@ -9,6 +9,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TypeAlias
 
+from .scenario2 import (
+    ExternalDependencyStatusSnapshot,
+    LocalServiceHealthSnapshot,
+    MajorIncidentSearchSnapshot,
+    OperationalSignalEvidenceSnapshot,
+    ServiceDependencyMappingSnapshot,
+)
+
 from .enums import (
     ActionType,
     AdminState,
@@ -100,11 +108,18 @@ class KbArticle:
 
 
 EvidencePayload: TypeAlias = (
+    # Scenario 1
     DeviceTopology
     | SiteHealthSnapshot
     | AccessLinkDiagnosticSnapshot
     | IncidentSearchSnapshot
     | KbArticle
+    # Scenario 2
+    | OperationalSignalEvidenceSnapshot
+    | LocalServiceHealthSnapshot
+    | ServiceDependencyMappingSnapshot
+    | ExternalDependencyStatusSnapshot
+    | MajorIncidentSearchSnapshot
 )
 
 
