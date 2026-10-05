@@ -125,8 +125,8 @@ provenance:
   and local payment stack both `HEALTHY`;
 - service dependency mapping for `payment_gateway` to the proposed dependency;
 - fresh external dependency status showing that dependency is `DEGRADED`;
-- fresh Major Incident search for the same correlation/dependency with zero
-  matching open Major Incidents.
+- fresh Major Incident search for the same service/correlation/dependency with
+  zero matching open Major Incidents.
 
 Single-site evidence is insufficient. Fabricated, missing, expired, cross-tenant,
 cross-run, or mismatched evidence is rejected deterministically.
@@ -139,7 +139,8 @@ Human Approve is a Product operation. Before execution, Product must revalidate:
 - local-health evidence for all affected sites remains current;
 - the common external dependency still maps to the same provider;
 - the provider is still `DEGRADED`;
-- a matching Major Incident still does not exist.
+- a matching Major Incident for the same service/correlation/dependency still
+  does not exist.
 
 If the provider recovered or a matching Major Incident now exists, the proposal
 becomes `STALE` and execution count stays zero.
