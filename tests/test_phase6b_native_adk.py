@@ -10,7 +10,7 @@ from agent_runtime.agent import AGENT_INSTRUCTION, MODEL, build_scenario1_agent
 from agent_runtime.retry import ProductRetryableToolPlugin
 from product_backend.contracts.tools import MODEL_VISIBLE_TOOL_NAMES
 from scripts.phase6b_live_acceptance import (
-    REQUIRED_LIVE_TOOLS,
+    REQUIRED_PROPOSAL_TOOLS,
     _proposal_uses_required_prior_evidence,
 )
 
@@ -149,8 +149,16 @@ def test_agent_instruction_preserves_autonomy_but_requires_valid_dependencies():
     assert "do not submit the same proposal again" in AGENT_INSTRUCTION
 
 
-def test_live_acceptance_requires_all_six_tools_across_batch():
-    assert REQUIRED_LIVE_TOOLS == set(MODEL_VISIBLE_TOOL_NAMES)
+def test_live_acceptance_requires_only_scenario1_proposal_prerequisites():
+    assert REQUIRED_PROPOSAL_TOOLS == {
+        "get_device",
+        "get_site_health",
+        "run_diagnostic",
+        "search_kb",
+        "propose_field_visit",
+    }
+    assert "search_incidents" not in REQUIRED_PROPOSAL_TOOLS
+    assert REQUIRED_PROPOSAL_TOOLS.issubset(set(MODEL_VISIBLE_TOOL_NAMES))
 
 
 def test_live_acceptance_requires_all_four_evidence_classes_from_prior_results():
