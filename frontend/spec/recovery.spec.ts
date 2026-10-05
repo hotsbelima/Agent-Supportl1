@@ -428,6 +428,14 @@ describe("decision response recovery", () => {
     );
   });
 
+  it("does not confirm a terminal decision while the run is not ACTIVE", () => {
+    const inconsistent = state(8, "EXECUTED");
+    inconsistent.run.status = "WAITING_APPROVAL";
+    expect(decisionRecoveryStatus(inconsistent, "PROP-1")).toBe(
+      "inconsistent",
+    );
+  });
+
   it("recognizes an authoritative committed Reject after its HTTP response was lost", () => {
     expect(decisionRecoveryStatus(state(7, "REJECTED"), "PROP-1")).toBe(
       "persisted",
