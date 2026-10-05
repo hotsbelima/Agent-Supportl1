@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -10,6 +10,21 @@ import {
   getRunState,
   getRunTimeline,
 } from "@/lib/api";
+import {
+  abortableDelay,
+  applyTimelineEvent,
+  bootstrapPersistedRun,
+  connectionStateForFailure,
+  decisionRecoveryStatus,
+  emptyTimeline,
+  isStateRefreshEvent,
+  mergeTimelineEvents,
+  prepareReconnect,
+  reconnectDelayMs,
+  replayNotice,
+  TimelineGapError,
+  type TimelineAccumulator,
+} from "@/lib/recovery";
 import {
   connectionTone,
   eventSummary,
@@ -44,6 +59,20 @@ function EmptyPanel({ children }: { children: ReactNode }) {
   return <div className="empty-panel">{children}</div>;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function recoveryMessage(error: unknown): string {
+  if (error instanceof TimelineGapError) {
+    return "Timeline gap detected; recovering missing persisted events.";
+  }
+  if (error instanceof Error && error.message === "Live event stream closed.") {
+    return "Live event stream closed; reconnecting from persisted state.";
+  }
+  return displayApiError(error);
+}
+
 export function RunConsole({ runId }: { runId: string }) {
   const [state, setState] = useState<RunStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
@@ -57,6 +86,10 @@ export function RunConsole({ runId }: { runId: string }) {
     verb: "approve" | "reject";
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+
+  const timelineByRunRef = useRef(new Map<string, TimelineAccumulator>());
+  const cursorByRunRef = useRef(new Map<string, number>());
 
   const refreshState = useCallback(
     async (signal?: AbortSignal) => {
@@ -70,76 +103,151 @@ export function RunConsole({ runId }: { runId: string }) {
   useEffect(() => {
     const controller = new AbortController();
     let mounted = true;
+    let failureCount = 0;
+    let needsRecovery = false;
 
-    async function bootstrap() {
+    const readState = (
+      requestedRunId: string,
+      signal?: AbortSignal,
+    ) => getRunState(requestedRunId, signal);
+    const readPage = (
+      requestedRunId: string,
+      afterSeq: number,
+      limit: number,
+      signal?: AbortSignal,
+    ) => getRunTimeline(requestedRunId, afterSeq, limit, signal);
+
+    function currentTimeline(): TimelineAccumulator {
+      return timelineByRunRef.current.get(runId) ?? emptyTimeline(
+        cursorByRunRef.current.get(runId) ?? 0,
+      );
+    }
+
+    function publishTimeline(next: TimelineAccumulator) {
+      timelineByRunRef.current.set(runId, next);
+      cursorByRunRef.current.set(runId, next.cursor);
+      if (mounted) setEvents(next.events);
+    }
+
+    async function runSession() {
       setLoading(true);
       setPageError(null);
       setStreamError(null);
       setConnection("Reconnecting");
+      setDecisionError(null);
+      setDecisionNotice(null);
+
+      timelineByRunRef.current.set(runId, emptyTimeline());
+      cursorByRunRef.current.set(runId, 0);
 
       try {
-        const [current, timeline] = await Promise.all([
-          getRunState(runId, controller.signal),
-          getRunTimeline(runId, 0, 1000, controller.signal),
-        ]);
+        const bootstrapped = await bootstrapPersistedRun({
+          runId,
+          readState,
+          readPage,
+          signal: controller.signal,
+        });
         if (!mounted) return;
 
-        setState(current);
-        setEvents(timeline.events);
+        setState(bootstrapped.state);
+        publishTimeline(bootstrapped.timeline);
         setLoading(false);
-
-        const cursor =
-          timeline.events.at(-1)?.seq ?? timeline.next_cursor ?? 0;
-
-        try {
-          await streamRunEvents({
-            runId,
-            afterSeq: cursor,
-            signal: controller.signal,
-            onOpen: () => {
-              if (mounted) {
-                setConnection("Live");
-                setStreamError(null);
-              }
-            },
-            onEvent: (event) => {
-              if (!mounted) return;
-              setEvents((previous) => {
-                if (previous.some((item) => item.seq === event.seq)) {
-                  return previous;
-                }
-                return [...previous, event].sort((a, b) => a.seq - b.seq);
-              });
-
-              if (
-                event.event_type === "proposal.created" ||
-                event.event_type === "approval.decided" ||
-                event.event_type === "action.executed" ||
-                event.event_type === "run.status_changed"
-              ) {
-                void refreshState(controller.signal).catch(() => undefined);
-              }
-            },
-          });
-
-          if (mounted && !controller.signal.aborted) {
-            setConnection("Offline/Unavailable");
-            setStreamError("Live event stream closed.");
-          }
-        } catch (error) {
-          if (!mounted || controller.signal.aborted) return;
-          setConnection("Offline/Unavailable");
-          setStreamError(displayApiError(error));
-        }
       } catch (error) {
         if (!mounted || controller.signal.aborted) return;
         setLoading(false);
         setConnection("Offline/Unavailable");
         setPageError(displayApiError(error));
+        return;
+      }
+
+      while (!controller.signal.aborted) {
+        try {
+          if (needsRecovery) {
+            setConnection(connectionStateForFailure(failureCount));
+            await abortableDelay(
+              reconnectDelayMs(failureCount),
+              controller.signal,
+            );
+
+            const cursor = cursorByRunRef.current.get(runId) ?? 0;
+            const recovered = await prepareReconnect({
+              runId,
+              cursor,
+              readState,
+              readPage,
+              signal: controller.signal,
+            });
+            if (!mounted) return;
+
+            const merged = mergeTimelineEvents(
+              currentTimeline(),
+              recovered.backfill.events,
+              runId,
+            );
+            setState(recovered.state);
+            publishTimeline(merged);
+          }
+
+          const cursor = cursorByRunRef.current.get(runId) ?? 0;
+          await streamRunEvents({
+            runId,
+            afterSeq: cursor,
+            lastEventId: needsRecovery ? cursor : undefined,
+            signal: controller.signal,
+            onOpen: () => {
+              if (!mounted) return;
+              failureCount = 0;
+              setConnection("Live");
+              setStreamError(null);
+            },
+            onEvent: (event) => {
+              if (!mounted) return;
+
+              const result = applyTimelineEvent(
+                currentTimeline(),
+                event,
+                runId,
+              );
+
+              if (result.kind === "duplicate") {
+                return;
+              }
+              if (result.kind === "gap") {
+                throw result.error;
+              }
+
+              publishTimeline(result.timeline);
+
+              if (isStateRefreshEvent(event)) {
+                void refreshState(controller.signal).catch(() => {
+                  // Reconnect/backfill remains the recovery path if the
+                  // authoritative state refresh is temporarily unavailable.
+                });
+              }
+            },
+          });
+
+          if (!controller.signal.aborted) {
+            throw new Error("Live event stream closed.");
+          }
+        } catch (error) {
+          if (
+            !mounted ||
+            controller.signal.aborted ||
+            isAbortError(error)
+          ) {
+            return;
+          }
+
+          failureCount += 1;
+          needsRecovery = true;
+          setConnection(connectionStateForFailure(failureCount));
+          setStreamError(recoveryMessage(error));
+        }
       }
     }
 
-    void bootstrap();
+    void runSession();
 
     return () => {
       mounted = false;
@@ -161,13 +269,47 @@ export function RunConsole({ runId }: { runId: string }) {
     verb: "approve" | "reject",
   ) {
     if (decision) return;
+
     setDecision({ proposalId: proposal.proposal_id, verb });
     setDecisionError(null);
+    setDecisionNotice(null);
+
     try {
-      await decideProposal(runId, proposal.proposal_id, verb, DEMO_OPERATOR);
+      const result = await decideProposal(
+        runId,
+        proposal.proposal_id,
+        verb,
+        DEMO_OPERATOR,
+      );
       await refreshState();
+      setDecisionNotice(replayNotice(result.replayed));
     } catch (error) {
-      setDecisionError(displayApiError(error));
+      try {
+        const recovered = await refreshState();
+        const recovery = decisionRecoveryStatus(
+          recovered,
+          proposal.proposal_id,
+        );
+
+        if (recovery === "persisted") {
+          setDecisionNotice(
+            "Decision response was interrupted; authoritative persisted state was recovered.",
+          );
+          setDecisionError(null);
+        } else if (recovery === "still-pending") {
+          setDecisionError(
+            `${displayApiError(error)} Persisted state still shows this proposal as pending; retrying the same decision is safe.`,
+          );
+        } else {
+          setDecisionError(
+            "Decision response was interrupted and the proposal could not be confirmed in authoritative state.",
+          );
+        }
+      } catch {
+        setDecisionError(
+          "Decision result could not be confirmed. Reconnect will recover authoritative state; retrying the same decision remains idempotent.",
+        );
+      }
     } finally {
       setDecision(null);
     }
@@ -239,7 +381,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       {streamError ? (
         <div className="connection-warning" role="status">
-          Live stream is unavailable. Persisted state remains visible.{" "}
+          Persisted state remains visible while live delivery recovers.{" "}
           <span>{streamError}</span>
         </div>
       ) : null}
@@ -472,6 +614,12 @@ export function RunConsole({ runId }: { runId: string }) {
                     Approval was recorded, but fresh authoritative conditions
                     no longer allowed execution. No field-service action was
                     created.
+                  </p>
+                ) : null}
+
+                {decisionNotice ? (
+                  <p className="decision-notice" role="status">
+                    {decisionNotice}
                   </p>
                 ) : null}
 
