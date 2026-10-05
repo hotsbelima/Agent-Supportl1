@@ -64,7 +64,9 @@ class PersistedScenario2FixtureSources:
             tenant_id=tenant_id,
             run_id=run_id,
         )
-        if state is None or service_key != SERVICE_KEY:
+        if state is None:
+            raise RuntimeError("Scenario 2 Product state is unavailable")
+        if service_key != SERVICE_KEY:
             return ()
         return (
             ServiceDependencyMappingSnapshot(
@@ -113,10 +115,12 @@ class PersistedScenario2FixtureSources:
             tenant_id=tenant_id,
             run_id=run_id,
         )
+        if state is None:
+            raise RuntimeError("Scenario 2 Product state is unavailable")
+
         open_ids: tuple[str, ...] = ()
         if (
-            state is not None
-            and service_key == SERVICE_KEY
+            service_key == SERVICE_KEY
             and correlation_key == CORRELATION_KEY
             and dependency_id == ACMEPAY_DEPENDENCY_ID
             and state.fixture_state.matching_major_incident_id is not None
