@@ -48,14 +48,23 @@ Each first delivery atomically:
 1. locks the owning Run;
 2. creates/reuses one site/service `ServiceIncident`;
 3. persists one `OperationalSignal`;
-4. appends one safe `external.signal` application event;
-5. enqueues one durable outbox record;
-6. commits all Product facts together.
+4. creates one typed `OPERATIONAL_SIGNAL` Evidence record derived from that
+   persisted signal;
+5. appends one safe `external.signal` application event;
+6. enqueues one durable outbox record;
+7. commits all Product facts together.
+
+Signal Evidence is time-bounded (current implementation: 15 minutes) while the
+underlying `OperationalSignal` remains persisted permanently. The event and outbox
+envelope both carry the real `evidence_id`, so Phase 7D can build
+`propose_major_incident(... evidence_ids=...)` without fabricating provenance.
 
 Redelivery identity is `(tenant, run, source, source_ref)`.
 
-An identical replay returns the existing persisted signal and creates no second
-application event or outbox record. A conflicting replay is rejected. The
+An identical replay returns the existing persisted signal **and the same original
+Evidence record**; it creates no second Evidence, application event, or outbox
+record and does not renew freshness merely because transport redelivered the fact.
+A conflicting replay is rejected. The
 canonical simulator also rejects a persisted fact that reuses a canonical
 `(source, source_ref)` identity with different site/service/symptom/payload data;
 it never silently treats that conflicting fact as a valid canonical step.
@@ -79,7 +88,8 @@ The envelope contains:
 - `event_id`;
 - `event_seq`;
 - `scenario_id=scenario-2`;
-- `signal_id`.
+- `signal_id`;
+- `evidence_id`.
 
 **There is deliberately no consumer on this branch.**
 
@@ -176,6 +186,7 @@ Do not concatenate all three facts into one prompt.
 Product owns:
 
 - operational signals;
+- signal-derived typed Evidence;
 - ServiceIncidents;
 - application events;
 - outbox;
