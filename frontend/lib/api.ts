@@ -138,6 +138,12 @@ export function decideProposal(
   );
 }
 
+export function isRetryableApiFailure(error: unknown): boolean {
+  if (error instanceof ApiClientError) return error.retryable;
+  if (error instanceof Error && error.name === "AbortError") return false;
+  return true;
+}
+
 export function displayApiError(error: unknown): string {
   if (error instanceof ApiClientError) {
     return `${error.code}: ${error.message}`;
