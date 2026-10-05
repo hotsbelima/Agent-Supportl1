@@ -5,6 +5,7 @@ import {
   eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
   proposalTone,
+  STALE_PROPOSAL_NOTE,
 } from "../lib/presentation";
 import {
   applicationEventFromFrame,
@@ -43,6 +44,12 @@ describe("operational presentation", () => {
     expect(proposalTone("EXECUTED")).toBe("executed");
     expect(connectionTone("Live")).toBe("live");
     expect(connectionTone("Offline/Unavailable")).toBe("offline");
+  });
+
+  it("renders stale approval as zero execution rather than a failed repair", () => {
+    expect(STALE_PROPOSAL_NOTE).toContain("No field-service action was created");
+    expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("resolved");
+    expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("repaired");
   });
 
   it("never presents a registered work order as a completed repair", () => {
