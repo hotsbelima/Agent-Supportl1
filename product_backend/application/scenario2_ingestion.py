@@ -16,6 +16,7 @@ from product_backend.application.results import OperationFailure
 from product_backend.contracts.events import (
     ApplicationEventType,
     SCENARIO2_AGENT_DISPATCH_TOPIC,
+    validate_safe_event_payload,
 )
 from product_backend.contracts.scenario2_ingestion import (
     Scenario2RunStarted,
@@ -166,6 +167,14 @@ class Scenario2SignalIngestionService:
                 ErrorCode.INVALID_ARGUMENT,
                 "Scenario 2 operational signal is incomplete.",
                 "missing_signal_identity",
+            )
+        try:
+            validate_safe_event_payload(signal_input.safe_payload)
+        except ValueError:
+            return _failure(
+                ErrorCode.INVALID_ARGUMENT,
+                "Scenario 2 signal payload contains unsafe or unsupported data.",
+                "unsafe_signal_payload",
             )
 
         now = self._clock()
