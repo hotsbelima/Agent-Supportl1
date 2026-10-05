@@ -42,14 +42,23 @@ from product_backend.application.read_tools import (
 from product_backend.application.results import ApprovalProcessed, OperationFailure
 from product_backend.application.run_lifecycle import Scenario1RunStartService
 from product_backend.application.run_state import RunStateService
+from product_backend.application.scenario2_ingestion import (
+    Scenario2FixtureTransitionService,
+    Scenario2RunStartService,
+    Scenario2SignalIngestionService,
+)
+from product_backend.application.scenario2_state import Scenario2StateService
 from product_backend.contracts.events import ApplicationEventType
+from product_backend.contracts.scenario2_ingestion import Scenario2SignalInput
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.domain.enums import (
     ApprovalDecision,
+    HealthState,
     OperationalState,
     ProposalStatus,
     RunStatus,
 )
+from product_backend.domain.scenario2 import Scenario2SignalSource
 from product_backend.domain.errors import DomainError, ErrorCode
 from product_backend.persistence.database import (
     DatabaseSettings,
@@ -63,11 +72,19 @@ from product_backend.persistence.uow import (
     SqlAlchemyLifecycleUnitOfWork,
     SqlAlchemyProposalCreationUnitOfWork,
     SqlAlchemyRunStartUnitOfWork,
+    SqlAlchemyScenario2FixtureStateUnitOfWork,
+    SqlAlchemyScenario2RunStartUnitOfWork,
+    SqlAlchemyScenario2SignalIngestionUnitOfWork,
     SqlAlchemyToolReadUnitOfWork,
+)
+from product_backend.persistence.scenario2_state import (
+    SqlAlchemyScenario2StateQuery,
 )
 
 from .dispatch import Scenario1DispatchWorker
 from .scenario1_fixture import Scenario1FixtureSources
+from .scenario2_simulator import Scenario2SimulatorService
+from .scenario2_sources import PersistedScenario2FixtureSources
 from .schemas import (
     AcceptanceAccessLinkStateRequest,
     AcceptanceAccessLinkStateResponse,
@@ -78,10 +95,19 @@ from .schemas import (
     ApprovalDecisionResponse,
     HumanDecisionRequest,
     RunStateResponse,
+    Scenario2DependencyStatusRequest,
+    Scenario2IngestionStateResponse,
+    Scenario2MatchingMajorIncidentRequest,
+    Scenario2SignalIngestRequest,
+    Scenario2SignalIngestResponse,
+    Scenario2SimulatorStepResponse,
     TimelineResponse,
     approval_response,
     error_response,
     run_state_response,
+    scenario2_signal_response,
+    scenario2_simulator_response,
+    scenario2_state_response,
     timeline_response,
 )
 from .sse import (
@@ -124,6 +150,12 @@ class ProductApiContainer:
     adk_session_service: DatabaseSessionService | None = None
     agent_runtime: Scenario1AgentRuntime | None = None
     dispatch_worker: Scenario1DispatchWorker | None = None
+    scenario2_start_service: Scenario2RunStartService | None = None
+    scenario2_ingestion_service: Scenario2SignalIngestionService | None = None
+    scenario2_state_service: Scenario2StateService | None = None
+    scenario2_fixture_service: Scenario2FixtureTransitionService | None = None
+    scenario2_simulator: Scenario2SimulatorService | None = None
+    scenario2_sources: PersistedScenario2FixtureSources | None = None
 
     async def close(self) -> None:
         if self.agent_runtime is not None:
@@ -170,6 +202,20 @@ def build_container_from_env() -> ProductApiContainer:
         agent_runtime=agent_runtime,
     )
 
+    scenario2_state_service = Scenario2StateService(
+        SqlAlchemyScenario2StateQuery(session_factory)
+    )
+    scenario2_ingestion_service = Scenario2SignalIngestionService(
+        lambda: SqlAlchemyScenario2SignalIngestionUnitOfWork(session_factory)
+    )
+    scenario2_simulator = Scenario2SimulatorService(
+        state_service=scenario2_state_service,
+        ingestion_service=scenario2_ingestion_service,
+    )
+    scenario2_sources = PersistedScenario2FixtureSources(
+        scenario2_state_service
+    )
+
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
             lambda: SqlAlchemyRunStartUnitOfWork(session_factory)
@@ -188,6 +234,16 @@ def build_container_from_env() -> ProductApiContainer:
         adk_session_service=adk_session_service,
         agent_runtime=agent_runtime,
         dispatch_worker=dispatch_worker,
+        scenario2_start_service=Scenario2RunStartService(
+            lambda: SqlAlchemyScenario2RunStartUnitOfWork(session_factory)
+        ),
+        scenario2_ingestion_service=scenario2_ingestion_service,
+        scenario2_state_service=scenario2_state_service,
+        scenario2_fixture_service=Scenario2FixtureTransitionService(
+            lambda: SqlAlchemyScenario2FixtureStateUnitOfWork(session_factory)
+        ),
+        scenario2_simulator=scenario2_simulator,
+        scenario2_sources=scenario2_sources,
     )
 
 
@@ -494,6 +550,13 @@ def create_app(
                 if services.dispatch_worker is not None
                 else False
             ),
+            "scenario2_checkpoint": "7C-product-ingestion",
+            "scenario2_ingestion_wired": (
+                services.scenario2_ingestion_service is not None
+                and services.scenario2_state_service is not None
+                and services.scenario2_simulator is not None
+            ),
+            "scenario2_dispatch_consumer_wired": False,
         }
 
     @app.post(
@@ -548,6 +611,221 @@ def create_app(
             services.dispatch_worker.wake()
 
         return run_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/scenario-2/runs",
+        response_model=Scenario2IngestionStateResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=_ERROR_RESPONSES,
+    )
+    async def start_scenario2_run(
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2IngestionStateResponse:
+        services = _container(request)
+        if (
+            services.scenario2_start_service is None
+            or services.scenario2_state_service is None
+        ):
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_INGESTION_UNAVAILABLE",
+                message="Scenario 2 Product ingestion is not configured.",
+                retryable=True,
+            )
+        started = await services.scenario2_start_service.start(
+            tenant_id=tenant_id,
+        )
+        if isinstance(started, OperationFailure):
+            _raise_domain_error(started.error)
+        snapshot = await services.scenario2_state_service.get(
+            tenant_id=tenant_id,
+            run_id=started.run.run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="STATE_PERSISTENCE_FAILED",
+                message="Scenario 2 run state is unavailable after start.",
+                retryable=True,
+            )
+        return scenario2_state_response(snapshot)
+
+    @app.get(
+        "/api/v1/scenario-2/runs/{run_id}",
+        response_model=Scenario2IngestionStateResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def get_scenario2_state(
+        run_id: Annotated[str, _ID_PATH],
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2IngestionStateResponse:
+        services = _container(request)
+        if services.scenario2_state_service is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_INGESTION_UNAVAILABLE",
+                message="Scenario 2 Product state is not configured.",
+                retryable=True,
+            )
+        snapshot = await services.scenario2_state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Scenario 2 run was not found.",
+            )
+        return scenario2_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/scenario-2/runs/{run_id}/signals",
+        response_model=Scenario2SignalIngestResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=_ERROR_RESPONSES,
+    )
+    async def ingest_scenario2_signal(
+        run_id: Annotated[str, _ID_PATH],
+        body: Scenario2SignalIngestRequest,
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2SignalIngestResponse:
+        services = _container(request)
+        if services.scenario2_ingestion_service is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_INGESTION_UNAVAILABLE",
+                message="Scenario 2 Product ingestion is not configured.",
+                retryable=True,
+            )
+        result = await services.scenario2_ingestion_service.ingest(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            signal_input=Scenario2SignalInput(
+                source=Scenario2SignalSource(body.source),
+                site_id=body.site_id,
+                service_key=body.service_key,
+                symptom_key=body.symptom_key,
+                source_ref=body.source_ref,
+                safe_payload=body.safe_payload,
+            ),
+        )
+        if isinstance(result, OperationFailure):
+            _raise_domain_error(result.error)
+        return scenario2_signal_response(result)
+
+    @app.post(
+        "/api/v1/scenario-2/runs/{run_id}/simulator/next",
+        response_model=Scenario2SimulatorStepResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def advance_scenario2_simulator(
+        run_id: Annotated[str, _ID_PATH],
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2SimulatorStepResponse:
+        services = _container(request)
+        if services.scenario2_simulator is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_SIMULATOR_UNAVAILABLE",
+                message="Scenario 2 simulator is not configured.",
+                retryable=True,
+            )
+        result = await services.scenario2_simulator.next(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if isinstance(result, OperationFailure):
+            _raise_domain_error(result.error)
+        return scenario2_simulator_response(result)
+
+    @app.post(
+        "/api/v1/scenario-2/runs/{run_id}/acceptance/dependency-status",
+        response_model=Scenario2IngestionStateResponse,
+        responses=_ERROR_RESPONSES,
+        include_in_schema=False,
+    )
+    async def set_scenario2_dependency_status(
+        run_id: Annotated[str, _ID_PATH],
+        body: Scenario2DependencyStatusRequest,
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2IngestionStateResponse:
+        services = _container(request)
+        if (
+            services.scenario2_fixture_service is None
+            or services.scenario2_state_service is None
+        ):
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_FIXTURE_UNAVAILABLE",
+                message="Scenario 2 fixture controls are not configured.",
+                retryable=True,
+            )
+        result = await services.scenario2_fixture_service.set_dependency_status(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            status=HealthState(body.dependency_status),
+        )
+        if isinstance(result, OperationFailure):
+            _raise_domain_error(result.error)
+        snapshot = await services.scenario2_state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Scenario 2 run was not found.",
+            )
+        return scenario2_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/scenario-2/runs/{run_id}/acceptance/matching-major-incident",
+        response_model=Scenario2IngestionStateResponse,
+        responses=_ERROR_RESPONSES,
+        include_in_schema=False,
+    )
+    async def set_scenario2_matching_major_incident(
+        run_id: Annotated[str, _ID_PATH],
+        body: Scenario2MatchingMajorIncidentRequest,
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2IngestionStateResponse:
+        services = _container(request)
+        if (
+            services.scenario2_fixture_service is None
+            or services.scenario2_state_service is None
+        ):
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_FIXTURE_UNAVAILABLE",
+                message="Scenario 2 fixture controls are not configured.",
+                retryable=True,
+            )
+        result = await services.scenario2_fixture_service.set_matching_major_incident(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            major_incident_id=body.major_incident_id,
+        )
+        if isinstance(result, OperationFailure):
+            _raise_domain_error(result.error)
+        snapshot = await services.scenario2_state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Scenario 2 run was not found.",
+            )
+        return scenario2_state_response(snapshot)
 
     @app.post(
         "/api/v1/runs/{run_id}/agent/invoke",
