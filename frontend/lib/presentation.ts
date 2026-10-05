@@ -1,6 +1,7 @@
 import type {
   ApplicationEventView,
   ConnectionState,
+  EvidenceView,
   JsonValue,
   ProposalView,
 } from "./types";
@@ -57,6 +58,25 @@ export function eventSummary(event: ApplicationEventView): string {
     default:
       return event.event_type;
   }
+}
+
+
+
+export function observationState(evidence: EvidenceView): string | null {
+  const payload = evidence.payload;
+  for (const key of ["operational_state", "site_network", "status", "state"]) {
+    const value = stringValue(payload, key);
+    if (value) return value;
+  }
+
+  if (evidence.source_type === "KB_ARTICLE") {
+    const approved = payload.approved;
+    if (typeof approved === "boolean") {
+      return approved ? "APPROVED" : "NOT_APPROVED";
+    }
+  }
+
+  return null;
 }
 
 export function formatTimestamp(value: string): string {
