@@ -32,6 +32,17 @@ class MajorIncidentStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Scenario2FixtureState:
+    """Persisted deterministic world state used by Scenario 2 source adapters."""
+
+    tenant_id: str
+    run_id: str
+    dependency_status: HealthState
+    matching_major_incident_id: str | None
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ServiceIncident:
     """Scenario 2 site/service incident without a fabricated device identity."""
 
@@ -204,6 +215,7 @@ __all__ = [
     "OperationalSignal",
     "OperationalSignalEvidenceSnapshot",
     "Scenario2ActionType",
+    "Scenario2FixtureState",
     "ServiceIncident",
     "Scenario2SignalSource",
     "ServiceDependencyMappingSnapshot",
