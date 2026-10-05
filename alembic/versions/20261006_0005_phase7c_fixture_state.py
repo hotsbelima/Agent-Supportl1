@@ -30,7 +30,7 @@ def upgrade() -> None:
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "dependency_status IN ('HEALTHY', 'DEGRADED', 'DOWN')",
+            "dependency_status IN ('HEALTHY', 'DEGRADED')",
             name="ck_scenario2_fixture_dependency_status_known",
         ),
         sa.ForeignKeyConstraint(
