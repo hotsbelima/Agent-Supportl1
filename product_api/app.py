@@ -14,6 +14,7 @@ from datetime import timedelta
 import logging
 import os
 import re
+import secrets
 from typing import Annotated, Any, AsyncIterator
 
 from fastapi import Depends, FastAPI, Header, Path, Query, Request, status
@@ -42,7 +43,12 @@ from product_backend.application.results import ApprovalProcessed, OperationFail
 from product_backend.application.run_lifecycle import Scenario1RunStartService
 from product_backend.application.run_state import RunStateService
 from product_backend.contracts.tools import ToolCallContext
-from product_backend.domain.enums import ApprovalDecision, RunStatus
+from product_backend.domain.enums import (
+    ApprovalDecision,
+    OperationalState,
+    ProposalStatus,
+    RunStatus,
+)
 from product_backend.domain.errors import DomainError, ErrorCode
 from product_backend.persistence.database import (
     DatabaseSettings,
@@ -60,6 +66,8 @@ from product_backend.persistence.uow import (
 
 from .scenario1_fixture import Scenario1FixtureSources
 from .schemas import (
+    AcceptanceAccessLinkStateRequest,
+    AcceptanceAccessLinkStateResponse,
     AgentInvocationResponse,
     AgentResumeView,
     ApiErrorBody,
@@ -800,6 +808,87 @@ def create_app(
                 )
 
         return approval_response(result, agent_resume=agent_resume)
+
+    @app.post(
+        "/__acceptance/phase6d/runs/{run_id}/access-link-state",
+        response_model=AcceptanceAccessLinkStateResponse,
+        responses=_ERROR_RESPONSES,
+        include_in_schema=False,
+    )
+    async def set_phase6d_access_link_state(
+        run_id: Annotated[str, _ID_PATH],
+        body: AcceptanceAccessLinkStateRequest,
+        request: Request,
+        tenant_id: TenantId,
+        acceptance_token: Annotated[
+            str | None,
+            Header(alias="X-Acceptance-Token"),
+        ] = None,
+    ) -> AcceptanceAccessLinkStateResponse:
+        """Narrow managed-acceptance hook for the Scenario 1 stale path.
+
+        The route is intentionally hidden from OpenAPI and behaves as not found
+        unless explicitly enabled with a server-side token. It changes only the
+        process-local authoritative monitoring fixture for one tenant/run.
+        """
+        enabled = os.environ.get("PHASE6D_ACCEPTANCE_HOOKS", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        expected_token = os.environ.get("PHASE6D_ACCEPTANCE_TOKEN", "")
+        if (
+            not enabled
+            or not expected_token
+            or not acceptance_token
+            or not secrets.compare_digest(acceptance_token, expected_token)
+        ):
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="NOT_FOUND",
+                message="Resource was not found.",
+            )
+
+        services = _container(request)
+        snapshot = await services.state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Run was not found in the current tenant context.",
+            )
+
+        has_pending_proposal = any(
+            proposal.status is ProposalStatus.PENDING_APPROVAL
+            for proposal in snapshot.proposals
+        )
+        if (
+            snapshot.run.status is not RunStatus.WAITING_APPROVAL
+            or not has_pending_proposal
+        ):
+            _raise_api_error(
+                status_code=status.HTTP_409_CONFLICT,
+                code="ACCEPTANCE_PRECONDITION_FAILED",
+                message=(
+                    "Phase 6D access-link override requires a WAITING_APPROVAL "
+                    "run with a PENDING_APPROVAL proposal."
+                ),
+            )
+
+        operational_state = OperationalState(body.operational_state)
+        services.fixture.set_access_link_operational_state(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            operational_state=operational_state,
+        )
+        return AcceptanceAccessLinkStateResponse(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            operational_state=operational_state.value,
+        )
 
     @app.post(
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
