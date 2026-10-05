@@ -28,6 +28,7 @@ from product_backend.domain.scenario2 import (
     MajorIncidentProposal,
     MajorIncidentRecord,
     MajorIncidentStatus,
+    OperationalSignalEvidenceSnapshot,
     Scenario2ActionType,
     ServiceDependencyMappingSnapshot,
 )
@@ -111,6 +112,62 @@ def _dependency_name_from_evidence(
     if len(names) != 1:
         return None
     return next(iter(names))
+
+
+async def _validate_persisted_signal_provenance(
+    *,
+    uow: Scenario2ProposalUnitOfWork | Scenario2ApprovalUnitOfWork,
+    tenant_id: str,
+    run_id: str,
+    evidence: tuple[Evidence, ...],
+) -> DomainError | None:
+    for item in evidence:
+        if item.source_type is not EvidenceSourceType.OPERATIONAL_SIGNAL:
+            continue
+        if not isinstance(item.payload, OperationalSignalEvidenceSnapshot):
+            return DomainError(
+                code=ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE,
+                message="Operational signal evidence payload is invalid.",
+                details=(
+                    ("reason", "signal_evidence_payload_mismatch"),
+                    ("evidence_id", item.evidence_id),
+                ),
+            )
+
+        payload = item.payload
+        persisted = await uow.signals.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            signal_id=payload.signal_id,
+        )
+        if persisted is None:
+            return DomainError(
+                code=ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE,
+                message="Operational signal evidence has no persisted Product source.",
+                details=(
+                    ("reason", "persisted_signal_not_found"),
+                    ("evidence_id", item.evidence_id),
+                ),
+            )
+        if (
+            persisted.tenant_id != tenant_id
+            or persisted.run_id != run_id
+            or persisted.source is not payload.source
+            or persisted.site_id != payload.site_id
+            or persisted.service_key != payload.service_key
+            or persisted.symptom_key != payload.symptom_key
+            or persisted.source_ref != payload.source_ref
+        ):
+            return DomainError(
+                code=ErrorCode.INSUFFICIENT_OR_INVALID_EVIDENCE,
+                message="Operational signal evidence does not match persisted Product source.",
+                details=(
+                    ("reason", "persisted_signal_provenance_mismatch"),
+                    ("evidence_id", item.evidence_id),
+                ),
+            )
+
+    return None
 
 
 class MajorIncidentProposalService:
@@ -271,6 +328,18 @@ class MajorIncidentProposalService:
                 return Scenario2OperationFailure(
                     ok=False,
                     error=evidence_error,
+                )
+
+            provenance_error = await _validate_persisted_signal_provenance(
+                uow=uow,
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                evidence=evidence,
+            )
+            if provenance_error is not None:
+                return Scenario2OperationFailure(
+                    ok=False,
+                    error=provenance_error,
                 )
 
             updated_run = replace(
@@ -450,6 +519,17 @@ class MajorIncidentApprovalService:
                 run_id=context.run_id,
                 evidence_ids=proposal.evidence_ids,
             )
+            provenance_error = await _validate_persisted_signal_provenance(
+                uow=uow,
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                evidence=proposal_evidence,
+            )
+            if provenance_error is not None:
+                return Scenario2OperationFailure(
+                    ok=False,
+                    error=provenance_error,
+                )
 
             equivalent = await uow.major_incidents.get_equivalent(
                 tenant_id=context.tenant_id,
