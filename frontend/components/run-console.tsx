@@ -22,6 +22,7 @@ import {
   mergeTimelineEvents,
   nextTransportFailure,
   prepareReconnect,
+  reconnectDelayMs,
   replayNotice,
   TimelineGapError,
   type TimelineAccumulator,
@@ -206,16 +207,11 @@ export function RunConsole({ runId }: { runId: string }) {
       while (!controller.signal.aborted) {
         try {
           if (needsRecovery) {
-            const failure = {
-              failureCount,
-              connection: connectionStateForFailure(failureCount),
-              delayMs:
-                failureCount > 0
-                  ? Math.min(5000, 500 * 2 ** Math.min(failureCount - 1, 3))
-                  : 0,
-            };
-            setConnection(failure.connection);
-            await abortableDelay(failure.delayMs, controller.signal);
+            setConnection(connectionStateForFailure(failureCount));
+            await abortableDelay(
+              reconnectDelayMs(failureCount),
+              controller.signal,
+            );
 
             const cursor = cursorByRunRef.current.get(runId) ?? 0;
             const recovered = await prepareReconnect({
