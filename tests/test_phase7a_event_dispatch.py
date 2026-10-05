@@ -255,6 +255,7 @@ def test_dispatch_worker_delivers_each_persisted_event_once():
             agent_runtime=runtime,  # type: ignore[arg-type]
             poll_interval_seconds=0.01,
             lease_seconds=5.0,
+            invocation_timeout_seconds=1.0,
         )
         try:
             started = await start.start(
@@ -328,6 +329,7 @@ def test_failed_dispatch_remains_durable_and_is_retryable():
                 agent_runtime=runtime,  # type: ignore[arg-type]
                 poll_interval_seconds=0.01,
                 lease_seconds=5.0,
+                invocation_timeout_seconds=1.0,
             )
 
             # Older rows may exist in a full-suite database; drive the worker
