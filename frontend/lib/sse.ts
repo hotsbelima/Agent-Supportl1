@@ -142,6 +142,11 @@ export async function streamRunEvents(options: {
     },
   );
   if (!response.ok) throw await ApiClientError.fromResponse(response);
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    throw new Error("SSE response has an unexpected content type.");
+  }
   if (!response.body) throw new Error("SSE response body is unavailable.");
 
   options.onOpen();
