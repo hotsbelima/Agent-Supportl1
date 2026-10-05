@@ -931,17 +931,41 @@ def test_cross_tenant_state_is_not_visible():
         tenant_id = f"TENANT-7C-ISO-{suffix}"
         engine = create_engine(DatabaseSettings(url=_database_url()))
         factory = create_session_factory(engine)
-        start, _, state_service, _, _, _ = _services(factory)
+        start, _, state_service, _, _, sources = _services(factory)
         try:
             started = await start.start(tenant_id=tenant_id)
             assert not isinstance(started, OperationFailure)
+            foreign_tenant = f"OTHER-{tenant_id}"
             assert (
                 await state_service.get(
-                    tenant_id=f"OTHER-{tenant_id}",
+                    tenant_id=foreign_tenant,
                     run_id=started.run.run_id,
                 )
                 is None
             )
+            assert (
+                await sources.get_local_service_health(
+                    tenant_id=foreign_tenant,
+                    run_id=started.run.run_id,
+                    site_id=CANONICAL_SIGNAL_SEQUENCE[0].site_id,
+                    service_key=SERVICE_KEY,
+                )
+                is None
+            )
+            with pytest.raises(RuntimeError, match="Product state is unavailable"):
+                await sources.get_service_dependencies(
+                    tenant_id=foreign_tenant,
+                    run_id=started.run.run_id,
+                    service_key=SERVICE_KEY,
+                )
+            with pytest.raises(RuntimeError, match="Product state is unavailable"):
+                await sources.search_major_incidents(
+                    tenant_id=foreign_tenant,
+                    run_id=started.run.run_id,
+                    service_key=SERVICE_KEY,
+                    correlation_key="payment_gateway_timeout",
+                    dependency_id=ACMEPAY_DEPENDENCY_ID,
+                )
         finally:
             await engine.dispose()
 
