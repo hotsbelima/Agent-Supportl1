@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from google.adk.tools import ToolContext
 
@@ -71,7 +71,7 @@ class Scenario1AdkTools:
 
     async def run_diagnostic(
         self,
-        diagnostic_type: DiagnosticType,
+        diagnostic_type: Literal["ACCESS_LINK"],
         target_id: str,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
@@ -79,7 +79,7 @@ class Scenario1AdkTools:
         result = await self._adapter.run_diagnostic(
             _product_context(tool_context),
             RunDiagnosticRequest(
-                diagnostic_type=diagnostic_type,
+                diagnostic_type=DiagnosticType(diagnostic_type),
                 target_id=target_id,
             ),
         )
@@ -87,14 +87,17 @@ class Scenario1AdkTools:
 
     async def search_incidents(
         self,
-        scope: IncidentSearchScope,
+        scope: Literal["DEVICE", "SITE"],
         entity_id: str,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Search related incidents for a known device or site."""
         result = await self._adapter.search_incidents(
             _product_context(tool_context),
-            SearchIncidentsRequest(scope=scope, entity_id=entity_id),
+            SearchIncidentsRequest(
+                scope=IncidentSearchScope(scope),
+                entity_id=entity_id,
+            ),
         )
         return _payload(result)
 
@@ -114,7 +117,7 @@ class Scenario1AdkTools:
         self,
         incident_id: str,
         device_id: str,
-        diagnosis: DiagnosisCode,
+        diagnosis: Literal["LOCAL_ACCESS_LINK_FAILURE"],
         evidence_ids: list[str],
         rationale: str,
         tool_context: ToolContext,
@@ -125,7 +128,7 @@ class Scenario1AdkTools:
             ProposeFieldVisitRequest(
                 incident_id=incident_id,
                 device_id=device_id,
-                diagnosis=diagnosis,
+                diagnosis=DiagnosisCode(diagnosis),
                 evidence_ids=tuple(evidence_ids),
                 rationale=rationale,
             ),
