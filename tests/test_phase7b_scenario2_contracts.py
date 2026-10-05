@@ -188,11 +188,12 @@ def _valid_evidence() -> tuple[Evidence, ...]:
             "EV-MI-SEARCH",
             EvidenceSourceType.MAJOR_INCIDENT_SEARCH,
             MajorIncidentSearchSnapshot(
+                service_key=SERVICE_KEY,
                 correlation_key=CORRELATION_KEY,
                 dependency_id=ACMEPAY_DEPENDENCY_ID,
                 open_major_incident_ids=(),
             ),
-            (CORRELATION_KEY, ACMEPAY_DEPENDENCY_ID),
+            (SERVICE_KEY, CORRELATION_KEY, ACMEPAY_DEPENDENCY_ID),
         ),
     )
 
@@ -570,6 +571,7 @@ def test_approve_revalidation_goes_stale_when_provider_recovers():
             status_detail="operating_normally",
         ),
         current_major_incident_search=MajorIncidentSearchSnapshot(
+            service_key=SERVICE_KEY,
             correlation_key=CORRELATION_KEY,
             dependency_id=ACMEPAY_DEPENDENCY_ID,
             open_major_incident_ids=(),
@@ -600,6 +602,7 @@ def test_approve_revalidation_goes_stale_when_matching_major_incident_exists():
             status_detail="elevated_timeout_rate",
         ),
         current_major_incident_search=MajorIncidentSearchSnapshot(
+            service_key=SERVICE_KEY,
             correlation_key=CORRELATION_KEY,
             dependency_id=ACMEPAY_DEPENDENCY_ID,
             open_major_incident_ids=("MI-EXISTS",),
@@ -910,10 +913,12 @@ class _Sources:
         *,
         tenant_id: str,
         run_id: str,
+        service_key: str,
         correlation_key: str,
         dependency_id: str,
     ):
         return MajorIncidentSearchSnapshot(
+            service_key=service_key,
             correlation_key=correlation_key,
             dependency_id=dependency_id,
             open_major_incident_ids=self.existing_major_incidents,
