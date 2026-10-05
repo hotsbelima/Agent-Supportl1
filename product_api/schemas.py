@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -152,6 +152,16 @@ class AgentInvocationResponse(BaseModel):
     model: str
     run_status: str
     final_answer: str | None
+    awaiting_human_decision: bool = False
+    pending_proposal_id: str | None = None
+
+
+class AgentResumeView(BaseModel):
+    status: Literal["resumed", "already_resumed", "deferred"]
+    invocation_id: str | None = None
+    function_call_id: str | None = None
+    final_answer: str | None = None
+    retryable: bool = False
 
 
 class ApprovalDecisionResponse(BaseModel):
@@ -161,6 +171,7 @@ class ApprovalDecisionResponse(BaseModel):
     executed_action: ExecutedActionView | None
     work_order: FieldServiceWorkOrderView | None
     replayed: bool
+    agent_resume: AgentResumeView | None = None
 
 
 def _payload(value: object) -> dict[str, Any]:
@@ -215,7 +226,11 @@ def timeline_response(
     )
 
 
-def approval_response(result: ApprovalProcessed) -> ApprovalDecisionResponse:
+def approval_response(
+    result: ApprovalProcessed,
+    *,
+    agent_resume: AgentResumeView | None = None,
+) -> ApprovalDecisionResponse:
     return ApprovalDecisionResponse(
         approval=ApprovalView(**_payload(result.approval)),
         proposal=ProposalView(**_payload(result.proposal)),
@@ -231,6 +246,7 @@ def approval_response(result: ApprovalProcessed) -> ApprovalDecisionResponse:
             else None
         ),
         replayed=result.replayed,
+        agent_resume=agent_resume,
     )
 
 
@@ -247,6 +263,7 @@ def error_response(error: DomainError) -> ApiErrorResponse:
 
 __all__ = [
     "AgentInvocationResponse",
+    "AgentResumeView",
     "ApiErrorResponse",
     "ApprovalDecisionResponse",
     "HumanDecisionRequest",
