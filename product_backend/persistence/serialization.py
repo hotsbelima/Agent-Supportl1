@@ -160,6 +160,7 @@ def serialize_evidence_payload(
                 "MAJOR_INCIDENT_SEARCH requires MajorIncidentSearchSnapshot payload"
             )
         return {
+            "service_key": payload.service_key,
             "correlation_key": payload.correlation_key,
             "dependency_id": payload.dependency_id,
             "open_major_incident_ids": list(payload.open_major_incident_ids),
@@ -292,6 +293,7 @@ def deserialize_evidence_payload(
 
     if source_type is EvidenceSourceType.MAJOR_INCIDENT_SEARCH:
         return MajorIncidentSearchSnapshot(
+            service_key=_require_str(payload, "service_key"),
             correlation_key=_require_str(payload, "correlation_key"),
             dependency_id=_require_str(payload, "dependency_id"),
             open_major_incident_ids=_require_str_tuple(
