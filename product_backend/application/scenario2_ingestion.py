@@ -177,8 +177,6 @@ class Scenario2SignalIngestionService:
                 "unsafe_signal_payload",
             )
 
-        now = self._clock()
-
         async with self._uow_factory() as uow:
             run = await uow.runs.get(tenant_id=tenant, run_id=run_key)
             if run is None or run.scenario_id != "scenario-2":
@@ -230,6 +228,8 @@ class Scenario2SignalIngestionService:
                     dispatch=None,
                     replayed=True,
                 )
+
+            now = self._clock()
 
             incident = await uow.service_incidents.get_for_site_service(
                 tenant_id=tenant,
