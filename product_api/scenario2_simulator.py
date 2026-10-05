@@ -50,14 +50,16 @@ class Scenario2SimulatorService:
                 ),
             )
 
-        persisted_ids = {
-            signal.signal_id for signal in state.operational_signals
+        persisted_identities = {
+            (signal.source, signal.source_ref)
+            for signal in state.operational_signals
         }
         next_index = next(
             (
                 index
                 for index, template in enumerate(CANONICAL_SIGNAL_SEQUENCE)
-                if template.signal_id not in persisted_ids
+                if (template.source, template.source_ref)
+                not in persisted_identities
             ),
             len(CANONICAL_SIGNAL_SEQUENCE),
         )
