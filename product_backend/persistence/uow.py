@@ -6,7 +6,10 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .events import SqlAlchemyApplicationEventRepository
+from .events import (
+    SqlAlchemyApplicationEventRepository,
+    SqlAlchemyApplicationOutboxRepository,
+)
 from .repositories import (
     SqlAlchemyApprovalRepository,
     SqlAlchemyEvidenceRepository,
@@ -65,6 +68,7 @@ class SqlAlchemyRunStartUnitOfWork(_SqlAlchemyUnitOfWorkBase):
         self.runs = SqlAlchemyRunRepository(self._session)
         self.incidents = SqlAlchemyIncidentRepository(self._session)
         self.events = SqlAlchemyApplicationEventRepository(self._session)
+        self.outbox = SqlAlchemyApplicationOutboxRepository(self._session)
 
 
 class SqlAlchemyToolReadUnitOfWork(_SqlAlchemyUnitOfWorkBase):
@@ -150,3 +154,15 @@ class SqlAlchemyLifecycleUnitOfWork(_SqlAlchemyUnitOfWorkBase):
         self.runs = SqlAlchemyRunRepository(self._session)
         self.evidence = SqlAlchemyEvidenceRepository(self._session)
         self.events = SqlAlchemyApplicationEventRepository(self._session)
+
+
+
+class SqlAlchemyDispatchUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Short transactions for claiming/completing durable agent dispatch."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.outbox = SqlAlchemyApplicationOutboxRepository(self._session)
