@@ -91,14 +91,26 @@ export function RunConsole({ runId }: { runId: string }) {
 
   const timelineByRunRef = useRef(new Map<string, TimelineAccumulator>());
   const cursorByRunRef = useRef(new Map<string, number>());
+  const stateSeqByRunRef = useRef(new Map<string, number>());
+
+  const publishState = useCallback(
+    (current: RunStateResponse) => {
+      const previousSeq = stateSeqByRunRef.current.get(runId) ?? -1;
+      if (current.latest_event_seq >= previousSeq) {
+        stateSeqByRunRef.current.set(runId, current.latest_event_seq);
+        setState(current);
+      }
+      return current;
+    },
+    [runId],
+  );
 
   const refreshState = useCallback(
     async (signal?: AbortSignal) => {
       const current = await getRunState(runId, signal);
-      setState(current);
-      return current;
+      return publishState(current);
     },
-    [runId],
+    [publishState, runId],
   );
 
   useEffect(() => {
@@ -140,6 +152,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       timelineByRunRef.current.set(runId, emptyTimeline());
       cursorByRunRef.current.set(runId, 0);
+      stateSeqByRunRef.current.set(runId, -1);
 
       try {
         const bootstrapped = await bootstrapPersistedRun({
@@ -150,7 +163,7 @@ export function RunConsole({ runId }: { runId: string }) {
         });
         if (!mounted) return;
 
-        setState(bootstrapped.state);
+        publishState(bootstrapped.state);
         publishTimeline(bootstrapped.timeline);
         setLoading(false);
       } catch (error) {
@@ -185,7 +198,7 @@ export function RunConsole({ runId }: { runId: string }) {
               recovered.backfill.events,
               runId,
             );
-            setState(recovered.state);
+            publishState(recovered.state);
             publishTimeline(merged);
           }
 
@@ -254,7 +267,7 @@ export function RunConsole({ runId }: { runId: string }) {
       mounted = false;
       controller.abort();
     };
-  }, [refreshState, runId]);
+  }, [publishState, refreshState, runId]);
 
   const incident = state?.incidents[0] ?? null;
   const lastSeq = events.at(-1)?.seq ?? 0;
@@ -282,8 +295,15 @@ export function RunConsole({ runId }: { runId: string }) {
         verb,
         DEMO_OPERATOR,
       );
-      await refreshState();
       setDecisionNotice(replayNotice(result.replayed));
+
+      try {
+        await refreshState();
+      } catch {
+        setDecisionError(
+          "Decision was recorded, but the full state refresh is temporarily unavailable. Reconnect will synchronize authoritative state.",
+        );
+      }
     } catch (error) {
       try {
         const recovered = await refreshState();
