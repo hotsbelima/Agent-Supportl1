@@ -207,6 +207,11 @@ class Scenario1AgentRuntime:
     def gemini_configured(self) -> bool:
         return bool(os.environ.get("GOOGLE_API_KEY"))
 
+    @property
+    def resumability_wired(self) -> bool:
+        config = self._runner.resumability_config
+        return bool(config is not None and config.is_resumable)
+
     async def close(self) -> None:
         await self._runner.close()
 
