@@ -19,9 +19,9 @@ export default function HomePage() {
             <span> visible without exposing model reasoning.</span>
           </h1>
           <p>
-            A production-shaped demo of state, evidence, human approval and
-            audit events. Phase 5 adds the operational surface; live six-tool
-            agent investigation remains deliberately reserved for Phase 6.
+            A production-shaped demo of event-driven investigation, persisted
+            evidence, human approval and audit events. Operational signals wake
+            the native ADK agent without browser-side orchestration.
           </p>
         </div>
 
