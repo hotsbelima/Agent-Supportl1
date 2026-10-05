@@ -8,7 +8,9 @@ import {
   decisionRecoveryStatus,
   emptyTimeline,
   fetchTimelinePages,
+  isStateRefreshEvent,
   mergeTimelineEvents,
+  nextTransportFailure,
   prepareReconnect,
   reconnectDelayMs,
   replayNotice,
@@ -109,7 +111,24 @@ function state(
             },
           ]
         : [],
-    work_orders: [],
+    work_orders:
+      proposalStatus === "EXECUTED"
+        ? [
+            {
+              work_order_id: "WO-1",
+              tenant_id: "TENANT-8OCT",
+              run_id: "RUN-1",
+              proposal_id: "PROP-1",
+              incident_id: "INC-1",
+              device_id: "POS-1",
+              site_id: "SITE-1",
+              attachment_id: "ATT-1",
+              switch_id: "SW-1",
+              port_id: "Gi1/0/18",
+              created_at: "2026-10-05T00:00:02Z",
+            },
+          ]
+        : [],
     latest_event_seq: latestEventSeq,
   };
 }
@@ -287,6 +306,35 @@ describe("persisted timeline pagination and bootstrap", () => {
 });
 
 describe("reconnect preparation and backoff", () => {
+  it("paginates reconnect backfill until the persisted tail is complete", async () => {
+    const calls: number[] = [];
+    const readState = vi.fn(async () => state(8));
+    const readPage = vi.fn(
+      async (
+        _runId: string,
+        afterSeq: number,
+      ): Promise<TimelineResponse> => {
+        calls.push(afterSeq);
+        if (afterSeq === 4) return page([event(5), event(6)]);
+        return page([event(7), event(8)]);
+      },
+    );
+
+    const result = await prepareReconnect({
+      runId: "RUN-1",
+      cursor: 4,
+      readState,
+      readPage,
+      pageLimit: 2,
+    });
+
+    expect(calls).toEqual([4, 6, 8]);
+    expect(result.backfill.cursor).toBe(8);
+    expect(result.backfill.events.map((item) => item.seq)).toEqual([
+      5, 6, 7, 8,
+    ]);
+  });
+
   it("refreshes authoritative state, backfills after cursor, then refreshes state again if backfill is newer", async () => {
     const order: string[] = [];
     const readState = vi
@@ -334,6 +382,19 @@ describe("reconnect preparation and backoff", () => {
     ]).toEqual([500, 1000, 2000, 5000, 5000, 5000]);
   });
 
+  it("carries repeated transport failures forward instead of resetting on header open", () => {
+    expect(nextTransportFailure(0)).toEqual({
+      failureCount: 1,
+      connection: "Reconnecting",
+      delayMs: 500,
+    });
+    expect(nextTransportFailure(3)).toEqual({
+      failureCount: 4,
+      connection: "Offline/Unavailable",
+      delayMs: 5000,
+    });
+  });
+
   it("transitions from Reconnecting to Offline/Unavailable after repeated failures", () => {
     expect(connectionStateForFailure(1)).toBe("Reconnecting");
     expect(connectionStateForFailure(2)).toBe("Reconnecting");
@@ -358,6 +419,14 @@ describe("decision response recovery", () => {
     );
   });
 
+  it("does not confirm EXECUTED when the required action/work-order artifacts are missing", () => {
+    const inconsistent = state(8, "EXECUTED");
+    inconsistent.work_orders = [];
+    expect(decisionRecoveryStatus(inconsistent, "PROP-1")).toBe(
+      "inconsistent",
+    );
+  });
+
   it("recognizes an authoritative committed Reject after its HTTP response was lost", () => {
     expect(decisionRecoveryStatus(state(7, "REJECTED"), "PROP-1")).toBe(
       "persisted",
@@ -374,6 +443,12 @@ describe("decision response recovery", () => {
     const missing = state(3);
     missing.proposals = [];
     expect(decisionRecoveryStatus(missing, "PROP-1")).toBe("missing");
+  });
+
+  it("refreshes authoritative state on tool.finished because evidence is persisted in that transaction", () => {
+    expect(isStateRefreshEvent(event(4, "RUN-1", "tool.finished"))).toBe(true);
+    expect(isStateRefreshEvent(event(4, "RUN-1", "tool.started"))).toBe(false);
+    expect(isStateRefreshEvent(event(4, "RUN-1", "finding.recorded"))).toBe(false);
   });
 
   it("surfaces idempotent replay without claiming duplicate execution", () => {
