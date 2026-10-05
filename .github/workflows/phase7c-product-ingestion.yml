@@ -1,0 +1,112 @@
+name: Phase 7C Product ingestion
+
+on:
+  push:
+    branches:
+      - phase-7c-product-ingestion
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase7c-product-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase7c-product:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agent_supportl1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agent_supportl1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agent_supportl1
+      FRONTEND_ORIGINS: http://localhost:3000
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8080
+      NEXT_PUBLIC_DEMO_TENANT_ID: TENANT-8OCT
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.14"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install pinned Python requirements
+        run: python -m pip install -r requirements.txt
+
+      - name: Check dependency consistency
+        run: python -m pip check
+
+      - name: Compile Python
+        run: >-
+          python -m compileall -q
+          agent_runtime product_backend product_api
+          phase1_adk_spike phase2_backend scripts tests
+
+      - name: Apply Product migrations through Phase 7C Product checkpoint
+        run: python -m alembic upgrade head
+
+      - name: Run focused Phase 7C Product ingestion tests
+        run: python -m pytest -q tests/test_phase7c_product_ingestion.py
+
+      - name: Verify Alembic metadata is clean
+        run: |
+          python -m alembic current
+          python -m alembic check
+
+      - name: Run full Python regression
+        run: python -m pytest -q
+
+      - name: Run retained historical Node regression
+        run: npm test
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Audit frontend source and built public bundle
+        run: |
+          python scripts/phase5d1_static_audit.py --frontend-root frontend
+          python scripts/phase5d1_static_audit.py --frontend-root frontend --bundle-root frontend/.next/static
+
+      - name: Build Product image
+        run: docker build -f Dockerfile.product -t agent-supportl1:phase7c-product .
