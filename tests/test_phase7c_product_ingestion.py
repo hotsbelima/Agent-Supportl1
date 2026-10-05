@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -815,6 +816,44 @@ def test_controlled_fixture_transitions_are_persisted_and_source_visible_after_r
             assert search.open_major_incident_ids == (
                 STALE_MATCHING_MAJOR_INCIDENT_ID,
             )
+
+            cleared = await fixture.set_matching_major_incident(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                major_incident_id="   ",
+            )
+            assert not isinstance(cleared, OperationFailure)
+            _, _, _, _, _, sources = _services(factory)
+            cleared_search = await sources.search_major_incidents(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                service_key=SERVICE_KEY,
+                correlation_key="payment_gateway_timeout",
+                dependency_id=ACMEPAY_DEPENDENCY_ID,
+            )
+            assert cleared_search.open_major_incident_ids == ()
+
+            async with factory() as session:
+                await session.begin()
+                runs = SqlAlchemyRunRepository(session)
+                run = await runs.get(tenant_id=tenant_id, run_id=run_id)
+                assert run is not None
+                await runs.save(
+                    replace(
+                        run,
+                        status=RunStatus.COMPLETED,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+                await session.commit()
+
+            closed = await fixture.set_dependency_status(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                status=HealthState.DEGRADED,
+            )
+            assert isinstance(closed, OperationFailure)
+            assert dict(closed.error.details)["reason"] == "run_closed"
         finally:
             await engine.dispose()
 
