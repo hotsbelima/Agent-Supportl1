@@ -1,7 +1,11 @@
 """Google ADK runtime integration boundary for Phase 6."""
 
 from .agent import AGENT_NAME, MODEL, build_scenario1_agent
-from .service import AgentInvocationResult, Scenario1AgentRuntime
+from .human_decision import (
+    WAIT_FOR_HUMAN_DECISION_TOOL,
+    build_human_decision_wait_tool,
+)
+from .service import AgentInvocationResult, AgentResumeResult, Scenario1AgentRuntime
 from .sessions import ADK_APP_NAME
 from .sessions import create_database_session_service
 from .sessions import ensure_run_session
@@ -12,7 +16,10 @@ __all__ = [
     "AGENT_NAME",
     "MODEL",
     "AgentInvocationResult",
+    "AgentResumeResult",
     "Scenario1AgentRuntime",
+    "WAIT_FOR_HUMAN_DECISION_TOOL",
+    "build_human_decision_wait_tool",
     "build_scenario1_agent",
     "create_database_session_service",
     "ensure_run_session",
