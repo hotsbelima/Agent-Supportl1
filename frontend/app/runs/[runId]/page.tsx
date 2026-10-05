@@ -6,5 +6,5 @@ type RunPageProps = {
 
 export default async function RunPage({ params }: RunPageProps) {
   const { runId } = await params;
-  return <RunConsole runId={runId} />;
+  return <RunConsole key={runId} runId={runId} />;
 }
