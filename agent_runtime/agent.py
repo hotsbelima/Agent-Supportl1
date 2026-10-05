@@ -1,4 +1,4 @@
-"""Production Scenario 1 ADK agent definition for Phase 6B."""
+"""Production Scenario 1 ADK agent definition for Phase 6C."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from google.adk.agents import LlmAgent
 
 from product_backend.adapters.tool_adapters import Scenario1ToolAdapter
 
+from .human_decision import build_human_decision_wait_tool
 from .tools import Scenario1AdkTools
 
 
@@ -69,6 +70,17 @@ Business boundary:
 - propose_field_visit creates only a PENDING_APPROVAL proposal. Never claim that
   approval, dispatch, repair, work-order execution, or incident resolution has
   happened merely because a proposal was created.
+- Immediately after propose_field_visit succeeds with a PENDING_APPROVAL
+  proposal, call await_human_decision exactly once with the exact proposal_id
+  returned by propose_field_visit. Do not continue analysis or call another
+  Product tool while that proposal is awaiting the external human decision.
+- await_human_decision is only a native ADK pause point. The actual Approve or
+  Reject operation happens through the Product API/UI and Product remains the
+  source of truth for approval, execution, stale handling and work-order state.
+- After await_human_decision is resumed with the Product decision result, do not
+  call any further tools in that invocation. Report only what the returned
+  Product decision actually proves: rejection, stale/no-execution, or the
+  registered executed action/work order. A work order is not proof of repair.
 - Do not expose hidden reasoning or chain-of-thought. The final response should
   be a concise operational summary of observed facts, the current hypothesis,
   and any pending human action.
@@ -79,10 +91,13 @@ def build_scenario1_agent(
     adapter: Scenario1ToolAdapter,
 ) -> LlmAgent:
     """Build one native ADK agent with exactly six Product-backed tools."""
-    tools = Scenario1AdkTools(adapter)
+    product_tools = Scenario1AdkTools(adapter)
     return LlmAgent(
         name=AGENT_NAME,
         model=MODEL,
         instruction=AGENT_INSTRUCTION,
-        tools=tools.functions(),
+        tools=[
+            *product_tools.functions(),
+            build_human_decision_wait_tool(),
+        ],
     )
