@@ -20,6 +20,38 @@ from product_backend.domain.errors import DomainError, ErrorCode
 from .scenario2_fixture import CANONICAL_SIGNAL_SEQUENCE
 
 
+def _canonical_progress(signals):
+    by_identity = {
+        (signal.source, signal.source_ref): signal
+        for signal in signals
+    }
+    for index, template in enumerate(CANONICAL_SIGNAL_SEQUENCE):
+        existing = by_identity.get((template.source, template.source_ref))
+        if existing is None:
+            return index, None
+        if (
+            existing.site_id != template.site_id
+            or existing.service_key != template.service_key
+            or existing.symptom_key != template.symptom_key
+            or existing.safe_payload != template.safe_payload
+        ):
+            return index, OperationFailure(
+                ok=False,
+                error=DomainError(
+                    code=ErrorCode.INVALID_ARGUMENT,
+                    message=(
+                        "Persisted fact conflicts with the canonical "
+                        "Scenario 2 simulator sequence."
+                    ),
+                    details=(
+                        ("reason", "canonical_signal_identity_conflict"),
+                        ("source_ref", template.source_ref),
+                    ),
+                ),
+            )
+    return len(CANONICAL_SIGNAL_SEQUENCE), None
+
+
 class Scenario2SimulatorService:
     def __init__(
         self,
@@ -50,19 +82,11 @@ class Scenario2SimulatorService:
                 ),
             )
 
-        persisted_identities = {
-            (signal.source, signal.source_ref)
-            for signal in state.operational_signals
-        }
-        next_index = next(
-            (
-                index
-                for index, template in enumerate(CANONICAL_SIGNAL_SEQUENCE)
-                if (template.source, template.source_ref)
-                not in persisted_identities
-            ),
-            len(CANONICAL_SIGNAL_SEQUENCE),
+        next_index, conflict = _canonical_progress(
+            state.operational_signals
         )
+        if conflict is not None:
+            return conflict
 
         if next_index >= len(CANONICAL_SIGNAL_SEQUENCE):
             return Scenario2SimulatorStep(
@@ -104,19 +128,11 @@ class Scenario2SimulatorService:
                 ),
             )
 
-        refreshed_identities = {
-            (signal.source, signal.source_ref)
-            for signal in refreshed.operational_signals
-        }
-        next_after_ingest = next(
-            (
-                index
-                for index, candidate in enumerate(CANONICAL_SIGNAL_SEQUENCE)
-                if (candidate.source, candidate.source_ref)
-                not in refreshed_identities
-            ),
-            len(CANONICAL_SIGNAL_SEQUENCE),
+        next_after_ingest, conflict = _canonical_progress(
+            refreshed.operational_signals
         )
+        if conflict is not None:
+            return conflict
 
         return Scenario2SimulatorStep(
             state=refreshed,
