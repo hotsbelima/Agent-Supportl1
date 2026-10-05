@@ -229,10 +229,15 @@ class Scenario2SignalIngestionService:
                 service_key=service_key,
             )
             if incident is None:
+                incident_hint = (
+                    _clean(signal_input.incident_id_hint)
+                    if signal_input.incident_id_hint is not None
+                    else ""
+                )
                 incident = ServiceIncident(
                     incident_id=(
-                        _clean(signal_input.incident_id_hint)
-                        if signal_input.incident_id_hint
+                        incident_hint
+                        if incident_hint
                         else self._id_factory("incident")
                     ),
                     tenant_id=tenant,
@@ -252,10 +257,15 @@ class Scenario2SignalIngestionService:
                     "service_incident_symptom_conflict",
                 )
 
+            signal_hint = (
+                _clean(signal_input.signal_id_hint)
+                if signal_input.signal_id_hint is not None
+                else ""
+            )
             signal = OperationalSignal(
                 signal_id=(
-                    _clean(signal_input.signal_id_hint)
-                    if signal_input.signal_id_hint
+                    signal_hint
+                    if signal_hint
                     else self._id_factory("signal")
                 ),
                 tenant_id=tenant,
