@@ -192,17 +192,19 @@ class SqlAlchemyOperationalSignalRepository:
         )
         return tuple(_signal_from_row(row) for row in result.scalars().all())
 
-    async def get_by_source_ref(
+    async def get_by_source_identity(
         self,
         *,
         tenant_id: str,
         run_id: str,
+        source: Scenario2SignalSource,
         source_ref: str,
     ) -> OperationalSignal | None:
         result = await self._session.execute(
             select(OperationalSignalRow).where(
                 OperationalSignalRow.tenant_id == tenant_id,
                 OperationalSignalRow.run_id == run_id,
+                OperationalSignalRow.source == source.value,
                 OperationalSignalRow.source_ref == source_ref,
             )
         )
