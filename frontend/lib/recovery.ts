@@ -320,6 +320,7 @@ export function abortableDelay(
 export function isStateRefreshEvent(event: ApplicationEventView): boolean {
   return (
     event.event_type === "tool.finished" ||
+    event.event_type === "observation.recorded" ||
     event.event_type === "proposal.created" ||
     event.event_type === "approval.decided" ||
     event.event_type === "action.executed" ||
