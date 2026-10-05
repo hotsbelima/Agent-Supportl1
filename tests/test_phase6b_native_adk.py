@@ -4,9 +4,10 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
-from google.adk.tools import FunctionTool
+from google.adk.tools import FunctionTool, LongRunningFunctionTool
 
 from agent_runtime.agent import AGENT_INSTRUCTION, MODEL, build_scenario1_agent
+from agent_runtime.human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from agent_runtime.retry import ProductRetryableToolPlugin
 from product_backend.contracts.tools import MODEL_VISIBLE_TOOL_NAMES
 from scripts.phase6b_live_acceptance import (
@@ -50,14 +51,23 @@ def _parameter_schema(tool: FunctionTool) -> dict[str, Any]:
     )
 
 
-def test_agent_uses_expected_model_and_exactly_six_native_function_tools():
+def test_agent_keeps_six_product_tools_and_adds_native_human_wait_tool():
     async def scenario() -> None:
         agent = build_scenario1_agent(_UnusedAdapter())
         assert agent.model == MODEL == "gemini-3.5-flash-lite"
 
         tools = await agent.canonical_tools()
-        assert [tool.name for tool in tools] == list(MODEL_VISIBLE_TOOL_NAMES)
-        assert all(isinstance(tool, FunctionTool) for tool in tools)
+        product_tools = tools[:-1]
+        wait_tool = tools[-1]
+
+        assert [tool.name for tool in product_tools] == list(MODEL_VISIBLE_TOOL_NAMES)
+        assert all(isinstance(tool, FunctionTool) for tool in product_tools)
+        assert all(
+            not isinstance(tool, LongRunningFunctionTool)
+            for tool in product_tools
+        )
+        assert wait_tool.name == WAIT_FOR_HUMAN_DECISION_TOOL
+        assert isinstance(wait_tool, LongRunningFunctionTool)
 
     asyncio.run(scenario())
 
@@ -85,7 +95,7 @@ def test_native_adk_schemas_hide_trusted_context_and_match_contract():
             },
         }
 
-        assert set(tools) == set(expected)
+        assert set(tools) == set(expected) | {WAIT_FOR_HUMAN_DECISION_TOOL}
         for name, expected_parameters in expected.items():
             schema = _parameter_schema(tools[name])
             properties = schema.get("properties", {})
@@ -133,6 +143,13 @@ def test_native_adk_schemas_hide_trusted_context_and_match_contract():
             "KB_ARTICLE",
         ):
             assert required_source in evidence_description
+
+        wait_schema = _parameter_schema(tools[WAIT_FOR_HUMAN_DECISION_TOOL])
+        assert set(wait_schema.get("properties", {})) == {"proposal_id"}
+        assert "tool_context" not in wait_schema.get("properties", {})
+        assert "PENDING_APPROVAL" in str(
+            wait_schema["properties"]["proposal_id"]
+        )
 
     asyncio.run(scenario())
 
