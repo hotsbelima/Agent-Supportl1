@@ -1,6 +1,9 @@
 # Phase 6C — native ADK human decision pause/resume
 
-Status: **IMPLEMENTED, NOT YET TESTED**.
+Status: **IMPLEMENTED AND DETERMINISTIC/INTEGRATION VERIFIED**.
+
+Managed live Gemini/Northflank pause→decision→resume acceptance is intentionally
+left to Phase 6D E2E.
 
 Baseline: Phase 6B PASS commit
 `cc7e6be3cb5ffa967839520451fefd5d65cc5ee5`.
@@ -196,17 +199,43 @@ Phase 6C does not add:
 
 ## Verification status
 
-Per project-owner instruction, Phase 6C was implemented **without tests**.
+Phase 6C was subsequently reviewed against the canonical handoff and pinned
+Google ADK 2.10.0 resumability behavior.
 
-At this checkpoint:
+Focused coverage now exists in
+`tests/test_phase6c_human_decision_resume.py` and verifies:
 
-- no Phase 6C test was added;
-- no pytest/regression suite was run for Phase 6C;
-- no live Gemini pause/resume run was performed;
-- no Northflank Phase 6C acceptance was performed.
+- six Product tools remain ordinary native FunctionTools while
+  `await_human_decision` is the separate native LongRunningFunctionTool;
+- the proposal tool executes before the long-running pause is established;
+- resume targets the same ADK invocation and original function-call id;
+- identical replay does not inject a second human-decision FunctionResponse;
+- a provider failure after FunctionResponse persistence resumes from durable
+  ADK history without duplicate delivery;
+- a persisted pause survives a new SQLAlchemy engine / ADK runtime instance;
+- Product commit remains durable when post-commit ADK resume fails, and
+  idempotent replay reconciles without duplicate Approval/ExecutedAction/WorkOrder;
+- Reject returns no execution side effect;
+- stale Approve returns no execution side effect and never claims repair;
+- retryable approval revalidation failure consumes no Approval and does not
+  invoke ADK resume;
+- health exposes Phase 6C native resumability readiness.
 
-Therefore Phase 6C must **not** be called PASS yet.
+Repository regression on commit
+`27d1de593451a6f17103b3f05170c5253eefc4ba`:
 
-The next step is review + deterministic/integration tests + real managed
-pause/Approve-or-Reject/resume acceptance, including restart/replay failure
-windows.
+- full Python: **136 passed**;
+- retained frontend Vitest: **37 passed**;
+- dependency check / Python compile: PASS;
+- Product Alembic upgrade/current/check: PASS, no new operations;
+- frontend typecheck/lint/production build/static audit: PASS;
+- Product Docker image build: PASS;
+- Phase 6A pull-request workflow: PASS;
+- Phase 6B pull-request workflow: every deterministic/build gate PASS; its
+  historical live-Gemini step reports `GOOGLE_API_KEY missing`, so that
+  workflow's aggregate conclusion remains failure for an environment reason,
+  not a Phase 6C deterministic regression.
+
+No Phase 6C managed Northflank/Gemini human-decision run is claimed here.
+That real managed Scenario 1 pause→Approve/Reject→resume proof belongs to
+Phase 6D E2E / acceptance.
