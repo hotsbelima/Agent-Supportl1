@@ -29,16 +29,19 @@ Canonical common external dependency:
 
 No matching Major Incident exists initially.
 
-## Canonical sites and Product Incidents
+## Canonical sites and Product ServiceIncidents
 
-| Site | Role | Product Incident |
+Scenario 1 Incident is device-centric, so Scenario 2 uses a dedicated typed
+ServiceIncident rather than fabricating reported_device_id.
+
+| Site | Role | ServiceIncident |
 | --- | --- | --- |
 | `SITE-KZN-017` | first affected store | `INC-S2-KZN-001` |
 | `SITE-SAM-024` | geographically independent affected store | `INC-S2-SAM-001` |
 
-A Product Incident represents a real site-level operational problem, **not every
+A ServiceIncident represents a real site/service operational problem, **not every
 incoming signal**. A repeat ticket/alert for the same site remains an operational
-signal fact associated with the existing site incident.
+signal fact associated with the existing ServiceIncident.
 
 ## Exact incoming sequence
 
