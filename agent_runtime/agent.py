@@ -90,7 +90,7 @@ Business boundary:
 def build_scenario1_agent(
     adapter: Scenario1ToolAdapter,
 ) -> LlmAgent:
-    """Build one native ADK agent with exactly six Product-backed tools."""
+    """Build one ADK agent with six Product tools plus the native wait point."""
     product_tools = Scenario1AdkTools(adapter)
     return LlmAgent(
         name=AGENT_NAME,
