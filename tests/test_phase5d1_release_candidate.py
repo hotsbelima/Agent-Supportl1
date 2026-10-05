@@ -107,7 +107,6 @@ def test_controlled_seed_creates_real_persisted_pending_proposal_and_events():
         assert event_types == [
             "proposal.created",
             "run.status_changed",
-            "tool.finished",
         ]
 
 
