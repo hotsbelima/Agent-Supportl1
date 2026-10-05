@@ -38,6 +38,7 @@ class GetExternalDependencyStatusRequest:
 
 @dataclass(frozen=True, slots=True)
 class SearchMajorIncidentsRequest:
+    service_key: str
     correlation_key: str
     dependency_id: str
 
@@ -81,6 +82,7 @@ class GetExternalDependencyStatusSuccess:
 @dataclass(frozen=True, slots=True)
 class SearchMajorIncidentsSuccess:
     ok: Literal[True]
+    service_key: str
     correlation_key: str
     dependency_id: str
     snapshot: MajorIncidentSearchSnapshot
