@@ -172,11 +172,14 @@ def validate_major_incident_proposal_evidence(
         payload = item.payload
         if payload.symptom_key != proposal.correlation_key:
             return _invalid("signal_correlation_mismatch", item.evidence_id)
+        if payload.service_key != proposal.service_key:
+            return _invalid("signal_service_mismatch", item.evidence_id)
         if payload.site_id not in affected_sites:
             return _invalid("signal_site_outside_proposal", item.evidence_id)
         if not {
             payload.signal_id,
             payload.site_id,
+            payload.service_key,
             payload.symptom_key,
         }.issubset(set(item.entity_ids)):
             return _invalid("signal_provenance_not_supported", item.evidence_id)
