@@ -667,6 +667,61 @@ def test_manual_ingest_of_canonical_source_identity_advances_simulator():
     asyncio.run(scenario())
 
 
+def test_simulator_rejects_conflicting_fact_that_reuses_canonical_source_identity():
+    async def scenario() -> None:
+        suffix = uuid4().hex[:10]
+        tenant_id = f"TENANT-7C-SPOOF-{suffix}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        start, ingestion, state_service, simulator, _, _ = _services(factory)
+        try:
+            started = await start.start(tenant_id=tenant_id)
+            assert not isinstance(started, OperationFailure)
+            run_id = started.run.run_id
+            first = CANONICAL_SIGNAL_SEQUENCE[0]
+
+            spoofed = await ingestion.ingest(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                signal_input=Scenario2SignalInput(
+                    source=first.source,
+                    site_id=CANONICAL_SIGNAL_SEQUENCE[2].site_id,
+                    service_key=first.service_key,
+                    symptom_key=first.symptom_key,
+                    source_ref=first.source_ref,
+                    safe_payload=dict(first.safe_payload),
+                ),
+            )
+            assert not isinstance(spoofed, OperationFailure)
+
+            step = await simulator.next(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert isinstance(step, OperationFailure)
+            assert (
+                dict(step.error.details)["reason"]
+                == "canonical_signal_identity_conflict"
+            )
+
+            state = await state_service.get(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert state is not None
+            assert len(state.operational_signals) == 1
+            outbox = await _outbox_rows(
+                factory,
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert len(outbox) == 1
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_simulator_completion_handles_out_of_order_manual_canonical_fact():
     async def scenario() -> None:
         suffix = uuid4().hex[:10]
