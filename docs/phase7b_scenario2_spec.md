@@ -151,8 +151,8 @@ a second equivalent Major Incident.
 Reject records the human decision and creates zero execution/records.
 
 Equivalent Major Incident identity is scoped by tenant plus
-`(correlation_key, dependency_id)`; persistence in later phases must enforce this
-uniqueness for active/created records.
+`(service_key, correlation_key, dependency_id)`; persistence in later phases must
+enforce this uniqueness for active/created records.
 
 ## Optional notification
 
