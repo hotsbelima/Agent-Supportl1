@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from product_backend.contracts.events import ApplicationEventType
-from product_backend.contracts.serialization import to_tool_payload
 from product_backend.contracts.tools import ProposeFieldVisitRequest, ToolCallContext
 from product_backend.domain.enums import (
     ActionType,
@@ -248,18 +247,6 @@ class FieldVisitProposalService:
                     "status": updated_run.status.value,
                     "cause": "proposal_created",
                     "proposal_id": proposal.proposal_id,
-                },
-            )
-            await append_uow_event(
-                uow,
-                context=context,
-                event_type=ApplicationEventType.TOOL_FINISHED,
-                payload={
-                    "tool_name": "propose_field_visit",
-                    "result": {
-                        "ok": True,
-                        "proposal": to_tool_payload(proposal),
-                    },
                 },
             )
             await uow.commit()
