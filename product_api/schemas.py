@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from product_backend.contracts.events import ApplicationEvent
 from product_backend.contracts.run_state import RunStateSnapshot
+from product_backend.contracts.scenario2_ingestion import (
+    Scenario2IngestionStateSnapshot,
+    Scenario2SignalIngested,
+    Scenario2SimulatorStep,
+)
 from product_backend.contracts.serialization import to_tool_payload
 from product_backend.application.results import ApprovalProcessed
 from product_backend.domain.errors import DomainError
@@ -34,6 +39,25 @@ class AcceptanceAccessLinkStateResponse(BaseModel):
     run_id: str
     operational_state: Literal["UP", "DOWN"]
     scope: Literal["phase6d_acceptance_only"] = "phase6d_acceptance_only"
+
+
+class Scenario2SignalIngestRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    source: Literal["MONITORING", "ITSM"]
+    site_id: str = Field(min_length=1, max_length=128)
+    service_key: str = Field(min_length=1, max_length=128)
+    symptom_key: str = Field(min_length=1, max_length=128)
+    source_ref: str = Field(min_length=1, max_length=256)
+    safe_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class Scenario2DependencyStatusRequest(BaseModel):
+    dependency_status: Literal["DEGRADED", "HEALTHY"]
+
+
+class Scenario2MatchingMajorIncidentRequest(BaseModel):
+    major_incident_id: str | None = Field(default=None, max_length=128)
 
 
 class HumanDecisionRequest(BaseModel):
@@ -140,6 +164,63 @@ class RunStateResponse(BaseModel):
     latest_event_seq: int
 
 
+class ServiceIncidentView(BaseModel):
+    incident_id: str
+    tenant_id: str
+    run_id: str
+    site_id: str
+    service_key: str
+    symptom_key: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class OperationalSignalView(BaseModel):
+    signal_id: str
+    tenant_id: str
+    run_id: str
+    source: str
+    site_id: str
+    service_key: str
+    symptom_key: str
+    source_ref: str
+    received_at: datetime
+    safe_payload: dict[str, Any]
+    incident_id: str | None = None
+
+
+class Scenario2FixtureStateView(BaseModel):
+    tenant_id: str
+    run_id: str
+    dependency_status: str
+    matching_major_incident_id: str | None
+    updated_at: datetime
+
+
+class Scenario2IngestionStateResponse(BaseModel):
+    run: RunView
+    service_incidents: list[ServiceIncidentView]
+    operational_signals: list[OperationalSignalView]
+    fixture_state: Scenario2FixtureStateView
+    latest_event_seq: int
+
+
+class Scenario2SignalIngestResponse(BaseModel):
+    signal: OperationalSignalView
+    service_incident: ServiceIncidentView
+    replayed: bool
+    event_seq: int | None
+    dispatch_queued: bool
+
+
+class Scenario2SimulatorStepResponse(BaseModel):
+    state: Scenario2IngestionStateResponse
+    ingested: Scenario2SignalIngestResponse | None
+    complete: bool
+    next_index: int
+
+
 class ApplicationEventView(BaseModel):
     event_id: str
     tenant_id: str
@@ -208,6 +289,55 @@ def run_state_response(snapshot: RunStateSnapshot) -> RunStateResponse:
             for item in snapshot.work_orders
         ],
         latest_event_seq=snapshot.latest_event_seq,
+    )
+
+
+def scenario2_state_response(
+    snapshot: Scenario2IngestionStateSnapshot,
+) -> Scenario2IngestionStateResponse:
+    return Scenario2IngestionStateResponse(
+        run=RunView(**_payload(snapshot.run)),
+        service_incidents=[
+            ServiceIncidentView(**_payload(item))
+            for item in snapshot.service_incidents
+        ],
+        operational_signals=[
+            OperationalSignalView(**_payload(item))
+            for item in snapshot.operational_signals
+        ],
+        fixture_state=Scenario2FixtureStateView(
+            **_payload(snapshot.fixture_state)
+        ),
+        latest_event_seq=snapshot.latest_event_seq,
+    )
+
+
+def scenario2_signal_response(
+    result: Scenario2SignalIngested,
+) -> Scenario2SignalIngestResponse:
+    return Scenario2SignalIngestResponse(
+        signal=OperationalSignalView(**_payload(result.signal)),
+        service_incident=ServiceIncidentView(
+            **_payload(result.service_incident)
+        ),
+        replayed=result.replayed,
+        event_seq=result.event.seq if result.event is not None else None,
+        dispatch_queued=result.dispatch is not None,
+    )
+
+
+def scenario2_simulator_response(
+    result: Scenario2SimulatorStep,
+) -> Scenario2SimulatorStepResponse:
+    return Scenario2SimulatorStepResponse(
+        state=scenario2_state_response(result.state),
+        ingested=(
+            scenario2_signal_response(result.ingested)
+            if result.ingested is not None
+            else None
+        ),
+        complete=result.complete,
+        next_index=result.next_index,
     )
 
 
@@ -281,6 +411,15 @@ __all__ = [
     "ApprovalDecisionResponse",
     "HumanDecisionRequest",
     "RunStateResponse",
+    "Scenario2DependencyStatusRequest",
+    "Scenario2IngestionStateResponse",
+    "Scenario2MatchingMajorIncidentRequest",
+    "Scenario2SignalIngestRequest",
+    "Scenario2SignalIngestResponse",
+    "Scenario2SimulatorStepResponse",
+    "scenario2_signal_response",
+    "scenario2_simulator_response",
+    "scenario2_state_response",
     "TimelineResponse",
     "approval_response",
     "error_response",
