@@ -111,6 +111,7 @@ def serialize_evidence_payload(
             "signal_id": payload.signal_id,
             "source": payload.source.value,
             "site_id": payload.site_id,
+            "service_key": payload.service_key,
             "symptom_key": payload.symptom_key,
             "source_ref": payload.source_ref,
         }
@@ -256,6 +257,7 @@ def deserialize_evidence_payload(
             signal_id=_require_str(payload, "signal_id"),
             source=Scenario2SignalSource(_require_str(payload, "source")),
             site_id=_require_str(payload, "site_id"),
+            service_key=_require_str(payload, "service_key"),
             symptom_key=_require_str(payload, "symptom_key"),
             source_ref=_require_str(payload, "source_ref"),
         )
