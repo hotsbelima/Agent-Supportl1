@@ -488,6 +488,16 @@ def test_same_site_second_signal_reuses_service_incident_and_third_site_creates_
             second = await simulator.next(tenant_id=tenant_id, run_id=run_id)
             assert not isinstance(first, OperationFailure)
             assert not isinstance(second, OperationFailure)
+            assert first.ingested is not None
+            assert second.ingested is not None
+            assert (
+                first.ingested.service_incident.incident_id
+                == second.ingested.service_incident.incident_id
+            )
+            assert (
+                second.ingested.service_incident.updated_at
+                >= first.ingested.service_incident.updated_at
+            )
 
             after_two = await state_service.get(
                 tenant_id=tenant_id,
