@@ -48,6 +48,7 @@ def _seed(tenant_id: str, run_id: str) -> dict:
 def test_controlled_seed_is_not_exposed_as_public_http_endpoint():
     with TestClient(create_app()) as client:
         paths = client.app.openapi()["paths"]
+        internal_paths = {route.path for route in client.app.routes}
 
     lowered = "\n".join(paths).lower()
     assert "seed" not in lowered
@@ -57,12 +58,13 @@ def test_controlled_seed_is_not_exposed_as_public_http_endpoint():
         "/health",
         "/api/v1/scenario-1/runs",
         "/api/v1/runs/{run_id}",
-        "/api/v1/runs/{run_id}/agent/invoke",
         "/api/v1/runs/{run_id}/events",
         "/api/v1/runs/{run_id}/events/stream",
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/reject",
     }
+    assert "/api/v1/runs/{run_id}/agent/invoke" not in paths
+    assert "/api/v1/runs/{run_id}/agent/invoke" in internal_paths
 
 
 def test_controlled_seed_creates_real_persisted_pending_proposal_and_events():
