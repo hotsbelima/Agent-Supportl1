@@ -24,8 +24,11 @@ describe("browser API client contract", () => {
   });
 
   it("sends configured tenant header when starting Scenario 1", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
+    const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push([input, init]);
+        return new Response(
         JSON.stringify({
           run: {
             run_id: "RUN-1",
@@ -47,7 +50,8 @@ describe("browser API client contract", () => {
           status: 201,
           headers: { "Content-Type": "application/json" },
         },
-      ),
+      );
+      },
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -55,7 +59,7 @@ describe("browser API client contract", () => {
     await api.startScenario1();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0]!;
+    const [url, init] = calls[0]!;
     expect(url).toBe("https://api.example.test/api/v1/scenario-1/runs");
     expect(init?.method).toBe("POST");
     const headers = init?.headers as Headers;
@@ -63,8 +67,11 @@ describe("browser API client contract", () => {
   });
 
   it("sends tenant and typed JSON body for Approve", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
+    const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push([input, init]);
+        return new Response(
         JSON.stringify({
           approval: {
             approval_id: "APR-1",
@@ -108,7 +115,8 @@ describe("browser API client contract", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         },
-      ),
+      );
+      },
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -120,7 +128,7 @@ describe("browser API client contract", () => {
       "portfolio-demo-operator",
     );
 
-    const [url, init] = fetchMock.mock.calls[0]!;
+    const [url, init] = calls[0]!;
     expect(url).toBe(
       "https://api.example.test/api/v1/runs/RUN-1/proposals/PROP-1/approve",
     );
@@ -134,11 +142,15 @@ describe("browser API client contract", () => {
   });
 
   it("uses streaming fetch with tenant header and persisted cursor", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response("", {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      }),
+    const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push([input, init]);
+        return new Response("", {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      },
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -157,7 +169,7 @@ describe("browser API client contract", () => {
     });
 
     expect(onOpen).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0]!;
+    const [url, init] = calls[0]!;
     expect(url).toBe(
       "https://api.example.test/api/v1/runs/RUN-1/events/stream?after_seq=17",
     );
