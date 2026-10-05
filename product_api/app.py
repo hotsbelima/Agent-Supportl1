@@ -489,7 +489,11 @@ def create_app(
                 else None
             ),
             "sse_wired": True,
-            "automatic_dispatch_wired": services.dispatch_worker is not None,
+            "automatic_dispatch_wired": (
+                services.dispatch_worker.running
+                if services.dispatch_worker is not None
+                else False
+            ),
         }
 
     @app.post(
