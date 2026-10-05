@@ -41,7 +41,37 @@ INCIDENT_SYMPTOM = "Payment terminal is unavailable."
 
 
 class Scenario1FixtureSources:
-    """Deterministic CMDB/monitoring reads required by human revalidation."""
+    """Deterministic Scenario 1 sources plus a narrow Phase 6D test override."""
+
+    def __init__(self) -> None:
+        self._access_link_operational_overrides: dict[
+            tuple[str, str], OperationalState
+        ] = {}
+
+    def set_access_link_operational_state(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        operational_state: OperationalState,
+    ) -> None:
+        """Acceptance-only override for authoritative revalidation state.
+
+        This is intentionally scoped to one tenant/run and is process-local.
+        It is not Product business state, is not persisted, and is never
+        exposed to the model as a tool.
+        """
+        self._access_link_operational_overrides[(tenant_id, run_id)] = (
+            operational_state
+        )
+
+    def clear_access_link_operational_state(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> None:
+        self._access_link_operational_overrides.pop((tenant_id, run_id), None)
 
     def bootstrap(self) -> Scenario1Bootstrap:
         return Scenario1Bootstrap(
@@ -102,6 +132,10 @@ class Scenario1FixtureSources:
             or target_id != ATTACHMENT_ID
         ):
             return None
+        operational_state = self._access_link_operational_overrides.get(
+            (tenant_id, run_id),
+            OperationalState.DOWN,
+        )
         return AccessLinkDiagnosticSnapshot(
             target_id=ATTACHMENT_ID,
             attachment_id=ATTACHMENT_ID,
@@ -109,7 +143,7 @@ class Scenario1FixtureSources:
             port_id=PORT_ID,
             switch_reachable=True,
             admin_state=AdminState.UP,
-            operational_state=OperationalState.DOWN,
+            operational_state=operational_state,
             port_security=PortSecurityState.NORMAL,
             configuration=ConfigurationState.EXPECTED,
         )
