@@ -53,6 +53,7 @@ class MajorIncidentDirectoryPort(Protocol):
         *,
         tenant_id: str,
         run_id: str,
+        service_key: str,
         correlation_key: str,
         dependency_id: str,
     ) -> MajorIncidentSearchSnapshot: ...
