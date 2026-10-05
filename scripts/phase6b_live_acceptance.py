@@ -25,26 +25,71 @@ REQUIRED_LIVE_TOOLS = {
     "get_device",
     "get_site_health",
     "run_diagnostic",
+    "search_incidents",
     "search_kb",
     "propose_field_visit",
 }
 
+REQUIRED_PROPOSAL_TOOLS = {
+    "get_device",
+    "get_site_health",
+    "run_diagnostic",
+    "search_kb",
+    "propose_field_visit",
+}
 
-def _collect_evidence_ids(value: Any) -> set[str]:
-    found: set[str] = set()
+REQUIRED_PROPOSAL_EVIDENCE_SOURCES = {
+    "CMDB_SNAPSHOT",
+    "SITE_HEALTH",
+    "ACCESS_LINK_DIAGNOSTIC",
+    "KB_ARTICLE",
+}
+
+
+def _collect_evidence_sources(value: Any) -> dict[str, str]:
+    """Return evidence_id -> source_type pairs from one Product tool payload."""
+    found: dict[str, str] = {}
     if isinstance(value, dict):
         evidence_id = value.get("evidence_id")
-        if isinstance(evidence_id, str):
-            found.add(evidence_id)
+        source_type = value.get("source_type")
+        if isinstance(evidence_id, str) and isinstance(source_type, str):
+            found[evidence_id] = source_type
         for item in value.values():
-            found.update(_collect_evidence_ids(item))
+            found.update(_collect_evidence_sources(item))
     elif isinstance(value, list):
         for item in value:
-            found.update(_collect_evidence_ids(item))
+            found.update(_collect_evidence_sources(item))
     return found
 
 
-async def _read_trace(tenant_id: str, run_id: str) -> dict[str, Any]:
+def _proposal_uses_required_prior_evidence(
+    evidence_ids: Any,
+    prior_evidence_sources: dict[str, str],
+) -> bool:
+    if not isinstance(evidence_ids, list) or len(evidence_ids) < 4:
+        return False
+    if any(not isinstance(item, str) for item in evidence_ids):
+        return False
+    if len(set(evidence_ids)) != len(evidence_ids):
+        return False
+
+    selected = set(evidence_ids)
+    if not selected.issubset(prior_evidence_sources):
+        return False
+
+    selected_sources = {
+        prior_evidence_sources[evidence_id]
+        for evidence_id in selected
+    }
+    return REQUIRED_PROPOSAL_EVIDENCE_SOURCES.issubset(selected_sources)
+
+
+async def _read_trace(
+    tenant_id: str,
+    run_id: str,
+    *,
+    reported_device_ids: set[str],
+) -> dict[str, Any]:
     engine = create_engine(DatabaseSettings.from_env())
     service = create_database_session_service(engine)
     try:
@@ -57,43 +102,61 @@ async def _read_trace(tenant_id: str, run_id: str) -> dict[str, Any]:
             raise RuntimeError("Persisted ADK session was not found")
 
         records: list[dict[str, Any]] = []
-        prior_evidence_ids: set[str] = set()
+        prior_evidence_sources: dict[str, str] = {}
         prior_attachment_ids: set[str] = set()
 
-        diagnostic_dependency = False
-        proposal_dependency = False
+        get_device_checks: list[bool] = []
+        diagnostic_checks: list[bool] = []
+        proposal_checks: list[bool] = []
 
         for event in session.events:
             for call in event.get_function_calls():
                 args = dict(call.args or {})
-                if call.name == "run_diagnostic":
+                downstream_valid: bool | None = None
+
+                if call.name == "get_device":
+                    device_id = args.get("device_id")
+                    downstream_valid = (
+                        isinstance(device_id, str)
+                        and device_id in reported_device_ids
+                    )
+                    get_device_checks.append(downstream_valid)
+
+                elif call.name == "run_diagnostic":
                     target_id = args.get("target_id")
-                    if (
+                    downstream_valid = (
                         isinstance(target_id, str)
                         and target_id in prior_attachment_ids
-                    ):
-                        diagnostic_dependency = True
+                    )
+                    diagnostic_checks.append(downstream_valid)
 
-                if call.name == "propose_field_visit":
-                    evidence_ids = args.get("evidence_ids")
-                    if (
-                        isinstance(evidence_ids, list)
-                        and len(evidence_ids) >= 4
-                        and set(evidence_ids).issubset(prior_evidence_ids)
-                    ):
-                        proposal_dependency = True
+                elif call.name == "propose_field_visit":
+                    device_id = args.get("device_id")
+                    evidence_valid = _proposal_uses_required_prior_evidence(
+                        args.get("evidence_ids"),
+                        prior_evidence_sources,
+                    )
+                    device_valid = (
+                        isinstance(device_id, str)
+                        and device_id in reported_device_ids
+                    )
+                    downstream_valid = evidence_valid and device_valid
+                    proposal_checks.append(downstream_valid)
 
-                records.append(
-                    {
-                        "kind": "tool_call",
-                        "name": call.name,
-                        "args": args,
-                    }
-                )
+                record = {
+                    "kind": "tool_call",
+                    "name": call.name,
+                    "args": args,
+                }
+                if downstream_valid is not None:
+                    record["downstream_valid"] = downstream_valid
+                records.append(record)
 
             for response in event.get_function_responses():
                 payload = dict(response.response or {})
-                prior_evidence_ids.update(_collect_evidence_ids(payload))
+                prior_evidence_sources.update(
+                    _collect_evidence_sources(payload)
+                )
 
                 attachment_id = payload.get("attachment_id")
                 if isinstance(attachment_id, str):
@@ -120,8 +183,15 @@ async def _read_trace(tenant_id: str, run_id: str) -> dict[str, Any]:
         return {
             "call_names": call_names,
             "records": records,
-            "diagnostic_dependency": diagnostic_dependency,
-            "proposal_dependency": proposal_dependency,
+            "get_device_identifiers_valid": (
+                bool(get_device_checks) and all(get_device_checks)
+            ),
+            "diagnostic_dependencies_valid": (
+                bool(diagnostic_checks) and all(diagnostic_checks)
+            ),
+            "proposal_dependencies_valid": (
+                bool(proposal_checks) and all(proposal_checks)
+            ),
         }
     finally:
         await engine.dispose()
@@ -166,7 +236,18 @@ def _one_live_run(index: int) -> dict[str, Any]:
             )
         state_payload = state.json()
 
-    trace = asyncio.run(_read_trace(tenant_id, run_id))
+    reported_device_ids = {
+        item["reported_device_id"]
+        for item in state_payload["incidents"]
+        if isinstance(item.get("reported_device_id"), str)
+    }
+    trace = asyncio.run(
+        _read_trace(
+            tenant_id,
+            run_id,
+            reported_device_ids=reported_device_ids,
+        )
+    )
     call_names = trace["call_names"]
     proposal_statuses = [
         item["status"] for item in state_payload["proposals"]
@@ -175,14 +256,17 @@ def _one_live_run(index: int) -> dict[str, Any]:
     validation = {
         "model": invocation["model"],
         "invocation_id_present": bool(invocation["invocation_id"]),
-        "required_live_tools_observed": REQUIRED_LIVE_TOOLS.issubset(
-            set(call_names)
+        "proposal_prerequisite_tools_observed": (
+            REQUIRED_PROPOSAL_TOOLS.issubset(set(call_names))
         ),
-        "diagnostic_target_from_prior_tool_result": trace[
-            "diagnostic_dependency"
+        "get_device_uses_reported_device_id": trace[
+            "get_device_identifiers_valid"
         ],
-        "proposal_evidence_from_prior_tool_results": trace[
-            "proposal_dependency"
+        "all_diagnostic_targets_from_prior_attachment": trace[
+            "diagnostic_dependencies_valid"
+        ],
+        "all_proposals_use_required_prior_evidence": trace[
+            "proposal_dependencies_valid"
         ],
         "pending_proposal_created": proposal_statuses == ["PENDING_APPROVAL"],
         "run_waiting_approval": (
@@ -240,10 +324,28 @@ def main() -> int:
                 }
             )
 
+    observed_across_runs = {
+        tool_name
+        for item in results
+        for tool_name in item.get("observed_tool_calls", [])
+    }
+    batch_validation = {
+        "all_six_tools_observed_across_live_runs": (
+            REQUIRED_LIVE_TOOLS.issubset(observed_across_runs)
+        ),
+        "all_runs_passed": all(
+            item["validation"]["passed"] for item in results
+        ),
+    }
+
     report = {
-        "status": "passed"
-        if all(item["validation"]["passed"] for item in results)
-        else "failed",
+        "status": (
+            "passed"
+            if all(batch_validation.values())
+            else "failed"
+        ),
+        "batch_validation": batch_validation,
+        "observed_tools_across_runs": sorted(observed_across_runs),
         "runs": results,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
