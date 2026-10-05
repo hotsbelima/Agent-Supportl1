@@ -333,7 +333,12 @@ class ApplicationEventRow(Base):
 
 
 class ApplicationOutboxRow(Base):
-    """Transactional outbox storage reserved for later application delivery."""
+    """Legacy reserved outbox table; no generic producer exists in Phase 6A.
+
+    The applied Phase 4 schema is intentionally left intact. Phase 6C may add
+    a dedicated durable approval-to-ADK-resume producer/consumer after the
+    required invocation/function-call correlation exists.
+    """
 
     __tablename__ = "application_outbox"
     __table_args__ = (
