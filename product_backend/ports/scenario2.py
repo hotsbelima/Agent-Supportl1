@@ -14,6 +14,7 @@ from product_backend.domain.scenario2 import (
     MajorIncidentProposal,
     MajorIncidentRecord,
     OperationalSignal,
+    Scenario2SignalSource,
     ServiceIncident,
 )
 
@@ -61,11 +62,12 @@ class OperationalSignalRepository(Protocol):
         run_id: str,
     ) -> tuple[OperationalSignal, ...]: ...
 
-    async def get_by_source_ref(
+    async def get_by_source_identity(
         self,
         *,
         tenant_id: str,
         run_id: str,
+        source: Scenario2SignalSource,
         source_ref: str,
     ) -> OperationalSignal | None: ...
 
