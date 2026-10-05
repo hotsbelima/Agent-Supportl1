@@ -23,15 +23,17 @@ Scenario 2 Product state is available through:
 
 `GET /api/v1/scenario-2/runs/{run_id}`
 
-The state contains:
+The public state contains:
 
 - Run;
 - typed `ServiceIncident` records;
 - typed persisted `OperationalSignal` facts;
-- persisted Scenario 2 fixture state;
 - latest Product application-event sequence.
 
-No ADK state is required for this read model.
+The persisted Scenario 2 fixture truth is deliberately **not** exposed by this
+public response. AcmePay status and matching-Major-Incident state remain internal
+Product source truth and are available only through the provider-neutral source
+adapter / controlled acceptance hooks. No ADK state is required for this read model.
 
 ### Typed ingestion
 
@@ -53,7 +55,10 @@ Each first delivery atomically:
 Redelivery identity is `(tenant, run, source, source_ref)`.
 
 An identical replay returns the existing persisted signal and creates no second
-application event or outbox record. A conflicting replay is rejected.
+application event or outbox record. A conflicting replay is rejected. The
+canonical simulator also rejects a persisted fact that reuses a canonical
+`(source, source_ref)` identity with different site/service/symptom/payload data;
+it never silently treats that conflicting fact as a valid canonical step.
 
 ### Dedicated Scenario 2 dispatch topic
 
@@ -65,7 +70,11 @@ Constant:
 
 `SCENARIO2_AGENT_DISPATCH_TOPIC`
 
-The envelope contains only Product identifiers:
+The envelope contains only Product identifiers. Queue claiming preserves
+head-of-line ordering per `(tenant, run, topic)`, so a later Scenario 2 event
+cannot overtake an earlier undelivered/retrying event in the same Run.
+
+The envelope contains:
 
 - `event_id`;
 - `event_seq`;
