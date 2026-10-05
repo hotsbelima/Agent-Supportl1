@@ -49,7 +49,7 @@ class _HumanDecisionCorrelation:
     completed: bool
 
 
-def _safe_event_text(event: object) -> str | None:
+def _safe_event_text(event: Any) -> str | None:
     content = getattr(event, "content", None)
     if content is None:
         return None
@@ -64,7 +64,7 @@ def _safe_event_text(event: object) -> str | None:
 
 
 def _latest_final_answer(
-    events: list[object],
+    events: list[Any],
     *,
     invocation_id: str,
 ) -> str | None:
@@ -316,9 +316,10 @@ class Scenario1AgentRuntime:
     ) -> AgentResumeResult:
         """Resume the exact persisted ADK invocation after Product commit.
 
-        Delivery is safely retryable from the existing Approve/Reject endpoint:
-        Product decision replay is idempotent, and a persisted user-authored ADK
-        FunctionResponse proves that this function-call id was already resumed.
+        Delivery is safely retryable from the existing Approve/Reject endpoint.
+        Product decision replay is idempotent. Native ADK event history
+        distinguishes a not-yet-delivered decision, a delivered response whose
+        invocation still needs continuation, and an already completed resume.
         """
         session = await get_run_session(
             self._session_service,
