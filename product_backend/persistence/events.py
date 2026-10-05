@@ -9,8 +9,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from product_backend.contracts.events import (
     ApplicationEvent,
@@ -180,11 +181,14 @@ def _outbox_from_row(row: ApplicationOutboxRow) -> ApplicationOutboxRecord:
 class SqlAlchemyApplicationOutboxRepository:
     """Durable Product-owned delivery bridge for operational event dispatch.
 
-    Claiming uses available_at as a short lease. The database transaction ends
-    before Gemini/ADK work begins, so no row/run lock is held across an LLM
-    invocation. A crashed worker makes the same row eligible again after the
-    lease; ADK-side operational-event correlation prevents a second independent
-    invocation for an event already persisted into the native Session history.
+    Claiming uses available_at as a short lease and preserves head-of-line
+    ordering per (tenant, run, topic): a later event cannot overtake any earlier
+    undelivered event in the same stream, even while that earlier row is leased
+    or rescheduled. The database transaction ends before Gemini/ADK work begins,
+    so no row/run lock is held across an LLM invocation. A crashed worker makes
+    the same row eligible again after the lease; ADK-side operational-event
+    correlation prevents a second independent invocation for an event already
+    persisted into the native Session history.
     """
 
     def __init__(
@@ -240,12 +244,23 @@ class SqlAlchemyApplicationOutboxRepository:
         if not math.isfinite(lease_seconds) or lease_seconds <= 0:
             raise ValueError("lease_seconds must be a positive finite number")
         now = _require_aware_utc(self._clock())
+        earlier = aliased(ApplicationOutboxRow)
+        earlier_undelivered_same_run = exists(
+            select(1).where(
+                earlier.tenant_id == ApplicationOutboxRow.tenant_id,
+                earlier.run_id == ApplicationOutboxRow.run_id,
+                earlier.topic == ApplicationOutboxRow.topic,
+                earlier.delivered_at.is_(None),
+                earlier.event_seq < ApplicationOutboxRow.event_seq,
+            )
+        )
         result = await self._session.execute(
             select(ApplicationOutboxRow)
             .where(
                 ApplicationOutboxRow.topic == topic,
                 ApplicationOutboxRow.delivered_at.is_(None),
                 ApplicationOutboxRow.available_at <= now,
+                ~earlier_undelivered_same_run,
             )
             .order_by(
                 ApplicationOutboxRow.available_at,
