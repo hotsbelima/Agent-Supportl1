@@ -181,6 +181,27 @@ describe("browser API client contract", () => {
     expect(headers.get("Last-Event-ID")).toBe("17");
   });
 
+  it("retries transient bootstrap failures but not permanent client errors", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_TENANT_ID", "TENANT-8OCT");
+    const { ApiClientError, isRetryableApiFailure } = await import("../lib/api");
+
+    expect(
+      isRetryableApiFailure(
+        new ApiClientError(503, "SERVICE_UNAVAILABLE", "down", true),
+      ),
+    ).toBe(true);
+    expect(
+      isRetryableApiFailure(
+        new ApiClientError(404, "RUN_NOT_FOUND", "missing", false),
+      ),
+    ).toBe(false);
+    expect(isRetryableApiFailure(new TypeError("network failed"))).toBe(true);
+    expect(
+      isRetryableApiFailure(new DOMException("Aborted", "AbortError")),
+    ).toBe(false);
+  });
+
   it("propagates application-frame rejection so reconnect recovery can take over", async () => {
     const payload = {
       event_id: "EVENT-5",
@@ -219,5 +240,34 @@ describe("browser API client contract", () => {
         },
       }),
     ).rejects.toThrow("gap-stop");
+  });
+
+  it("fails closed on malformed application SSE frames instead of silently losing them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          "event: application.event\ndata: {}\n\n",
+          {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        ),
+      ),
+    );
+
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_TENANT_ID", "TENANT-8OCT");
+    const { streamRunEvents } = await import("../lib/sse");
+
+    await expect(
+      streamRunEvents({
+        runId: "RUN-1",
+        afterSeq: 4,
+        signal: new AbortController().signal,
+        onOpen: vi.fn(),
+        onEvent: vi.fn(),
+      }),
+    ).rejects.toThrow("Incomplete application.event SSE frame");
   });
 });
