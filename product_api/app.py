@@ -553,6 +553,7 @@ def create_app(
         "/api/v1/runs/{run_id}/agent/invoke",
         response_model=AgentInvocationResponse,
         responses=_ERROR_RESPONSES,
+        include_in_schema=False,
     )
     async def invoke_scenario1_agent(
         run_id: Annotated[str, _ID_PATH],
