@@ -1025,7 +1025,6 @@ def test_concrete_adapter_is_thin_and_depends_only_on_application_services():
         "self",
         "read_service",
         "proposal_service",
-        "lifecycle_service",
     }
 
 
