@@ -6,9 +6,13 @@ from typing import Any
 
 from google.adk.tools import FunctionTool
 
-from agent_runtime.agent import MODEL, build_scenario1_agent
+from agent_runtime.agent import AGENT_INSTRUCTION, MODEL, build_scenario1_agent
 from agent_runtime.retry import ProductRetryableToolPlugin
 from product_backend.contracts.tools import MODEL_VISIBLE_TOOL_NAMES
+from scripts.phase6b_live_acceptance import (
+    REQUIRED_LIVE_TOOLS,
+    _proposal_uses_required_prior_evidence,
+)
 
 
 class _UnusedAdapter:
@@ -105,7 +109,75 @@ def test_native_adk_schemas_hide_trusted_context_and_match_contract():
             proposal_schema["properties"]["diagnosis"]
         )
 
+        get_device_description = str(
+            _parameter_schema(tools["get_device"])["properties"]["device_id"]
+        )
+        assert "reported_device_id" in get_device_description
+        assert "peer_device_id" in get_device_description
+        assert "attachment_id" in get_device_description
+
+        diagnostic_target_description = str(
+            diagnostic_schema["properties"]["target_id"]
+        )
+        assert "attachment_id" in diagnostic_target_description
+        assert "device_id" in diagnostic_target_description
+        assert "port_id" in diagnostic_target_description
+
+        evidence_description = str(
+            proposal_schema["properties"]["evidence_ids"]
+        )
+        for required_source in (
+            "CMDB_SNAPSHOT",
+            "SITE_HEALTH",
+            "ACCESS_LINK_DIAGNOSTIC",
+            "KB_ARTICLE",
+        ):
+            assert required_source in evidence_description
+
     asyncio.run(scenario())
+
+
+def test_agent_instruction_preserves_autonomy_but_requires_valid_dependencies():
+    assert "no global tool sequence is prescribed" in AGENT_INSTRUCTION
+    assert "reported_device_id" in AGENT_INSTRUCTION
+    assert "exact attachment_id" in AGENT_INSTRUCTION
+    assert "CMDB_SNAPSHOT" in AGENT_INSTRUCTION
+    assert "SITE_HEALTH" in AGENT_INSTRUCTION
+    assert "ACCESS_LINK_DIAGNOSTIC" in AGENT_INSTRUCTION
+    assert "KB_ARTICLE" in AGENT_INSTRUCTION
+    assert "INCIDENT_SEARCH" in AGENT_INSTRUCTION
+    assert "do not submit the same proposal again" in AGENT_INSTRUCTION
+
+
+def test_live_acceptance_requires_all_six_tools_across_batch():
+    assert REQUIRED_LIVE_TOOLS == set(MODEL_VISIBLE_TOOL_NAMES)
+
+
+def test_live_acceptance_requires_all_four_evidence_classes_from_prior_results():
+    prior = {
+        "E-CMDB": "CMDB_SNAPSHOT",
+        "E-SITE": "SITE_HEALTH",
+        "E-DIAG": "ACCESS_LINK_DIAGNOSTIC",
+        "E-KB": "KB_ARTICLE",
+        "E-INC": "INCIDENT_SEARCH",
+    }
+
+    assert _proposal_uses_required_prior_evidence(
+        ["E-CMDB", "E-SITE", "E-DIAG", "E-KB"],
+        prior,
+    )
+    assert not _proposal_uses_required_prior_evidence(
+        ["E-CMDB", "E-SITE", "E-KB", "E-INC"],
+        prior,
+    )
+    assert not _proposal_uses_required_prior_evidence(
+        ["E-CMDB", "E-SITE", "E-DIAG", "E-MISSING"],
+        prior,
+    )
+    assert not _proposal_uses_required_prior_evidence(
+        ["E-CMDB", "E-SITE", "E-DIAG", "E-DIAG"],
+        prior,
+    )
 
 
 def test_retry_plugin_reflects_only_product_retryable_failures():
