@@ -9,16 +9,21 @@ from __future__ import annotations
 
 from product_backend.contracts.run_state import Scenario1Bootstrap
 from product_backend.domain.enums import (
+    ActionType,
     AdminState,
     ConfigurationState,
+    DiagnosisCode,
     DiagnosticType,
     HealthState,
+    IncidentSearchScope,
     OperationalState,
     PortSecurityState,
 )
 from product_backend.domain.models import (
     AccessLinkDiagnosticSnapshot,
     DeviceTopology,
+    IncidentSearchSnapshot,
+    KbArticle,
     SiteHealthSnapshot,
 )
 
@@ -107,6 +112,46 @@ class Scenario1FixtureSources:
             operational_state=OperationalState.DOWN,
             port_security=PortSecurityState.NORMAL,
             configuration=ConfigurationState.EXPECTED,
+        )
+
+
+    async def search_incidents(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        scope: IncidentSearchScope,
+        entity_id: str,
+    ) -> IncidentSearchSnapshot:
+        del tenant_id, run_id
+        open_incidents: tuple[str, ...] = ()
+        if scope is IncidentSearchScope.DEVICE and entity_id == AFFECTED_DEVICE_ID:
+            open_incidents = (INCIDENT_ID,)
+        elif scope is IncidentSearchScope.SITE and entity_id == SITE_ID:
+            open_incidents = (INCIDENT_ID,)
+
+        return IncidentSearchSnapshot(
+            scope=scope,
+            entity_id=entity_id,
+            open_incident_ids=open_incidents,
+        )
+
+    async def search(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        query: str,
+    ) -> tuple[KbArticle, ...]:
+        del tenant_id, run_id, query
+        return (
+            KbArticle(
+                article_id="KB-LOCAL-LINK",
+                title="Physical access path inspection",
+                approved=True,
+                diagnosis_codes=(DiagnosisCode.LOCAL_ACCESS_LINK_FAILURE,),
+                allowed_actions=(ActionType.ONSITE_FIELD_VISIT,),
+            ),
         )
 
 
