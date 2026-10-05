@@ -573,8 +573,8 @@ def test_health_exposes_phase6c_native_resumability():
         response = client.get("/health")
         assert response.status_code == 200
         body = response.json()
-        assert body["phase"] == 6
-        assert body["checkpoint"] == "6C"
+        assert body["phase"] == 7
+        assert body["checkpoint"] == "7A"
         assert body["adk_wired"] is True
         assert body["adk_session_persistence_wired"] is True
         assert body["adk_resumability_wired"] is True
