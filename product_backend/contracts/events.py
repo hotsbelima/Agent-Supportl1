@@ -10,9 +10,13 @@ import re
 from typing import Any
 
 
+AGENT_DISPATCH_TOPIC = "agent.dispatch.operational-event"
+
+
 class ApplicationEventType(StrEnum):
     SIMULATION_STARTED = "simulation.started"
     EXTERNAL_SIGNAL = "external.signal"
+    OBSERVATION_RECORDED = "observation.recorded"
     TOOL_STARTED = "tool.started"
     TOOL_FINISHED = "tool.finished"
     FINDING_RECORDED = "finding.recorded"
@@ -150,6 +154,7 @@ def validate_safe_event_payload(payload: dict[str, Any]) -> None:
 
 
 __all__ = [
+    "AGENT_DISPATCH_TOPIC",
     "ApplicationEvent",
     "ApplicationEventType",
     "ApplicationOutboxRecord",
