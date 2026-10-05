@@ -1,0 +1,108 @@
+name: Phase 5B operational UI check
+
+on:
+  push:
+    branches:
+      - phase-5b-operational-ui
+  pull_request:
+    branches:
+      - phase-5a-persisted-sse
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  operational-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agent_supportl1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agent_supportl1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agent_supportl1
+      FRONTEND_ORIGINS: http://localhost:3000
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8080
+      NEXT_PUBLIC_DEMO_TENANT_ID: TENANT-8OCT
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.14"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pinned Python requirements
+        run: python -m pip install -r requirements.txt
+
+      - name: Apply PostgreSQL migrations
+        run: python -m alembic upgrade head
+
+      - name: Verify backend regression
+        run: |
+          python -m pip check
+          python -m compileall -q product_backend product_api tests
+          python -m alembic check
+          python -m pytest -q
+
+      - name: Retained root Node regression
+        run: npm test
+
+      - name: Create frontend lockfile when bootstrapping
+        id: lockfile
+        working-directory: frontend
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit generated frontend lockfile
+        if: steps.lockfile.outputs.generated == 'true' && github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          git commit -m "chore: lock Phase 5B frontend dependencies"
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
