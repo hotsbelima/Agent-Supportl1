@@ -596,12 +596,23 @@ def test_tool_adapter_does_not_persist_generic_runtime_lifecycle():
             )
             assert failure.ok is False
 
-            # Generic tool invocation lifecycle is ADK-owned in Phase 6.
-            # Product read services persist Evidence, but no longer manufacture
-            # tool.started/tool.finished execution events themselves.
+            # Generic tool invocation lifecycle remains ADK-owned. Phase 7A
+            # adds only a safe Product observation projection for persisted
+            # Evidence so the operational UI can update in realtime.
             timeline = await lifecycle.timeline(context)
-            assert timeline == ()
-            assert await _event_outbox_counts(factory, ids) == (0, 0)
+            assert [item.event_type for item in timeline] == [
+                ApplicationEventType.OBSERVATION_RECORDED
+            ]
+            assert timeline[0].payload["evidence_id"] == success.evidence.evidence_id
+            assert all(
+                item.event_type
+                not in {
+                    ApplicationEventType.TOOL_STARTED,
+                    ApplicationEventType.TOOL_FINISHED,
+                }
+                for item in timeline
+            )
+            assert await _event_outbox_counts(factory, ids) == (1, 0)
         finally:
             await engine.dispose()
 
