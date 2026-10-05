@@ -202,7 +202,6 @@ class Scenario2IngestionStateResponse(BaseModel):
     run: RunView
     service_incidents: list[ServiceIncidentView]
     operational_signals: list[OperationalSignalView]
-    fixture_state: Scenario2FixtureStateView
     latest_event_seq: int
 
 
@@ -305,9 +304,6 @@ def scenario2_state_response(
             OperationalSignalView(**_payload(item))
             for item in snapshot.operational_signals
         ],
-        fixture_state=Scenario2FixtureStateView(
-            **_payload(snapshot.fixture_state)
-        ),
         latest_event_seq=snapshot.latest_event_seq,
     )
 
