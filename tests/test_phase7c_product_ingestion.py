@@ -511,6 +511,16 @@ def test_same_site_second_signal_reuses_service_incident_and_third_site_creates_
             assert len(after_three.operational_signals) == 3
             assert len(after_three.service_incidents) == 2
             assert third.complete is True
+            signal_evidence = await _evidence_rows(
+                factory,
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert len(signal_evidence) == 3
+            assert all(
+                row.source_type == EvidenceSourceType.OPERATIONAL_SIGNAL.value
+                for row in signal_evidence
+            )
 
             # Product ingestion must not manufacture a Major Incident proposal.
             async with factory() as session:
@@ -671,6 +681,12 @@ def test_simulator_progress_survives_service_recreation_between_every_event():
                 and row.delivered_at is None
                 for row in outbox
             )
+            evidence_rows = await _evidence_rows(
+                factory,
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert len(evidence_rows) == 3
         finally:
             await engine.dispose()
 
