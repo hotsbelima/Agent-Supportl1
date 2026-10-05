@@ -1,0 +1,149 @@
+import type {
+  ApiErrorResponse,
+  ApprovalDecisionResponse,
+  HealthResponse,
+  RunStateResponse,
+  TimelineResponse,
+} from "./types";
+
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "")
+  .trim()
+  .replace(/\/+$/, "");
+
+export const DEMO_TENANT_ID =
+  (process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "TENANT-8OCT").trim();
+
+export class ApiClientError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "ApiClientError";
+  }
+
+  static async fromResponse(response: Response): Promise<ApiClientError> {
+    let body: ApiErrorResponse | null = null;
+    try {
+      body = (await response.json()) as ApiErrorResponse;
+    } catch {
+      body = null;
+    }
+    const error = body?.error;
+    return new ApiClientError(
+      response.status,
+      error?.code ?? "HTTP_ERROR",
+      error?.message ?? "The product API request failed.",
+      error?.retryable ?? response.status >= 500,
+    );
+  }
+}
+
+export function configurationIssue(): string | null {
+  if (!API_BASE_URL) return "NEXT_PUBLIC_API_BASE_URL is not configured.";
+  if (!DEMO_TENANT_ID) {
+    return "NEXT_PUBLIC_DEMO_TENANT_ID is not configured.";
+  }
+  return null;
+}
+
+export function apiUrl(path: string): string {
+  const issue = configurationIssue();
+  if (issue) {
+    throw new ApiClientError(0, "FRONTEND_MISCONFIGURED", issue, false);
+  }
+  return `${API_BASE_URL}${path}`;
+}
+
+export function tenantHeaders(extra: HeadersInit = {}): Headers {
+  const headers = new Headers(extra);
+  headers.set("X-Tenant-ID", DEMO_TENANT_ID);
+  return headers;
+}
+
+async function requestJson<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(apiUrl(path), {
+    ...init,
+    cache: "no-store",
+    headers: tenantHeaders(init.headers),
+  });
+  if (!response.ok) throw await ApiClientError.fromResponse(response);
+  return (await response.json()) as T;
+}
+
+export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
+  const response = await fetch(apiUrl("/health"), {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw await ApiClientError.fromResponse(response);
+  return (await response.json()) as HealthResponse;
+}
+
+export function startScenario1(signal?: AbortSignal): Promise<RunStateResponse> {
+  return requestJson<RunStateResponse>("/api/v1/scenario-1/runs", {
+    method: "POST",
+    signal,
+  });
+}
+
+export function getRunState(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<RunStateResponse> {
+  return requestJson<RunStateResponse>(
+    `/api/v1/runs/${encodeURIComponent(runId)}`,
+    { signal },
+  );
+}
+
+export function getRunTimeline(
+  runId: string,
+  afterSeq = 0,
+  limit = 1000,
+  signal?: AbortSignal,
+): Promise<TimelineResponse> {
+  const params = new URLSearchParams({
+    after_seq: String(afterSeq),
+    limit: String(limit),
+  });
+  return requestJson<TimelineResponse>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/events?${params}`,
+    { signal },
+  );
+}
+
+export function decideProposal(
+  runId: string,
+  proposalId: string,
+  decision: "approve" | "reject",
+  decidedBy: string,
+  signal?: AbortSignal,
+): Promise<ApprovalDecisionResponse> {
+  return requestJson<ApprovalDecisionResponse>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/proposals/${encodeURIComponent(
+      proposalId,
+    )}/${decision}`,
+    {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decided_by: decidedBy }),
+    },
+  );
+}
+
+export function displayApiError(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    return `${error.code}: ${error.message}`;
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return "Request cancelled.";
+  }
+  return "The product API is currently unavailable.";
+}
