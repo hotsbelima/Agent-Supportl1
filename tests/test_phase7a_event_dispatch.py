@@ -114,6 +114,77 @@ async def _drain_until_delivered(
     raise AssertionError("target dispatch row was not delivered")
 
 
+
+
+class _FlakyClaimOutbox:
+    def __init__(self) -> None:
+        self.claim_calls = 0
+
+    async def claim_next(self, *, topic: str, lease_seconds: float):
+        self.claim_calls += 1
+        if self.claim_calls == 1:
+            raise RuntimeError("synthetic transient database failure")
+        return None
+
+
+class _FlakyClaimUow:
+    def __init__(self, outbox: _FlakyClaimOutbox) -> None:
+        self.outbox = outbox
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+
+def test_dispatch_worker_survives_transient_claim_failure():
+    async def scenario() -> None:
+        outbox = _FlakyClaimOutbox()
+        runtime = _RecordingRuntime()
+        worker = Scenario1DispatchWorker(
+            uow_factory=lambda: _FlakyClaimUow(outbox),
+            state_service=SimpleNamespace(),  # unused when claim returns no row
+            agent_runtime=runtime,  # type: ignore[arg-type]
+            poll_interval_seconds=0.01,
+            lease_seconds=1.0,
+            invocation_timeout_seconds=0.5,
+        )
+        worker.start()
+        try:
+            await asyncio.sleep(0.02)
+            assert worker.running is True
+            worker.wake()
+            await asyncio.sleep(0.03)
+            assert outbox.claim_calls >= 2
+            assert worker.running is True
+        finally:
+            await worker.close()
+        assert worker.running is False
+
+    asyncio.run(scenario())
+
+
+def test_dispatch_lease_must_outlive_bounded_agent_invocation():
+    with pytest.raises(
+        ValueError,
+        match="lease_seconds must exceed invocation_timeout_seconds",
+    ):
+        Scenario1DispatchWorker(
+            uow_factory=lambda: SimpleNamespace(),
+            state_service=SimpleNamespace(),  # type: ignore[arg-type]
+            agent_runtime=_RecordingRuntime(),  # type: ignore[arg-type]
+            lease_seconds=5.0,
+            invocation_timeout_seconds=5.0,
+        )
+
+
 def test_run_start_atomically_persists_signal_and_dispatch_envelope():
     async def scenario() -> None:
         tenant_id = f"TENANT-7A-OUTBOX-{uuid4().hex[:10]}"
