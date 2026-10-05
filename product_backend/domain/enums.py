@@ -1,4 +1,4 @@
-"""Canonical Scenario 1 domain enums for the product backend.
+"""Canonical domain enums for the product backend.
 
 These values are contracts, not presentation labels. UI text and external-system
 mapping belong in adapters/application code.
