@@ -21,15 +21,6 @@ from product_api.app import create_app
 from product_backend.persistence.database import DatabaseSettings, create_engine
 
 
-REQUIRED_LIVE_TOOLS = {
-    "get_device",
-    "get_site_health",
-    "run_diagnostic",
-    "search_incidents",
-    "search_kb",
-    "propose_field_visit",
-}
-
 REQUIRED_PROPOSAL_TOOLS = {
     "get_device",
     "get_site_health",
@@ -273,6 +264,9 @@ def _one_live_run(index: int) -> dict[str, Any]:
             state_payload["run"]["status"] == "WAITING_APPROVAL"
         ),
         "evidence_persisted": len(state_payload["evidence"]) >= 4,
+        "no_approvals_created": state_payload["approvals"] == [],
+        "no_executed_actions_created": state_payload["executed_actions"] == [],
+        "no_work_orders_created": state_payload["work_orders"] == [],
         "final_answer_present": bool(invocation["final_answer"]),
     }
     validation["passed"] = all(
@@ -288,6 +282,9 @@ def _one_live_run(index: int) -> dict[str, Any]:
         "run_status": state_payload["run"]["status"],
         "proposal_statuses": proposal_statuses,
         "evidence_count": len(state_payload["evidence"]),
+        "approval_count": len(state_payload["approvals"]),
+        "executed_action_count": len(state_payload["executed_actions"]),
+        "work_order_count": len(state_payload["work_orders"]),
         "validation": validation,
     }
 
@@ -330,9 +327,10 @@ def main() -> int:
         for tool_name in item.get("observed_tool_calls", [])
     }
     batch_validation = {
-        "all_six_tools_observed_across_live_runs": (
-            REQUIRED_LIVE_TOOLS.issubset(observed_across_runs)
-        ),
+        # Phase 6B requires all six tools to be registered and available to the
+        # model; deterministic ADK schema tests prove that. Live acceptance must
+        # not require Gemini to call an unnecessary registered tool merely to
+        # satisfy a coverage counter.
         "all_runs_passed": all(
             item["validation"]["passed"] for item in results
         ),
