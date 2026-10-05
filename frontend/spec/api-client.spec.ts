@@ -192,7 +192,7 @@ describe("browser API client contract", () => {
       payload: {},
     };
     const body =
-      `id: 5\\nevent: application.event\\ndata: ${JSON.stringify(payload)}\\n\\n`;
+      `id: 5\nevent: application.event\ndata: ${JSON.stringify(payload)}\n\n`;
 
     vi.stubGlobal(
       "fetch",
