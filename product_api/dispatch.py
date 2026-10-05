@@ -163,6 +163,10 @@ class Scenario1DispatchWorker:
                 operational_signal=operational_signal,
             )
         except asyncio.CancelledError:
+            # Release the durable lease immediately on graceful shutdown. If ADK
+            # already persisted the invocation/pause, redelivery reconciles from
+            # native Session history instead of starting a second invocation.
+            await self._reschedule(record)
             raise
         except Exception:
             # Do not log provider payloads/secrets. The durable row remains the
