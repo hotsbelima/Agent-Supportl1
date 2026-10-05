@@ -562,8 +562,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Observations</p>
-                <h2>Evidence</h2>
+                <p className="panel-kicker">Safe Product evidence</p>
+                <h2>Observations</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
             </div>
