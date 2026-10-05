@@ -106,6 +106,7 @@ export function applicationEventFromFrame(
 export async function streamRunEvents(options: {
   runId: string;
   afterSeq: number;
+  lastEventId?: number;
   signal: AbortSignal;
   onOpen: () => void;
   onEvent: (event: ApplicationEventView) => void;
@@ -122,7 +123,12 @@ export async function streamRunEvents(options: {
       method: "GET",
       cache: "no-store",
       signal: options.signal,
-      headers: tenantHeaders({ Accept: "text/event-stream" }),
+      headers: tenantHeaders({
+        Accept: "text/event-stream",
+        ...(options.lastEventId === undefined
+          ? {}
+          : { "Last-Event-ID": String(options.lastEventId) }),
+      }),
     },
   );
   if (!response.ok) throw await ApiClientError.fromResponse(response);
@@ -148,6 +154,13 @@ export async function streamRunEvents(options: {
     }
     parser.push(decoder.decode());
     parser.flush();
+  } catch (error) {
+    try {
+      await reader.cancel();
+    } catch {
+      // The original stream/parser error is authoritative.
+    }
+    throw error;
   } finally {
     reader.releaseLock();
   }
