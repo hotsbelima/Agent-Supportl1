@@ -9,6 +9,7 @@ import {
   displayApiError,
   getRunState,
   getRunTimeline,
+  isRetryableApiFailure,
 } from "@/lib/api";
 import {
   abortableDelay,
@@ -19,8 +20,8 @@ import {
   emptyTimeline,
   isStateRefreshEvent,
   mergeTimelineEvents,
+  nextTransportFailure,
   prepareReconnect,
-  reconnectDelayMs,
   replayNotice,
   TimelineGapError,
   type TimelineAccumulator,
@@ -154,34 +155,67 @@ export function RunConsole({ runId }: { runId: string }) {
       cursorByRunRef.current.set(runId, 0);
       stateSeqByRunRef.current.set(runId, -1);
 
-      try {
-        const bootstrapped = await bootstrapPersistedRun({
-          runId,
-          readState,
-          readPage,
-          signal: controller.signal,
-        });
-        if (!mounted) return;
+      while (!controller.signal.aborted) {
+        try {
+          const bootstrapped = await bootstrapPersistedRun({
+            runId,
+            readState,
+            readPage,
+            signal: controller.signal,
+          });
+          if (!mounted) return;
 
-        publishState(bootstrapped.state);
-        publishTimeline(bootstrapped.timeline);
-        setLoading(false);
-      } catch (error) {
-        if (!mounted || controller.signal.aborted) return;
-        setLoading(false);
-        setConnection("Offline/Unavailable");
-        setPageError(displayApiError(error));
-        return;
+          publishState(bootstrapped.state);
+          publishTimeline(bootstrapped.timeline);
+          failureCount = 0;
+          setPageError(null);
+          setLoading(false);
+          break;
+        } catch (error) {
+          if (
+            !mounted ||
+            controller.signal.aborted ||
+            isAbortError(error)
+          ) {
+            return;
+          }
+
+          if (!isRetryableApiFailure(error)) {
+            setLoading(false);
+            setConnection("Offline/Unavailable");
+            setPageError(displayApiError(error));
+            return;
+          }
+
+          const failure = nextTransportFailure(failureCount);
+          failureCount = failure.failureCount;
+          setConnection(failure.connection);
+          setPageError(
+            `${displayApiError(error)} Retrying persisted run state…`,
+          );
+
+          try {
+            await abortableDelay(failure.delayMs, controller.signal);
+          } catch (delayError) {
+            if (isAbortError(delayError)) return;
+            throw delayError;
+          }
+        }
       }
 
       while (!controller.signal.aborted) {
         try {
           if (needsRecovery) {
-            setConnection(connectionStateForFailure(failureCount));
-            await abortableDelay(
-              reconnectDelayMs(failureCount),
-              controller.signal,
-            );
+            const failure = {
+              failureCount,
+              connection: connectionStateForFailure(failureCount),
+              delayMs:
+                failureCount > 0
+                  ? Math.min(5000, 500 * 2 ** Math.min(failureCount - 1, 3))
+                  : 0,
+            };
+            setConnection(failure.connection);
+            await abortableDelay(failure.delayMs, controller.signal);
 
             const cursor = cursorByRunRef.current.get(runId) ?? 0;
             const recovered = await prepareReconnect({
@@ -210,9 +244,11 @@ export function RunConsole({ runId }: { runId: string }) {
             signal: controller.signal,
             onOpen: () => {
               if (!mounted) return;
-              failureCount = 0;
               setConnection("Live");
               setStreamError(null);
+            },
+            onHeartbeat: () => {
+              failureCount = 0;
             },
             onEvent: (event) => {
               if (!mounted) return;
@@ -224,12 +260,14 @@ export function RunConsole({ runId }: { runId: string }) {
               );
 
               if (result.kind === "duplicate") {
+                failureCount = 0;
                 return;
               }
               if (result.kind === "gap") {
                 throw result.error;
               }
 
+              failureCount = 0;
               publishTimeline(result.timeline);
 
               if (isStateRefreshEvent(event)) {
@@ -253,9 +291,10 @@ export function RunConsole({ runId }: { runId: string }) {
             return;
           }
 
-          failureCount += 1;
+          const failure = nextTransportFailure(failureCount);
+          failureCount = failure.failureCount;
           needsRecovery = true;
-          setConnection(connectionStateForFailure(failureCount));
+          setConnection(failure.connection);
           setStreamError(recoveryMessage(error));
         }
       }
@@ -321,6 +360,10 @@ export function RunConsole({ runId }: { runId: string }) {
           setDecisionError(
             `${displayApiError(error)} Persisted state still shows this proposal as pending; retrying the same decision is safe.`,
           );
+        } else if (recovery === "inconsistent") {
+          setDecisionError(
+            "Decision response was interrupted and persisted state is internally inconsistent, so execution is not being presented as confirmed.",
+          );
         } else {
           setDecisionError(
             "Decision response was interrupted and the proposal could not be confirmed in authoritative state.",
@@ -343,6 +386,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <span className="spinner" aria-hidden="true" />
           <strong>Loading persisted run</strong>
           <span>{runId}</span>
+          {pageError ? <span role="status">{pageError}</span> : null}
         </div>
       </main>
     );
