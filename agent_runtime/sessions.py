@@ -12,6 +12,7 @@ No Product entity is copied into ADK state and no second session store exists.
 
 from __future__ import annotations
 
+from google.adk.errors.already_exists_error import AlreadyExistsError
 from google.adk.sessions import DatabaseSessionService
 from google.adk.sessions import Session
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -56,9 +57,20 @@ async def ensure_run_session(
     if existing is not None:
         return existing
 
-    return await session_service.create_session(
-        app_name=ADK_APP_NAME,
-        user_id=tenant_id,
-        session_id=run_id,
-        state={},
-    )
+    try:
+        return await session_service.create_session(
+            app_name=ADK_APP_NAME,
+            user_id=tenant_id,
+            session_id=run_id,
+            state={},
+        )
+    except AlreadyExistsError:
+        # Another worker may have won the deterministic create race.
+        winner = await get_run_session(
+            session_service,
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if winner is None:
+            raise
+        return winner
