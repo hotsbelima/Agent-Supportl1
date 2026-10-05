@@ -61,6 +61,7 @@ class OperationalSignal:
     run_id: str
     source: Scenario2SignalSource
     site_id: str
+    service_key: str
     symptom_key: str
     source_ref: str
     received_at: datetime
@@ -73,6 +74,7 @@ class OperationalSignalEvidenceSnapshot:
     signal_id: str
     source: Scenario2SignalSource
     site_id: str
+    service_key: str
     symptom_key: str
     source_ref: str
 
