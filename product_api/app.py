@@ -1,4 +1,4 @@
-"""Persistent Product API boundary with Phase 7A event-driven ADK dispatch.
+"""Persistent Product API boundary through the agent-free Phase 7C checkpoint.
 
 Product business state and human decisions remain in the existing
 application/domain layer. Google ADK owns agent execution, persistent runtime
@@ -426,9 +426,9 @@ def create_app(
         title="Autonomous L1 Incident Agent Product API",
         version="0.7.0",
         description=(
-            "Phase 7A Product boundary: persisted operational signals are "
-            "durably dispatched into the existing native Google ADK Session; "
-            "human approval/resume remains Product-first and ADK-native."
+            "Scenario 1 retains Phase 7A native ADK dispatch. Scenario 2 adds "
+            "Product-owned persisted event ingestion and a durable dedicated "
+            "dispatch queue; its ADK consumer is intentionally not wired yet."
         ),
         lifespan=lifespan,
     )
