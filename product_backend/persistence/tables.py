@@ -309,6 +309,7 @@ class ApplicationEventRow(Base):
             "event_type IN ("
             "'simulation.started', "
             "'external.signal', "
+            "'observation.recorded', "
             "'tool.started', "
             "'tool.finished', "
             "'finding.recorded', "
@@ -333,11 +334,11 @@ class ApplicationEventRow(Base):
 
 
 class ApplicationOutboxRow(Base):
-    """Legacy reserved outbox table; no generic producer exists in Phase 6A.
+    """Product-owned durable delivery bridge used by Phase 7A dispatch.
 
-    The applied Phase 4 schema is intentionally left intact. Phase 6C may add
-    a dedicated durable approval-to-ADK-resume producer/consumer after the
-    required invocation/function-call correlation exists.
+    The table remains outside ADK runtime ownership. It only transports a
+    persisted Product operational-event reference to the native ADK Session;
+    generic agent execution/session/tool lifecycle still belongs to ADK.
     """
 
     __tablename__ = "application_outbox"
