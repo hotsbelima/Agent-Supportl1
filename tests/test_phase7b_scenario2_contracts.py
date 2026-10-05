@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
+import os
+
+import pytest
 
 from product_api.scenario2_fixture import (
     ACMEPAY_DEPENDENCY_ID,
@@ -34,6 +37,21 @@ from product_backend.domain.enums import (
     RunStatus,
 )
 from product_backend.domain.models import Evidence, Run
+from product_backend.persistence.database import (
+    DatabaseSettings,
+    create_engine,
+    create_session_factory,
+    normalize_database_url,
+)
+from product_backend.persistence.repositories import SqlAlchemyRunRepository
+from product_backend.persistence.scenario2 import (
+    SqlAlchemyOperationalSignalRepository,
+    SqlAlchemyServiceIncidentRepository,
+)
+from product_backend.persistence.serialization import (
+    deserialize_evidence_payload,
+    serialize_evidence_payload,
+)
 from product_backend.domain.scenario2 import (
     DependencyKind,
     ExternalDependencyStatusSnapshot,
@@ -61,6 +79,13 @@ TENANT = "TENANT-S2"
 RUN_ID = "RUN-S2"
 NOW = datetime(2026, 10, 6, 0, 0, tzinfo=UTC)
 TTL = NOW + timedelta(minutes=15)
+
+
+def _database_url() -> str:
+    value = os.environ.get("DATABASE_URL")
+    if not value:
+        pytest.skip("DATABASE_URL is required for Phase 7B persistence tests")
+    return normalize_database_url(value)
 
 
 def _ev(
@@ -252,6 +277,149 @@ def test_major_incident_contract_has_no_scenario1_dummy_fields():
     assert record_fields.isdisjoint(forbidden)
     assert execution_fields.isdisjoint(forbidden)
     assert Scenario2ActionType.CREATE_MAJOR_INCIDENT.value == "CREATE_MAJOR_INCIDENT"
+
+
+def test_scenario2_evidence_payloads_round_trip_losslessly():
+    for item in _valid_evidence():
+        payload = serialize_evidence_payload(item.source_type, item.payload)
+        restored = deserialize_evidence_payload(item.source_type, payload)
+        assert restored == item.payload
+
+
+def test_expired_dynamic_evidence_is_rejected():
+    evidence = list(_valid_evidence())
+    evidence[0] = replace(
+        evidence[0],
+        expires_at=NOW + timedelta(seconds=30),
+    )
+    error = validate_major_incident_proposal_evidence(
+        proposal=_proposal(tuple(evidence)),
+        evidence=tuple(evidence),
+        now=NOW + timedelta(minutes=1),
+    )
+    assert error is not None
+    assert dict(error.details)["reason"] == "expired_evidence"
+
+
+def test_persisted_operational_signals_are_tenant_and_run_isolated():
+    async def scenario() -> None:
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        try:
+            async with factory() as session:
+                run_repo = SqlAlchemyRunRepository(session)
+                service_incidents = SqlAlchemyServiceIncidentRepository(session)
+                signals = SqlAlchemyOperationalSignalRepository(session)
+
+                run_a = Run(
+                    run_id=f"{RUN_ID}-A",
+                    tenant_id=f"{TENANT}-A",
+                    scenario_id="scenario-2",
+                    status=RunStatus.ACTIVE,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+                run_b = Run(
+                    run_id=f"{RUN_ID}-B",
+                    tenant_id=f"{TENANT}-B",
+                    scenario_id="scenario-2",
+                    status=RunStatus.ACTIVE,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+                await run_repo.add(run_a)
+                await run_repo.add(run_b)
+                await session.flush()
+
+                from product_backend.domain.enums import IncidentStatus
+                from product_backend.domain.scenario2 import ServiceIncident
+
+                incident_a = ServiceIncident(
+                    incident_id=f"{INCIDENT_KZN}-A",
+                    tenant_id=run_a.tenant_id,
+                    run_id=run_a.run_id,
+                    site_id=SITE_KZN,
+                    service_key=SERVICE_KEY,
+                    symptom_key=CORRELATION_KEY,
+                    status=IncidentStatus.OPEN,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+                incident_b = ServiceIncident(
+                    incident_id=f"{INCIDENT_KZN}-B",
+                    tenant_id=run_b.tenant_id,
+                    run_id=run_b.run_id,
+                    site_id=SITE_KZN,
+                    service_key=SERVICE_KEY,
+                    symptom_key=CORRELATION_KEY,
+                    status=IncidentStatus.OPEN,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+                await service_incidents.add(incident_a)
+                await service_incidents.add(incident_b)
+
+                signal_a = OperationalSignal(
+                    signal_id=f"{SIGNAL_1_ID}-A",
+                    tenant_id=run_a.tenant_id,
+                    run_id=run_a.run_id,
+                    source=Scenario2SignalSource.MONITORING,
+                    site_id=SITE_KZN,
+                    service_key=SERVICE_KEY,
+                    symptom_key=CORRELATION_KEY,
+                    source_ref="SHARED-SOURCE-REF",
+                    received_at=NOW,
+                    safe_payload={"kind": "payment_timeout_rate"},
+                    incident_id=incident_a.incident_id,
+                )
+                signal_b = OperationalSignal(
+                    signal_id=f"{SIGNAL_1_ID}-B",
+                    tenant_id=run_b.tenant_id,
+                    run_id=run_b.run_id,
+                    source=Scenario2SignalSource.MONITORING,
+                    site_id=SITE_KZN,
+                    service_key=SERVICE_KEY,
+                    symptom_key=CORRELATION_KEY,
+                    source_ref="SHARED-SOURCE-REF",
+                    received_at=NOW,
+                    safe_payload={"kind": "payment_timeout_rate"},
+                    incident_id=incident_b.incident_id,
+                )
+                await signals.add(signal_a)
+                await signals.add(signal_b)
+                await session.commit()
+
+            async with factory() as session:
+                signals = SqlAlchemyOperationalSignalRepository(session)
+                assert await signals.list_for_run(
+                    tenant_id=run_a.tenant_id,
+                    run_id=run_a.run_id,
+                ) == (signal_a,)
+                assert await signals.list_for_run(
+                    tenant_id=run_b.tenant_id,
+                    run_id=run_b.run_id,
+                ) == (signal_b,)
+                assert (
+                    await signals.get(
+                        tenant_id=run_a.tenant_id,
+                        run_id=run_a.run_id,
+                        signal_id=signal_b.signal_id,
+                    )
+                    is None
+                )
+                assert (
+                    await signals.get_by_source_identity(
+                        tenant_id=run_a.tenant_id,
+                        run_id=run_a.run_id,
+                        source=Scenario2SignalSource.MONITORING,
+                        source_ref="SHARED-SOURCE-REF",
+                    )
+                    == signal_a
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
 
 
 def test_valid_cross_site_evidence_supports_major_incident_proposal():
