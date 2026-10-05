@@ -1,8 +1,8 @@
-"""Persistent Product FastAPI boundary with Phase 5A SSE transport.
+"""Persistent Product API boundary with Phase 6A native ADK sessions.
 
-The API composes the persistent Phase 4 application services and exposes a
-persisted server-sent event stream. Google ADK and the operational UI remain
-out of scope until later checkpoints.
+The API keeps Product business state and persisted SSE while composing Google
+ADK's DatabaseSessionService on the same AsyncEngine. Live Gemini execution is
+still intentionally deferred to Phase 6B.
 """
 
 from __future__ import annotations
