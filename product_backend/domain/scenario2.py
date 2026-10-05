@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from .enums import ApprovalDecision, HealthState, ProposalStatus
+from .enums import ApprovalDecision, HealthState, IncidentStatus, ProposalStatus
 
 
 class Scenario2SignalSource(StrEnum):
@@ -29,6 +29,21 @@ class DependencyKind(StrEnum):
 
 class MajorIncidentStatus(StrEnum):
     OPEN = "OPEN"
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceIncident:
+    """Scenario 2 site/service incident without a fabricated device identity."""
+
+    incident_id: str
+    tenant_id: str
+    run_id: str
+    site_id: str
+    service_key: str
+    symptom_key: str
+    status: IncidentStatus
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +199,7 @@ __all__ = [
     "OperationalSignal",
     "OperationalSignalEvidenceSnapshot",
     "Scenario2ActionType",
+    "ServiceIncident",
     "Scenario2SignalSource",
     "ServiceDependencyMappingSnapshot",
     "SimulatedNotificationRecord",
