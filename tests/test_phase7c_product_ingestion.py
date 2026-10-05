@@ -6,7 +6,10 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+
+from product_api.app import create_app
 
 from product_api.scenario2_fixture import (
     ACMEPAY_DEPENDENCY_ID,
@@ -92,6 +95,60 @@ async def _outbox_rows(factory, *, tenant_id: str, run_id: str):
                 .order_by(ApplicationOutboxRow.event_seq)
             )
         ).scalars().all()
+
+
+def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
+    monkeypatch,
+):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    suffix = uuid4().hex[:10]
+    tenant_id = f"TENANT-7C-API-{suffix}"
+    headers = {"X-Tenant-ID": tenant_id}
+
+    with TestClient(create_app()) as client:
+        health = client.get("/health")
+        assert health.status_code == 200
+        assert health.json()["scenario2_checkpoint"] == "7C-product-ingestion"
+        assert health.json()["scenario2_ingestion_wired"] is True
+        assert health.json()["scenario2_dispatch_consumer_wired"] is False
+
+        started = client.post(
+            "/api/v1/scenario-2/runs",
+            headers=headers,
+        )
+        assert started.status_code == 201, started.text
+        run_id = started.json()["run"]["run_id"]
+        assert started.json()["operational_signals"] == []
+
+        step = client.post(
+            f"/api/v1/scenario-2/runs/{run_id}/simulator/next",
+            headers=headers,
+        )
+        assert step.status_code == 200, step.text
+        body = step.json()
+        assert body["next_index"] == 1
+        assert body["ingested"]["dispatch_queued"] is True
+        assert body["ingested"]["signal"]["received_at"].endswith(
+            ("Z", "+00:00")
+        )
+
+        restored = client.get(
+            f"/api/v1/scenario-2/runs/{run_id}",
+            headers=headers,
+        )
+        assert restored.status_code == 200
+        assert len(restored.json()["operational_signals"]) == 1
+
+        timeline = client.get(
+            f"/api/v1/runs/{run_id}/events",
+            headers=headers,
+            params={"after_seq": 0, "limit": 100},
+        )
+        assert timeline.status_code == 200
+        assert [item["event_type"] for item in timeline.json()["events"]] == [
+            "simulation.started",
+            "external.signal",
+        ]
 
 
 def test_scenario2_start_is_product_only_and_persists_restart_safe_state():
