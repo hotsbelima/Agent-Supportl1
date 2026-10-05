@@ -512,11 +512,22 @@ def create_app(
             bootstrap=services.fixture.bootstrap(),
         )
         if services.adk_session_service is not None:
-            await ensure_run_session(
-                services.adk_session_service,
-                tenant_id=tenant_id,
-                run_id=started.run.run_id,
-            )
+            try:
+                await ensure_run_session(
+                    services.adk_session_service,
+                    tenant_id=tenant_id,
+                    run_id=started.run.run_id,
+                )
+            except Exception:
+                # Product state + external signal + outbox envelope are already
+                # committed atomically. A transient ADK-session provisioning
+                # failure must not turn a successful simulation start into an
+                # ambiguous client error. The durable dispatcher will retry and
+                # invoke_operational_event() ensures the same run session.
+                logger.warning(
+                    "ADK session provisioning deferred for run=%s",
+                    started.run.run_id,
+                )
 
         snapshot = await services.state_service.get(
             tenant_id=tenant_id,
