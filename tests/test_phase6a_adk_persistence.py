@@ -40,6 +40,10 @@ def test_new_product_run_gets_stable_persistent_adk_session():
         assert health.json()["adk_wired"] is False
         assert health.json()["adk_session_persistence_wired"] is True
 
+        container = client.app.state.product_container
+        assert container.adk_session_service is not None
+        assert container.adk_session_service.db_engine is container.engine
+
         started = client.post(
             "/api/v1/scenario-1/runs",
             headers=_headers(tenant_id),
@@ -117,6 +121,45 @@ def test_adk_runtime_event_and_state_survive_new_engine_instance():
             )
         finally:
             await second_engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_ensure_run_session_is_idempotent_for_repeated_callers():
+    async def scenario() -> None:
+        tenant_id = f"TENANT-6A-ENSURE-{uuid4().hex[:8]}"
+        run_id = f"RUN-6A-ENSURE-{uuid4().hex[:12]}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        service = create_database_session_service(engine)
+        try:
+            await service.prepare_tables()
+            first, second = await asyncio.gather(
+                ensure_run_session(
+                    service,
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                ),
+                ensure_run_session(
+                    service,
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                ),
+            )
+            assert first.id == run_id
+            assert second.id == run_id
+
+            sessions = await service.list_sessions(
+                app_name=ADK_APP_NAME,
+                user_id=tenant_id,
+            )
+            matching = [
+                session
+                for session in sessions.sessions
+                if session.id == run_id
+            ]
+            assert len(matching) == 1
+        finally:
+            await engine.dispose()
 
     asyncio.run(scenario())
 
