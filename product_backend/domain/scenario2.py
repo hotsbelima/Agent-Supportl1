@@ -105,6 +105,7 @@ class ExternalDependencyStatusSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class MajorIncidentSearchSnapshot:
+    service_key: str
     correlation_key: str
     dependency_id: str
     open_major_incident_ids: tuple[str, ...]
