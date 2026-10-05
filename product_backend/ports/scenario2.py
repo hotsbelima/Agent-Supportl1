@@ -88,6 +88,7 @@ class MajorIncidentProposalRepository(Protocol):
         *,
         tenant_id: str,
         run_id: str,
+        service_key: str,
         correlation_key: str,
         dependency_id: str,
     ) -> MajorIncidentProposal | None: ...
@@ -120,6 +121,7 @@ class MajorIncidentRepository(Protocol):
         self,
         *,
         tenant_id: str,
+        service_key: str,
         correlation_key: str,
         dependency_id: str,
     ) -> MajorIncidentRecord | None: ...
