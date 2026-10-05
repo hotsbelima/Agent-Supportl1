@@ -280,6 +280,7 @@ def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
         assert started.status_code == 201, started.text
         run_id = started.json()["run"]["run_id"]
         assert started.json()["operational_signals"] == []
+        assert "fixture_state" not in started.json()
 
         step = client.post(
             f"/api/v1/scenario-2/runs/{run_id}/simulator/next",
@@ -299,6 +300,7 @@ def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
         )
         assert restored.status_code == 200
         assert len(restored.json()["operational_signals"]) == 1
+        assert "fixture_state" not in restored.json()
 
         # The running Scenario 1 worker must not consume the separate Scenario 2
         # topic. This row is the explicit handoff point to the later ADK worker.
