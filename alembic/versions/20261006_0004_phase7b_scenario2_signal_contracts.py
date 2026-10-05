@@ -93,8 +93,9 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "tenant_id",
             "run_id",
+            "source",
             "source_ref",
-            name="uq_operational_signals_source_ref",
+            name="uq_operational_signals_source_identity",
         ),
     )
     op.create_index(
