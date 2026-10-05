@@ -5,6 +5,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && pip check
 
+COPY agent_runtime ./agent_runtime
 COPY product_backend ./product_backend
 COPY product_api ./product_api
 COPY alembic ./alembic
