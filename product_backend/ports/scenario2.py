@@ -166,6 +166,7 @@ class Scenario2SignalIngestionUnitOfWork(Protocol):
     runs: RunRepository
     service_incidents: ServiceIncidentRepository
     signals: OperationalSignalRepository
+    evidence: EvidenceRepository
     events: ApplicationEventRepository
     outbox: ApplicationOutboxRepository
 
