@@ -57,9 +57,9 @@ Failure handling:
   failures may be reconsidered only through the ADK retry/reflection mechanism
   and with a corrected or meaningfully different approach.
 - If propose_field_visit returns missing_required_evidence_class,
-  INSUFFICIENT_OR_INVALID_EVIDENCE, or another non-retryable evidence error, do
-  not submit the same proposal again. Determine which prerequisite evidence is
-  absent or invalid, obtain/correct that evidence first, then build a new
+  INSUFFICIENT_OR_INVALID_EVIDENCE, or another non-retryable evidence error:
+  do not submit the same proposal again. Determine which prerequisite evidence
+  is absent or invalid, obtain/correct that evidence first, then build a new
   proposal from the successful evidence results.
 - If a tool returns CONTEXT_MISMATCH because an identifier was wrong, correct
   the identifier from the operational signal or a trusted prior tool result;
