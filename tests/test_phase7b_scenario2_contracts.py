@@ -564,6 +564,14 @@ def test_approve_revalidation_goes_stale_when_provider_recovers():
         proposal=proposal,
         proposal_evidence=evidence,
         current_local_health=current_health,
+        current_dependency_mappings=(
+            ServiceDependencyMappingSnapshot(
+                service_key=SERVICE_KEY,
+                dependency_id=ACMEPAY_DEPENDENCY_ID,
+                dependency_name=ACMEPAY_NAME,
+                dependency_kind=DependencyKind.EXTERNAL_PROVIDER,
+            ),
+        ),
         current_dependency_status=ExternalDependencyStatusSnapshot(
             dependency_id=ACMEPAY_DEPENDENCY_ID,
             dependency_name=ACMEPAY_NAME,
@@ -595,6 +603,14 @@ def test_approve_revalidation_goes_stale_when_matching_major_incident_exists():
         proposal=proposal,
         proposal_evidence=evidence,
         current_local_health=current_health,
+        current_dependency_mappings=(
+            ServiceDependencyMappingSnapshot(
+                service_key=SERVICE_KEY,
+                dependency_id=ACMEPAY_DEPENDENCY_ID,
+                dependency_name=ACMEPAY_NAME,
+                dependency_kind=DependencyKind.EXTERNAL_PROVIDER,
+            ),
+        ),
         current_dependency_status=ExternalDependencyStatusSnapshot(
             dependency_id=ACMEPAY_DEPENDENCY_ID,
             dependency_name=ACMEPAY_NAME,
@@ -892,6 +908,24 @@ class _Sources:
             local_service_health=HealthState.HEALTHY,
         )
 
+    async def get_service_dependencies(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        service_key: str,
+    ):
+        if tenant_id != TENANT or run_id != RUN_ID or service_key != SERVICE_KEY:
+            return ()
+        return (
+            ServiceDependencyMappingSnapshot(
+                service_key=SERVICE_KEY,
+                dependency_id=ACMEPAY_DEPENDENCY_ID,
+                dependency_name=ACMEPAY_NAME,
+                dependency_kind=DependencyKind.EXTERNAL_PROVIDER,
+            ),
+        )
+
     async def get_external_dependency_status(
         self,
         *,
@@ -960,6 +994,7 @@ def test_product_approve_creates_one_record_and_replay_creates_no_duplicate():
         approval_service = MajorIncidentApprovalService(
             lambda: _Uow(store),
             local_health=sources,
+            dependency_mapping=sources,
             dependency_status=sources,
             major_incident_directory=sources,
             clock=lambda: NOW + timedelta(minutes=1),
@@ -1086,6 +1121,7 @@ def test_product_approve_becomes_stale_when_matching_major_incident_appears():
         approval_service = MajorIncidentApprovalService(
             lambda: _Uow(store),
             local_health=decision_sources,
+            dependency_mapping=decision_sources,
             dependency_status=decision_sources,
             major_incident_directory=decision_sources,
             clock=lambda: NOW + timedelta(minutes=1),
@@ -1120,6 +1156,7 @@ def test_product_reject_creates_audit_decision_and_zero_execution():
         approval_service = MajorIncidentApprovalService(
             lambda: _Uow(store),
             local_health=sources,
+            dependency_mapping=sources,
             dependency_status=sources,
             major_incident_directory=sources,
             clock=lambda: NOW + timedelta(minutes=1),
@@ -1160,6 +1197,7 @@ def test_product_approve_becomes_stale_on_recovered_provider():
         approval_service = MajorIncidentApprovalService(
             lambda: _Uow(store),
             local_health=sources,
+            dependency_mapping=sources,
             dependency_status=sources,
             major_incident_directory=sources,
             clock=lambda: NOW + timedelta(minutes=1),
