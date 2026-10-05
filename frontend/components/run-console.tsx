@@ -28,6 +28,7 @@ import {
 import {
   connectionTone,
   eventSummary,
+  FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   proposalTone,
 } from "@/lib/presentation";
@@ -693,8 +694,7 @@ export function RunConsole({ runId }: { runId: string }) {
                         </div>
                       </dl>
                       <p className="semantic-note">
-                        Onsite field-service work order registered. This is not
-                        proof of repair.
+                        {FIELD_SERVICE_OUTCOME_NOTE}
                       </p>
                     </div>
                   );
