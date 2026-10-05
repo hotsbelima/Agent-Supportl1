@@ -48,16 +48,24 @@ class Scenario1DispatchWorker:
         agent_runtime: Scenario1AgentRuntime,
         poll_interval_seconds: float = 0.5,
         lease_seconds: float = 180.0,
+        invocation_timeout_seconds: float = 120.0,
     ) -> None:
         if poll_interval_seconds <= 0:
             raise ValueError("poll_interval_seconds must be positive")
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
+        if invocation_timeout_seconds <= 0:
+            raise ValueError("invocation_timeout_seconds must be positive")
+        if lease_seconds <= invocation_timeout_seconds:
+            raise ValueError(
+                "lease_seconds must exceed invocation_timeout_seconds"
+            )
         self._uow_factory = uow_factory
         self._state_service = state_service
         self._agent_runtime = agent_runtime
         self._poll_interval = poll_interval_seconds
         self._lease_seconds = lease_seconds
+        self._invocation_timeout = invocation_timeout_seconds
         self._wake = asyncio.Event()
         self._stopping = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -70,6 +78,11 @@ class Scenario1DispatchWorker:
             self._run(),
             name="phase7a-operational-event-dispatch",
         )
+
+    @property
+    def running(self) -> bool:
+        task = self._task
+        return task is not None and not task.done()
 
     def wake(self) -> None:
         self._wake.set()
@@ -156,11 +169,14 @@ class Scenario1DispatchWorker:
                 ],
             }
 
-            await self._agent_runtime.invoke_operational_event(
-                tenant_id=record.tenant_id,
-                run_id=record.run_id,
-                operational_event_id=event_id,
-                operational_signal=operational_signal,
+            await asyncio.wait_for(
+                self._agent_runtime.invoke_operational_event(
+                    tenant_id=record.tenant_id,
+                    run_id=record.run_id,
+                    operational_event_id=event_id,
+                    operational_signal=operational_signal,
+                ),
+                timeout=self._invocation_timeout,
             )
         except asyncio.CancelledError:
             # Release the durable lease immediately on graceful shutdown. If ADK
@@ -178,8 +194,26 @@ class Scenario1DispatchWorker:
         return True
 
     async def _run(self) -> None:
+        failure_count = 0
         while not self._stopping.is_set():
-            processed = await self.dispatch_once()
+            try:
+                processed = await self.dispatch_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A transient DB failure during claim/mark/reschedule must not
+                # kill the only dispatcher task. Keep the worker alive and
+                # retry from durable Product state after bounded backoff.
+                failure_count += 1
+                delay = min(30.0, float(2 ** min(failure_count - 1, 5)))
+                self._wake.clear()
+                try:
+                    await asyncio.wait_for(self._wake.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
+                continue
+
+            failure_count = 0
             if processed:
                 continue
 
