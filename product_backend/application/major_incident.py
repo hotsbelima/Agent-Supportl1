@@ -259,7 +259,6 @@ class MajorIncidentProposalService:
             existing_pending = (
                 await uow.major_incident_proposals.get_pending_equivalent(
                     tenant_id=context.tenant_id,
-                    run_id=context.run_id,
                     service_key=request.service_key,
                     correlation_key=request.correlation_key,
                     dependency_id=request.dependency_id,
