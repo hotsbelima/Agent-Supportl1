@@ -32,6 +32,7 @@ import {
   eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
+  observationState,
   proposalTone,
   STALE_PROPOSAL_NOTE,
 } from "@/lib/presentation";
@@ -643,6 +644,11 @@ export function RunConsole({ runId }: { runId: string }) {
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
                       </time>
+                      {observationState(evidence) ? (
+                        <span className="observation-state">
+                          State: {observationState(evidence)}
+                        </span>
+                      ) : null}
                     </div>
                     <button
                       className="detail-button"
