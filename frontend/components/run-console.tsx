@@ -91,18 +91,18 @@ export function RunConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
-  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
-  const [selectedObservationId, setSelectedObservationId] =
-    useState<string | null>(null);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<{
+    runId: string;
+    id: string;
+  } | null>(null);
+  const [selectedObservationId, setSelectedObservationId] = useState<{
+    runId: string;
+    id: string;
+  } | null>(null);
 
   const timelineByRunRef = useRef(new Map<string, TimelineAccumulator>());
   const cursorByRunRef = useRef(new Map<string, number>());
   const stateSeqByRunRef = useRef(new Map<string, number>());
-
-  useEffect(() => {
-    setSelectedIncidentId(null);
-    setSelectedObservationId(null);
-  }, [runId]);
 
   const publishState = useCallback(
     (current: RunStateResponse) => {
@@ -316,11 +316,15 @@ export function RunConsole({ runId }: { runId: string }) {
   }, [publishState, refreshState, runId]);
 
   const primaryIncident = state?.incidents[0] ?? null;
-  const selectedIncident = selectedIncidentId
-    ? state?.incidents.find((item) => item.incident_id === selectedIncidentId) ?? null
+  const selectedIncidentKey =
+    selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
+  const selectedObservationKey =
+    selectedObservationId?.runId === runId ? selectedObservationId.id : null;
+  const selectedIncident = selectedIncidentKey
+    ? state?.incidents.find((item) => item.incident_id === selectedIncidentKey) ?? null
     : null;
-  const selectedObservation = selectedObservationId
-    ? state?.evidence.find((item) => item.evidence_id === selectedObservationId) ?? null
+  const selectedObservation = selectedObservationKey
+    ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
     : null;
   const lastSeq = events.at(-1)?.seq ?? 0;
 
@@ -543,7 +547,7 @@ export function RunConsole({ runId }: { runId: string }) {
                     <button
                       className="detail-button"
                       type="button"
-                      onClick={() => setSelectedIncidentId(item.incident_id)}
+                      onClick={() => setSelectedIncidentId({ runId, id: item.incident_id })}
                     >
                       Подробнее
                     </button>
@@ -644,7 +648,10 @@ export function RunConsole({ runId }: { runId: string }) {
                       className="detail-button"
                       type="button"
                       onClick={() =>
-                        setSelectedObservationId(evidence.evidence_id)
+                        setSelectedObservationId({
+                          runId,
+                          id: evidence.evidence_id,
+                        })
                       }
                     >
                       Подробнее
