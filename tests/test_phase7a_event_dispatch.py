@@ -190,6 +190,8 @@ def test_dispatch_lease_must_outlive_bounded_agent_invocation():
 def test_start_stays_successful_when_eager_adk_session_provisioning_fails(
     monkeypatch,
 ):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
     async def fail_session_provisioning(*args, **kwargs):
         raise RuntimeError("synthetic ADK session provisioning failure")
 
