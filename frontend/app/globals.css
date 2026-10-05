@@ -326,6 +326,16 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   background: rgba(255,126,136,0.08);
 }
 .decision-error { margin-left: 18px; margin-right: 18px; }
+.decision-notice {
+  margin: 15px 18px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(108, 228, 197, 0.22);
+  border-radius: 11px;
+  color: #bcefe2;
+  background: rgba(108, 228, 197, 0.07);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .work-order-list { display: grid; gap: 1px; background: var(--line); }
 .work-order-card { padding: 18px; background: var(--panel); }
 .work-order-card .facts-grid { padding: 18px 0; }
