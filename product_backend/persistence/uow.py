@@ -10,6 +10,11 @@ from .events import (
     SqlAlchemyApplicationEventRepository,
     SqlAlchemyApplicationOutboxRepository,
 )
+from .scenario2 import (
+    SqlAlchemyOperationalSignalRepository,
+    SqlAlchemyScenario2FixtureStateRepository,
+    SqlAlchemyServiceIncidentRepository,
+)
 from .repositories import (
     SqlAlchemyApprovalRepository,
     SqlAlchemyEvidenceRepository,
@@ -55,6 +60,55 @@ class _SqlAlchemyUnitOfWorkBase:
                 await self.rollback()
         finally:
             await self._session.close()
+
+
+class SqlAlchemyScenario2RunStartUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Create a Scenario 2 run and persisted fixture state atomically."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(self._session)
+        self.fixture_states = SqlAlchemyScenario2FixtureStateRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
+
+
+class SqlAlchemyScenario2SignalIngestionUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Serialize one Scenario 2 operational fact on its owning run."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(
+            self._session,
+            lock_for_update=True,
+        )
+        self.service_incidents = SqlAlchemyServiceIncidentRepository(self._session)
+        self.signals = SqlAlchemyOperationalSignalRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
+        self.outbox = SqlAlchemyApplicationOutboxRepository(self._session)
+
+
+class SqlAlchemyScenario2FixtureStateUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Controlled persisted fixture transitions for stale-path acceptance."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(
+            self._session,
+            lock_for_update=True,
+        )
+        self.fixture_states = SqlAlchemyScenario2FixtureStateRepository(
+            self._session,
+            lock_for_update=True,
+        )
 
 
 class SqlAlchemyRunStartUnitOfWork(_SqlAlchemyUnitOfWorkBase):
