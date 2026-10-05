@@ -77,6 +77,108 @@ class IncidentRow(Base):
     )
 
 
+class ServiceIncidentRow(Base):
+    """Scenario 2 site/service incident; deliberately has no device identity."""
+
+    __tablename__ = "service_incidents"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.run_id"],
+            name="fk_service_incidents_run",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "site_id",
+            "service_key",
+            name="uq_service_incidents_run_site_service",
+        ),
+        CheckConstraint(
+            "status IN ('OPEN', 'ESCALATED', 'RESOLVED')",
+            name="ck_service_incidents_status_known",
+        ),
+        Index(
+            "ix_service_incidents_tenant_run_site",
+            "tenant_id",
+            "run_id",
+            "site_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    service_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    symptom_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class OperationalSignalRow(Base):
+    """Product-owned persisted Scenario 2 operational fact."""
+
+    __tablename__ = "operational_signals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.run_id"],
+            name="fk_operational_signals_run",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "incident_id"],
+            [
+                "service_incidents.tenant_id",
+                "service_incidents.run_id",
+                "service_incidents.incident_id",
+            ],
+            name="fk_operational_signals_service_incident",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "source_ref",
+            name="uq_operational_signals_source_ref",
+        ),
+        CheckConstraint(
+            "source IN ('MONITORING', 'ITSM')",
+            name="ck_operational_signals_source_known",
+        ),
+        Index(
+            "ix_operational_signals_tenant_run_received",
+            "tenant_id",
+            "run_id",
+            "received_at",
+        ),
+        Index(
+            "ix_operational_signals_tenant_run_site",
+            "tenant_id",
+            "run_id",
+            "site_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    service_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    symptom_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(256), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    safe_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    incident_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class EvidenceRow(Base):
     __tablename__ = "evidence"
     __table_args__ = (
