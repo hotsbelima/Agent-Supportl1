@@ -38,7 +38,7 @@ export function StartScenario() {
         if (health.status === "ok" && health.database_reachable) {
           setReadiness({
             kind: "ready",
-            message: `Backend ready · Phase ${health.phase}${health.checkpoint}`,
+            message: `Backend ready · Phase ${health.checkpoint}`,
           });
           return;
         }
