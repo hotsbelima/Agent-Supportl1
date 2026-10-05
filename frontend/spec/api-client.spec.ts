@@ -163,6 +163,7 @@ describe("browser API client contract", () => {
     await streamRunEvents({
       runId: "RUN-1",
       afterSeq: 17,
+      lastEventId: 17,
       signal: controller.signal,
       onOpen,
       onEvent: vi.fn(),
@@ -177,5 +178,46 @@ describe("browser API client contract", () => {
     const headers = init?.headers as Headers;
     expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
     expect(headers.get("Accept")).toBe("text/event-stream");
+    expect(headers.get("Last-Event-ID")).toBe("17");
+  });
+
+  it("propagates application-frame rejection so reconnect recovery can take over", async () => {
+    const payload = {
+      event_id: "EVENT-5",
+      tenant_id: "TENANT-8OCT",
+      run_id: "RUN-1",
+      seq: 5,
+      event_type: "external.signal",
+      occurred_at: "2026-10-05T00:00:05Z",
+      payload: {},
+    };
+    const body =
+      `id: 5\\nevent: application.event\\ndata: ${JSON.stringify(payload)}\\n\\n`;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(body, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
+    );
+
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_TENANT_ID", "TENANT-8OCT");
+    const { streamRunEvents } = await import("../lib/sse");
+
+    await expect(
+      streamRunEvents({
+        runId: "RUN-1",
+        afterSeq: 4,
+        signal: new AbortController().signal,
+        onOpen: vi.fn(),
+        onEvent: () => {
+          throw new Error("gap-stop");
+        },
+      }),
+    ).rejects.toThrow("gap-stop");
   });
 });
