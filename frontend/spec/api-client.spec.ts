@@ -242,6 +242,32 @@ describe("browser API client contract", () => {
     ).rejects.toThrow("gap-stop");
   });
 
+  it("rejects a successful response that is not an SSE stream", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response("<html>proxy error</html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }),
+      ),
+    );
+
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_TENANT_ID", "TENANT-8OCT");
+    const { streamRunEvents } = await import("../lib/sse");
+
+    await expect(
+      streamRunEvents({
+        runId: "RUN-1",
+        afterSeq: 4,
+        signal: new AbortController().signal,
+        onOpen: vi.fn(),
+        onEvent: vi.fn(),
+      }),
+    ).rejects.toThrow("unexpected content type");
+  });
+
   it("fails closed on malformed application SSE frames instead of silently losing them", async () => {
     vi.stubGlobal(
       "fetch",
