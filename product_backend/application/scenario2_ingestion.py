@@ -370,7 +370,9 @@ class Scenario2FixtureTransitionService:
         run_id: str,
         major_incident_id: str | None,
     ) -> FixtureTransitionResult:
-        normalized = major_incident_id.strip() if major_incident_id else None
+        normalized = (
+            (major_incident_id or "").strip() or None
+        )
         return await self._update(
             tenant_id=tenant_id,
             run_id=run_id,
@@ -396,6 +398,12 @@ class Scenario2FixtureTransitionService:
                     ErrorCode.CONTEXT_MISMATCH,
                     "Scenario 2 run was not found.",
                     "run_not_found_or_wrong_scenario",
+                )
+            if run.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+                return _failure(
+                    ErrorCode.INVALID_STATE_TRANSITION,
+                    "Closed Scenario 2 run cannot mutate fixture state.",
+                    "run_closed",
                 )
             state = await uow.fixture_states.get(
                 tenant_id=tenant,
