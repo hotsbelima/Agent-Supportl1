@@ -11,7 +11,7 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "")
   .replace(/\/+$/, "");
 
 export const DEMO_TENANT_ID =
-  (process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "TENANT-8OCT").trim();
+  (process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "").trim();
 
 export class ApiClientError extends Error {
   constructor(
