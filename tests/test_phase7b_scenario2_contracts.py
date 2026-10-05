@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 import os
+from uuid import uuid4
 
 import pytest
 
@@ -311,17 +312,18 @@ def test_persisted_operational_signals_are_tenant_and_run_isolated():
                 service_incidents = SqlAlchemyServiceIncidentRepository(session)
                 signals = SqlAlchemyOperationalSignalRepository(session)
 
+                suffix = uuid4().hex[:10]
                 run_a = Run(
-                    run_id=f"{RUN_ID}-A",
-                    tenant_id=f"{TENANT}-A",
+                    run_id=f"{RUN_ID}-A-{suffix}",
+                    tenant_id=f"{TENANT}-A-{suffix}",
                     scenario_id="scenario-2",
                     status=RunStatus.ACTIVE,
                     created_at=NOW,
                     updated_at=NOW,
                 )
                 run_b = Run(
-                    run_id=f"{RUN_ID}-B",
-                    tenant_id=f"{TENANT}-B",
+                    run_id=f"{RUN_ID}-B-{suffix}",
+                    tenant_id=f"{TENANT}-B-{suffix}",
                     scenario_id="scenario-2",
                     status=RunStatus.ACTIVE,
                     created_at=NOW,
