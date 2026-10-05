@@ -14,11 +14,25 @@ from product_backend.domain.scenario2 import (
     MajorIncidentProposal,
     MajorIncidentRecord,
     OperationalSignal,
+    Scenario2FixtureState,
     Scenario2SignalSource,
     ServiceIncident,
 )
 
 from .repositories import EvidenceRepository, RunRepository
+
+
+class Scenario2FixtureStateRepository(Protocol):
+    async def add(self, state: Scenario2FixtureState) -> None: ...
+
+    async def get(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> Scenario2FixtureState | None: ...
+
+    async def save(self, state: Scenario2FixtureState) -> None: ...
 
 
 class ServiceIncidentRepository(Protocol):
@@ -177,6 +191,7 @@ __all__ = [
     "MajorIncidentRepository",
     "OperationalSignalRepository",
     "Scenario2ApprovalUnitOfWork",
+    "Scenario2FixtureStateRepository",
     "ServiceIncidentRepository",
     "Scenario2ProposalUnitOfWork",
 ]
