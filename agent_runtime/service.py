@@ -49,6 +49,15 @@ class _HumanDecisionCorrelation:
     completed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _OperationalEventCorrelation:
+    invocation_id: str
+    settled: bool
+    final_answer: str | None
+    pending_proposal_id: str | None
+    paused_function_call_id: str | None
+
+
 def _safe_event_text(event: Any) -> str | None:
     content = getattr(event, "content", None)
     if content is None:
@@ -79,6 +88,80 @@ def _latest_final_answer(
         if text:
             final_answer = text
     return final_answer
+
+
+def _operational_event_id(event: Any) -> str | None:
+    if getattr(event, "author", None) != "user":
+        return None
+    if not getattr(event, "invocation_id", None):
+        return None
+    text = _safe_event_text(event)
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("type") != "operational_signal":
+        return None
+    event_id = payload.get("operational_event_id")
+    return event_id if isinstance(event_id, str) and event_id else None
+
+
+def _find_operational_event_correlation(
+    events: list[Any],
+    *,
+    operational_event_id: str,
+) -> _OperationalEventCorrelation | None:
+    invocation_id: str | None = None
+    for event in events:
+        if _operational_event_id(event) == operational_event_id:
+            invocation_id = event.invocation_id
+
+    if invocation_id is None:
+        return None
+
+    settled = False
+    final_answer: str | None = None
+    pending_proposal_id: str | None = None
+    paused_function_call_id: str | None = None
+
+    for event in events:
+        if getattr(event, "invocation_id", None) != invocation_id:
+            continue
+
+        long_running_ids = set(event.long_running_tool_ids or [])
+        for call in event.get_function_calls():
+            if (
+                call.name == WAIT_FOR_HUMAN_DECISION_TOOL
+                and call.id
+                and call.id in long_running_ids
+            ):
+                args = dict(call.args or {})
+                proposal_id = args.get("proposal_id")
+                if isinstance(proposal_id, str) and proposal_id:
+                    pending_proposal_id = proposal_id
+                    paused_function_call_id = call.id
+                    settled = True
+
+        is_final = getattr(event, "is_final_response", None)
+        if callable(is_final) and is_final():
+            settled = True
+            text = _safe_event_text(event)
+            if text:
+                final_answer = text
+
+        actions = getattr(event, "actions", None)
+        if actions is not None and getattr(actions, "end_of_agent", False):
+            settled = True
+
+    return _OperationalEventCorrelation(
+        invocation_id=invocation_id,
+        settled=settled,
+        final_answer=final_answer,
+        pending_proposal_id=pending_proposal_id,
+        paused_function_call_id=paused_function_call_id,
+    )
 
 
 def _find_human_decision_correlation(
@@ -222,22 +305,70 @@ class Scenario1AgentRuntime:
         run_id: str,
         operational_signal: dict[str, Any],
     ) -> AgentInvocationResult:
-        await ensure_run_session(
+        """Compatibility/debug invocation without a durable event identity."""
+        return await self.invoke_operational_event(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            operational_event_id=None,
+            operational_signal=operational_signal,
+        )
+
+    async def invoke_operational_event(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        operational_event_id: str | None,
+        operational_signal: dict[str, Any],
+    ) -> AgentInvocationResult:
+        """Invoke or recover the same native ADK invocation for one Product event.
+
+        The Product outbox may redeliver after a crash. The durable ADK Session
+        history contains the Product event ID in the user message. If that event
+        already reached a stable final response or native long-running
+        human-decision pause, the result is replayed from ADK history. If the
+        invocation exists but stopped mid-flight, native resumability continues
+        the same invocation with new_message=None instead of creating a second
+        independent runtime path.
+        """
+        session = await ensure_run_session(
             self._session_service,
             tenant_id=tenant_id,
             run_id=run_id,
         )
+
+        correlation: _OperationalEventCorrelation | None = None
+        if operational_event_id:
+            correlation = _find_operational_event_correlation(
+                list(session.events),
+                operational_event_id=operational_event_id,
+            )
+            if correlation is not None and correlation.settled:
+                return AgentInvocationResult(
+                    session_id=run_id,
+                    invocation_id=correlation.invocation_id,
+                    final_answer=correlation.final_answer,
+                    awaiting_human_decision=(
+                        correlation.paused_function_call_id is not None
+                    ),
+                    pending_proposal_id=correlation.pending_proposal_id,
+                    paused_function_call_id=correlation.paused_function_call_id,
+                )
+
+        envelope = {
+            "type": "operational_signal",
+            "scenario": "scenario-1",
+            "payload": operational_signal,
+        }
+        if operational_event_id:
+            envelope["operational_event_id"] = operational_event_id
 
         message = types.Content(
             role="user",
             parts=[
                 types.Part(
                     text=json.dumps(
-                        {
-                            "type": "operational_signal",
-                            "scenario": "scenario-1",
-                            "payload": operational_signal,
-                        },
+                        envelope,
                         ensure_ascii=False,
                         sort_keys=True,
                     )
@@ -245,16 +376,28 @@ class Scenario1AgentRuntime:
             ],
         )
 
-        invocation_id: str | None = None
+        invocation_id: str | None = (
+            correlation.invocation_id if correlation is not None else None
+        )
         final_answer: str | None = None
         pending_proposal_id: str | None = None
         paused_function_call_id: str | None = None
 
-        async for event in self._runner.run_async(
-            user_id=tenant_id,
-            session_id=run_id,
-            new_message=message,
-        ):
+        if correlation is not None:
+            stream = self._runner.run_async(
+                user_id=tenant_id,
+                session_id=run_id,
+                invocation_id=correlation.invocation_id,
+                new_message=None,
+            )
+        else:
+            stream = self._runner.run_async(
+                user_id=tenant_id,
+                session_id=run_id,
+                new_message=message,
+            )
+
+        async for event in stream:
             if invocation_id is None and event.invocation_id:
                 invocation_id = event.invocation_id
 
