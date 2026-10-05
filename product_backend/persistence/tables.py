@@ -464,11 +464,12 @@ class ApplicationEventRow(Base):
 
 
 class ApplicationOutboxRow(Base):
-    """Product-owned durable delivery bridge used by Phase 7A dispatch.
+    """Product-owned durable delivery bridge for agent wake-up work.
 
-    The table remains outside ADK runtime ownership. It only transports a
-    persisted Product operational-event reference to the native ADK Session;
-    generic agent execution/session/tool lifecycle still belongs to ADK.
+    Phase 7A consumes the Scenario 1 topic. Phase 7C also queues Scenario 2
+    operational-signal envelopes on a separate topic whose ADK consumer is
+    intentionally deferred. Generic agent execution/session/tool lifecycle
+    remains ADK-owned.
     """
 
     __tablename__ = "application_outbox"
