@@ -1,8 +1,8 @@
-"""Persistent Product API boundary with Phase 6A native ADK sessions.
+"""Persistent Product API boundary with Phase 6B native ADK/Gemini wiring.
 
-The API keeps Product business state and persisted SSE while composing Google
-ADK's DatabaseSessionService on the same AsyncEngine. Live Gemini execution is
-still intentionally deferred to Phase 6B.
+Product business state remains in the existing application/domain layer while
+Google ADK owns agent execution, persistent runtime sessions/events/state and
+native tool invocation lifecycle.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 import os
 import re
 from typing import Annotated, Any, AsyncIterator
@@ -23,15 +24,24 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from google.adk.sessions import DatabaseSessionService
 
+from agent_runtime.service import Scenario1AgentRuntime
 from agent_runtime.sessions import create_database_session_service
 from agent_runtime.sessions import ensure_run_session
-from product_backend.application.field_visit import FieldVisitApprovalService
+from product_backend.adapters.tool_adapters import DefaultScenario1ToolAdapter
+from product_backend.application.field_visit import (
+    FieldVisitApprovalService,
+    FieldVisitProposalService,
+)
 from product_backend.application.lifecycle import ApplicationLifecycleService
+from product_backend.application.read_tools import (
+    EvidenceTtlPolicy,
+    Scenario1ReadToolService,
+)
 from product_backend.application.results import OperationFailure
 from product_backend.application.run_lifecycle import Scenario1RunStartService
 from product_backend.application.run_state import RunStateService
 from product_backend.contracts.tools import ToolCallContext
-from product_backend.domain.enums import ApprovalDecision
+from product_backend.domain.enums import ApprovalDecision, RunStatus
 from product_backend.domain.errors import DomainError, ErrorCode
 from product_backend.persistence.database import (
     DatabaseSettings,
@@ -42,11 +52,14 @@ from product_backend.persistence.run_state import SqlAlchemyRunStateQuery
 from product_backend.persistence.uow import (
     SqlAlchemyApprovalExecutionUnitOfWork,
     SqlAlchemyLifecycleUnitOfWork,
+    SqlAlchemyProposalCreationUnitOfWork,
     SqlAlchemyRunStartUnitOfWork,
+    SqlAlchemyToolReadUnitOfWork,
 )
 
 from .scenario1_fixture import Scenario1FixtureSources
 from .schemas import (
+    AgentInvocationResponse,
     ApiErrorBody,
     ApiErrorResponse,
     ApprovalDecisionResponse,
@@ -93,8 +106,11 @@ class ProductApiContainer:
     fixture: Scenario1FixtureSources
     engine: AsyncEngine | None = None
     adk_session_service: DatabaseSessionService | None = None
+    agent_runtime: Scenario1AgentRuntime | None = None
 
     async def close(self) -> None:
+        if self.agent_runtime is not None:
+            await self.agent_runtime.close()
         if self.engine is not None:
             await self.engine.dispose()
 
@@ -105,6 +121,29 @@ def build_container_from_env() -> ProductApiContainer:
     session_factory = create_session_factory(engine)
     fixture = Scenario1FixtureSources()
     adk_session_service = create_database_session_service(engine)
+
+    read_service = Scenario1ReadToolService(
+        read_uow_factory=lambda: SqlAlchemyToolReadUnitOfWork(session_factory),
+        cmdb=fixture,
+        monitoring=fixture,
+        itsm=fixture,
+        kb=fixture,
+        ttl_policy=EvidenceTtlPolicy(
+            site_health=timedelta(minutes=5),
+            access_link_diagnostic=timedelta(minutes=2),
+        ),
+    )
+    proposal_service = FieldVisitProposalService(
+        lambda: SqlAlchemyProposalCreationUnitOfWork(session_factory)
+    )
+    tool_adapter = DefaultScenario1ToolAdapter(
+        read_service=read_service,
+        proposal_service=proposal_service,
+    )
+    agent_runtime = Scenario1AgentRuntime(
+        adapter=tool_adapter,
+        session_service=adk_session_service,
+    )
 
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
@@ -124,6 +163,7 @@ def build_container_from_env() -> ProductApiContainer:
         fixture=fixture,
         engine=engine,
         adk_session_service=adk_session_service,
+        agent_runtime=agent_runtime,
     )
 
 
@@ -262,10 +302,10 @@ def create_app(
 
     app = FastAPI(
         title="Autonomous L1 Incident Agent Product API",
-        version="0.6.0",
+        version="0.6.1",
         description=(
-            "Phase 6A product boundary with native persistent ADK sessions. "
-            "No live Gemini agent wiring yet."
+            "Phase 6B product boundary with one native Google ADK agent, "
+            "Gemini 3.5 Flash-Lite and six Product-backed tools."
         ),
         lifespan=lifespan,
     )
@@ -361,11 +401,21 @@ def create_app(
         return {
             "status": "ok",
             "phase": 6,
-            "checkpoint": "6A",
+            "checkpoint": "6B",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
-            "adk_wired": False,
+            "adk_wired": services.agent_runtime is not None,
             "adk_session_persistence_wired": services.adk_session_service is not None,
+            "gemini_configured": (
+                services.agent_runtime.gemini_configured
+                if services.agent_runtime is not None
+                else False
+            ),
+            "adk_model": (
+                services.agent_runtime.model
+                if services.agent_runtime is not None
+                else None
+            ),
             "sse_wired": True,
         }
 
@@ -403,6 +453,90 @@ def create_app(
                 retryable=True,
             )
         return run_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/runs/{run_id}/agent/invoke",
+        response_model=AgentInvocationResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def invoke_scenario1_agent(
+        run_id: Annotated[str, _ID_PATH],
+        request: Request,
+        tenant_id: TenantId,
+    ) -> AgentInvocationResponse:
+        services = _container(request)
+        if services.agent_runtime is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="AGENT_RUNTIME_UNAVAILABLE",
+                message="Google ADK agent runtime is not configured.",
+                retryable=True,
+            )
+        if not services.agent_runtime.gemini_configured:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="GEMINI_NOT_CONFIGURED",
+                message="Gemini credentials are not configured for the agent runtime.",
+                retryable=False,
+            )
+
+        snapshot = await services.state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Run was not found in the current tenant context.",
+            )
+        if snapshot.run.status is not RunStatus.ACTIVE:
+            _raise_api_error(
+                status_code=status.HTTP_409_CONFLICT,
+                code="RUN_NOT_ACTIVE",
+                message="Agent invocation requires an ACTIVE run.",
+            )
+
+        operational_signal = {
+            "scenario_id": snapshot.run.scenario_id,
+            "incidents": [
+                {
+                    "incident_id": incident.incident_id,
+                    "site_id": incident.site_id,
+                    "reported_device_id": incident.reported_device_id,
+                    "symptom": incident.symptom,
+                    "status": incident.status.value,
+                }
+                for incident in snapshot.incidents
+            ],
+        }
+
+        result = await services.agent_runtime.invoke(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            operational_signal=operational_signal,
+        )
+
+        refreshed = await services.state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if refreshed is None:
+            _raise_api_error(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="STATE_PERSISTENCE_FAILED",
+                message="Run state is unavailable after agent invocation.",
+                retryable=True,
+            )
+
+        return AgentInvocationResponse(
+            run_id=run_id,
+            session_id=result.session_id,
+            invocation_id=result.invocation_id,
+            model=services.agent_runtime.model,
+            run_status=refreshed.run.status.value,
+            final_answer=result.final_answer,
+        )
 
     @app.get(
         "/api/v1/runs/{run_id}",
