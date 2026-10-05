@@ -200,6 +200,7 @@ class Scenario2IngestionStateResponse(BaseModel):
 class Scenario2SignalIngestResponse(BaseModel):
     signal: OperationalSignalView
     service_incident: ServiceIncidentView
+    evidence_id: str
     replayed: bool
     event_seq: int | None
     dispatch_queued: bool
@@ -308,6 +309,7 @@ def scenario2_signal_response(
         service_incident=ServiceIncidentView(
             **_payload(result.service_incident)
         ),
+        evidence_id=result.evidence.evidence_id,
         replayed=result.replayed,
         event_seq=result.event.seq if result.event is not None else None,
         dispatch_queued=result.dispatch is not None,
