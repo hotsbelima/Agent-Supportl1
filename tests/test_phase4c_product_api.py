@@ -238,7 +238,8 @@ def test_start_is_persistent_and_does_not_require_gemini(monkeypatch):
         health = client.get("/health")
         assert health.status_code == 200
         assert health.json()["database_reachable"] is True
-        assert health.json()["adk_wired"] is False
+        assert health.json()["adk_wired"] is True
+        assert health.json()["gemini_configured"] is False
         assert health.json()["sse_wired"] is True
 
         state = _start(client)
