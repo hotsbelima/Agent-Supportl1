@@ -21,7 +21,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
+from google.adk.sessions import DatabaseSessionService
 
+from agent_runtime.sessions import create_database_session_service
+from agent_runtime.sessions import ensure_run_session
 from product_backend.application.field_visit import FieldVisitApprovalService
 from product_backend.application.lifecycle import ApplicationLifecycleService
 from product_backend.application.results import OperationFailure
@@ -89,6 +92,7 @@ class ProductApiContainer:
     approval_service: FieldVisitApprovalService
     fixture: Scenario1FixtureSources
     engine: AsyncEngine | None = None
+    adk_session_service: DatabaseSessionService | None = None
 
     async def close(self) -> None:
         if self.engine is not None:
@@ -100,6 +104,7 @@ def build_container_from_env() -> ProductApiContainer:
     engine = create_engine(settings)
     session_factory = create_session_factory(engine)
     fixture = Scenario1FixtureSources()
+    adk_session_service = create_database_session_service(engine)
 
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
@@ -118,6 +123,7 @@ def build_container_from_env() -> ProductApiContainer:
         ),
         fixture=fixture,
         engine=engine,
+        adk_session_service=adk_session_service,
     )
 
 
@@ -247,6 +253,8 @@ def create_app(
         active = container or build_container_from_env()
         app.state.product_container = active
         try:
+            if active.adk_session_service is not None:
+                await active.adk_session_service.prepare_tables()
             yield
         finally:
             if container is None:
@@ -254,10 +262,10 @@ def create_app(
 
     app = FastAPI(
         title="Autonomous L1 Incident Agent Product API",
-        version="0.5.0",
+        version="0.6.0",
         description=(
-            "Phase 5A persistent application boundary with persisted SSE. "
-            "No live Google ADK wiring yet."
+            "Phase 6A product boundary with native persistent ADK sessions. "
+            "No live Gemini agent wiring yet."
         ),
         lifespan=lifespan,
     )
@@ -352,11 +360,12 @@ def create_app(
                 await connection.execute(text("SELECT 1"))
         return {
             "status": "ok",
-            "phase": 5,
-            "checkpoint": "5A",
+            "phase": 6,
+            "checkpoint": "6A",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
             "adk_wired": False,
+            "adk_session_persistence_wired": services.adk_session_service is not None,
             "sse_wired": True,
         }
 
@@ -375,6 +384,12 @@ def create_app(
             tenant_id=tenant_id,
             bootstrap=services.fixture.bootstrap(),
         )
+        if services.adk_session_service is not None:
+            await ensure_run_session(
+                services.adk_session_service,
+                tenant_id=tenant_id,
+                run_id=started.run.run_id,
+            )
 
         snapshot = await services.state_service.get(
             tenant_id=tenant_id,
