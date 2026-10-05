@@ -88,15 +88,11 @@ class DefaultScenario1ToolAdapter:
     async def _invoke(
         self,
         *,
-        tool_name: str,
-        context: ToolCallContext,
-        request: object,
         operation: Callable[[], Awaitable[T]],
         unexpected_reason: str,
     ) -> T | ToolFailure:
         # ADK owns generic tool invocation lifecycle. This Product boundary
         # only delegates typed calls and normalizes unexpected failures.
-        del tool_name, context, request
         try:
             return await operation()
         except Exception:
@@ -108,9 +104,6 @@ class DefaultScenario1ToolAdapter:
         request: GetDeviceRequest,
     ) -> GetDeviceResult:
         return await self._invoke(
-            tool_name="get_device",
-            context=context,
-            request=request,
             operation=lambda: self._read_service.get_device(context, request),
             unexpected_reason="get_device_unexpected_failure",
         )
@@ -121,9 +114,6 @@ class DefaultScenario1ToolAdapter:
         request: GetSiteHealthRequest,
     ) -> GetSiteHealthResult:
         return await self._invoke(
-            tool_name="get_site_health",
-            context=context,
-            request=request,
             operation=lambda: self._read_service.get_site_health(context, request),
             unexpected_reason="get_site_health_unexpected_failure",
         )
@@ -134,9 +124,6 @@ class DefaultScenario1ToolAdapter:
         request: RunDiagnosticRequest,
     ) -> RunDiagnosticResult:
         return await self._invoke(
-            tool_name="run_diagnostic",
-            context=context,
-            request=request,
             operation=lambda: self._read_service.run_diagnostic(context, request),
             unexpected_reason="run_diagnostic_unexpected_failure",
         )
@@ -147,9 +134,6 @@ class DefaultScenario1ToolAdapter:
         request: SearchIncidentsRequest,
     ) -> SearchIncidentsResult:
         return await self._invoke(
-            tool_name="search_incidents",
-            context=context,
-            request=request,
             operation=lambda: self._read_service.search_incidents(context, request),
             unexpected_reason="search_incidents_unexpected_failure",
         )
@@ -160,9 +144,6 @@ class DefaultScenario1ToolAdapter:
         request: SearchKbRequest,
     ) -> SearchKbResult:
         return await self._invoke(
-            tool_name="search_kb",
-            context=context,
-            request=request,
             operation=lambda: self._read_service.search_kb(context, request),
             unexpected_reason="search_kb_unexpected_failure",
         )
@@ -179,9 +160,6 @@ class DefaultScenario1ToolAdapter:
             return ProposeFieldVisitSuccess(ok=True, proposal=result.proposal)
 
         return await self._invoke(
-            tool_name="propose_field_visit",
-            context=context,
-            request=request,
             operation=operation,
             unexpected_reason="proposal_service_unexpected_failure",
         )
