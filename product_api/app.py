@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from google.adk.sessions import DatabaseSessionService
 
 from agent_runtime.service import Scenario1AgentRuntime
+from agent_runtime.scenario2_service import Scenario2AgentRuntime
 from agent_runtime.sessions import create_database_session_service
 from agent_runtime.sessions import ensure_run_session
 from product_backend.adapters.tool_adapters import DefaultScenario1ToolAdapter
@@ -81,7 +82,7 @@ from product_backend.persistence.scenario2_state import (
     SqlAlchemyScenario2StateQuery,
 )
 
-from .dispatch import Scenario1DispatchWorker
+from .dispatch import Scenario1DispatchWorker, Scenario2DispatchWorker
 from .scenario1_fixture import Scenario1FixtureSources
 from .scenario2_simulator import Scenario2SimulatorService
 from .scenario2_sources import PersistedScenario2FixtureSources
@@ -150,6 +151,8 @@ class ProductApiContainer:
     adk_session_service: DatabaseSessionService | None = None
     agent_runtime: Scenario1AgentRuntime | None = None
     dispatch_worker: Scenario1DispatchWorker | None = None
+    scenario2_agent_runtime: Scenario2AgentRuntime | None = None
+    scenario2_dispatch_worker: Scenario2DispatchWorker | None = None
     scenario2_start_service: Scenario2RunStartService | None = None
     scenario2_ingestion_service: Scenario2SignalIngestionService | None = None
     scenario2_state_service: Scenario2StateService | None = None
@@ -158,6 +161,8 @@ class ProductApiContainer:
     scenario2_sources: PersistedScenario2FixtureSources | None = None
 
     async def close(self) -> None:
+        if self.scenario2_agent_runtime is not None:
+            await self.scenario2_agent_runtime.close()
         if self.agent_runtime is not None:
             await self.agent_runtime.close()
         if self.engine is not None:
@@ -215,6 +220,17 @@ def build_container_from_env() -> ProductApiContainer:
     scenario2_sources = PersistedScenario2FixtureSources(
         scenario2_state_service
     )
+    scenario2_agent_runtime = Scenario2AgentRuntime(
+        session_service=adk_session_service,
+    )
+    scenario2_dispatch_worker = Scenario2DispatchWorker(
+        uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(session_factory),
+        state_service=scenario2_state_service,
+        lifecycle_service=ApplicationLifecycleService(
+            lambda: SqlAlchemyLifecycleUnitOfWork(session_factory)
+        ),
+        agent_runtime=scenario2_agent_runtime,
+    )
 
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
@@ -234,6 +250,8 @@ def build_container_from_env() -> ProductApiContainer:
         adk_session_service=adk_session_service,
         agent_runtime=agent_runtime,
         dispatch_worker=dispatch_worker,
+        scenario2_agent_runtime=scenario2_agent_runtime,
+        scenario2_dispatch_worker=scenario2_dispatch_worker,
         scenario2_start_service=Scenario2RunStartService(
             lambda: SqlAlchemyScenario2RunStartUnitOfWork(session_factory)
         ),
@@ -408,6 +426,7 @@ def create_app(
         active = container or build_container_from_env()
         app.state.product_container = active
         worker_started = False
+        scenario2_worker_started = False
         try:
             if active.adk_session_service is not None:
                 await active.adk_session_service.prepare_tables()
@@ -415,8 +434,17 @@ def create_app(
                 active.dispatch_worker.start()
                 active.dispatch_worker.wake()
                 worker_started = True
+            if active.scenario2_dispatch_worker is not None:
+                active.scenario2_dispatch_worker.start()
+                active.scenario2_dispatch_worker.wake()
+                scenario2_worker_started = True
             yield
         finally:
+            if (
+                scenario2_worker_started
+                and active.scenario2_dispatch_worker is not None
+            ):
+                await active.scenario2_dispatch_worker.close()
             if worker_started and active.dispatch_worker is not None:
                 await active.dispatch_worker.close()
             if container is None:
@@ -550,13 +578,17 @@ def create_app(
                 if services.dispatch_worker is not None
                 else False
             ),
-            "scenario2_checkpoint": "7C-product-ingestion",
+            "scenario2_checkpoint": "7C-adk-dispatch",
             "scenario2_ingestion_wired": (
                 services.scenario2_ingestion_service is not None
                 and services.scenario2_state_service is not None
                 and services.scenario2_simulator is not None
             ),
-            "scenario2_dispatch_consumer_wired": False,
+            "scenario2_dispatch_consumer_wired": (
+                services.scenario2_dispatch_worker.running
+                if services.scenario2_dispatch_worker is not None
+                else False
+            ),
         }
 
     @app.post(
@@ -715,6 +747,13 @@ def create_app(
         )
         if isinstance(result, OperationFailure):
             _raise_domain_error(result.error)
+        if (
+            result.dispatch is not None
+            and services.scenario2_dispatch_worker is not None
+        ):
+            # The durable outbox is the recovery source. This only shortens
+            # latency for a committed newly-ingested Product fact.
+            services.scenario2_dispatch_worker.wake()
         return scenario2_signal_response(result)
 
     @app.post(
@@ -741,6 +780,12 @@ def create_app(
         )
         if isinstance(result, OperationFailure):
             _raise_domain_error(result.error)
+        if (
+            result.ingested is not None
+            and result.ingested.dispatch is not None
+            and services.scenario2_dispatch_worker is not None
+        ):
+            services.scenario2_dispatch_worker.wake()
         return scenario2_simulator_response(result)
 
     @app.post(

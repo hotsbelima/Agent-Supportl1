@@ -49,6 +49,7 @@ class Scenario2IngestionStateSnapshot:
     run: Run
     service_incidents: tuple[ServiceIncident, ...]
     operational_signals: tuple[OperationalSignal, ...]
+    evidence: tuple[Evidence, ...]
     fixture_state: Scenario2FixtureState
     latest_event_seq: int
 

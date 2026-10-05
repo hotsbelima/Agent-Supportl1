@@ -274,7 +274,7 @@ def test_outbox_preserves_per_run_event_order_across_retry_lease():
     asyncio.run(scenario())
 
 
-def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
+def test_product_api_exposes_ingestion_with_durable_adk_consumer(
     monkeypatch,
 ):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -285,9 +285,9 @@ def test_product_api_exposes_ingestion_without_claiming_adk_consumer(
     with TestClient(create_app()) as client:
         health = client.get("/health")
         assert health.status_code == 200
-        assert health.json()["scenario2_checkpoint"] == "7C-product-ingestion"
+        assert health.json()["scenario2_checkpoint"] == "7C-adk-dispatch"
         assert health.json()["scenario2_ingestion_wired"] is True
-        assert health.json()["scenario2_dispatch_consumer_wired"] is False
+        assert health.json()["scenario2_dispatch_consumer_wired"] is True
 
         started = client.post(
             "/api/v1/scenario-2/runs",

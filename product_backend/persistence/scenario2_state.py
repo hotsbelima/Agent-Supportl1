@@ -17,8 +17,11 @@ from product_backend.domain.scenario2 import (
     ServiceIncident,
 )
 
+from .repositories import _evidence_from_row
+
 from .tables import (
     ApplicationEventRow,
+    EvidenceRow,
     OperationalSignalRow,
     RunRow,
     Scenario2FixtureStateRow,
@@ -77,6 +80,17 @@ class SqlAlchemyScenario2StateQuery:
                         OperationalSignalRow.received_at,
                         OperationalSignalRow.signal_id,
                     )
+                )
+            ).scalars().all()
+
+            evidence_rows = (
+                await session.execute(
+                    select(EvidenceRow)
+                    .where(
+                        EvidenceRow.tenant_id == tenant_id,
+                        EvidenceRow.run_id == run_id,
+                    )
+                    .order_by(EvidenceRow.captured_at, EvidenceRow.evidence_id)
                 )
             ).scalars().all()
 
@@ -150,6 +164,7 @@ class SqlAlchemyScenario2StateQuery:
                 run=run,
                 service_incidents=incidents,
                 operational_signals=signals,
+                evidence=tuple(_evidence_from_row(row) for row in evidence_rows),
                 fixture_state=fixture_state,
                 latest_event_seq=latest_event_seq,
             )
