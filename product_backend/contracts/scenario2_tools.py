@@ -45,6 +45,7 @@ class SearchMajorIncidentsRequest:
 @dataclass(frozen=True, slots=True)
 class ProposeMajorIncidentRequest:
     correlation_key: str
+    service_key: str
     affected_site_ids: tuple[str, ...]
     dependency_id: str
     evidence_ids: tuple[str, ...]
