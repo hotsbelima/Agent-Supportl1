@@ -33,6 +33,7 @@ import {
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   proposalTone,
+  STALE_PROPOSAL_NOTE,
 } from "@/lib/presentation";
 import { streamRunEvents } from "@/lib/sse";
 import type {
@@ -674,9 +675,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
                 {latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
-                    Approval was recorded, but fresh authoritative conditions
-                    no longer allowed execution. No field-service action was
-                    created.
+                    {STALE_PROPOSAL_NOTE}
                   </p>
                 ) : null}
 
