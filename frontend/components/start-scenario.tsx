@@ -35,16 +35,26 @@ export function StartScenario() {
 
     void getHealth(controller.signal)
       .then((health) => {
-        if (health.status === "ok" && health.database_reachable) {
+        if (
+          health.status === "ok" &&
+          health.database_reachable &&
+          health.adk_wired &&
+          health.adk_session_persistence_wired &&
+          health.adk_resumability_wired &&
+          health.gemini_configured &&
+          health.automatic_dispatch_wired
+        ) {
           setReadiness({
             kind: "ready",
-            message: `Backend ready · Phase ${health.checkpoint}`,
+            message: `Backend ready · Phase ${health.checkpoint} · automatic ADK dispatch`,
           });
           return;
         }
         setReadiness({
           kind: "unavailable",
-          message: "Backend health check is not ready.",
+          message: health.gemini_configured
+            ? "Automatic ADK dispatch is not ready."
+            : "Gemini is not configured on the Product backend.",
         });
       })
       .catch((error: unknown) => {
