@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from product_backend.contracts.events import ApplicationEvent, ApplicationOutboxRecord
-from product_backend.domain.models import Run
+from product_backend.domain.models import Evidence, Run
 from product_backend.domain.scenario2 import (
     OperationalSignal,
     Scenario2FixtureState,
@@ -38,6 +38,7 @@ class Scenario2RunStarted:
 class Scenario2SignalIngested:
     signal: OperationalSignal
     service_incident: ServiceIncident
+    evidence: Evidence
     event: ApplicationEvent | None
     dispatch: ApplicationOutboxRecord | None
     replayed: bool
