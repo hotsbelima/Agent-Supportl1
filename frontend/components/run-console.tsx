@@ -508,8 +508,12 @@ export function RunConsole({ runId }: { runId: string }) {
                         <code>{order.work_order_id}</code>
                       </div>
                       <dl className="facts-grid">
+                        <div className="wide">
+                          <dt>Action ID</dt>
+                          <dd><code>{action?.action_id ?? "—"}</code></dd>
+                        </div>
                         <div>
-                          <dt>Action</dt>
+                          <dt>Action type</dt>
                           <dd>{action?.action_type ?? "Field service"}</dd>
                         </div>
                         <div>
@@ -524,8 +528,16 @@ export function RunConsole({ runId }: { runId: string }) {
                           <dt>Switch / port</dt>
                           <dd>{order.switch_id} · {order.port_id}</dd>
                         </div>
+                        <div>
+                          <dt>Executed</dt>
+                          <dd>
+                            {action?.executed_at
+                              ? formatTimestamp(action.executed_at)
+                              : "—"}
+                          </dd>
+                        </div>
                         <div className="wide">
-                          <dt>Created</dt>
+                          <dt>Work order created</dt>
                           <dd>{formatTimestamp(order.created_at)}</dd>
                         </div>
                       </dl>
