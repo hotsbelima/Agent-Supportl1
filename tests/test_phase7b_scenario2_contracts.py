@@ -740,6 +740,81 @@ def test_product_approve_creates_one_record_and_replay_creates_no_duplicate():
     asyncio.run(scenario())
 
 
+def test_existing_equivalent_major_incident_blocks_new_proposal():
+    async def scenario() -> None:
+        store = _Store()
+        existing = MajorIncidentRecord(
+            major_incident_id="MI-EXISTING",
+            tenant_id=TENANT,
+            run_id="OLDER-RUN",
+            proposal_id="OLDER-PROPOSAL",
+            correlation_key=CORRELATION_KEY,
+            service_key=SERVICE_KEY,
+            affected_site_ids=(SITE_KZN, SITE_SAM),
+            dependency_id=ACMEPAY_DEPENDENCY_ID,
+            dependency_name=ACMEPAY_NAME,
+            summary="Existing incident",
+            status=MajorIncidentStatus.OPEN,
+            created_at=NOW,
+        )
+        store.major_incidents[existing.major_incident_id] = existing
+        proposal_service = MajorIncidentProposalService(
+            lambda: _Uow(store),
+            clock=lambda: NOW,
+            id_factory=lambda prefix: "SHOULD-NOT-BE-CREATED",
+        )
+        result = await proposal_service.create(
+            ToolCallContext(tenant_id=TENANT, run_id=RUN_ID),
+            _request(),
+        )
+        assert result.ok is False
+        assert dict(result.error.details)["reason"] == "duplicate_major_incident_exists"
+        assert store.proposals == {}
+
+    asyncio.run(scenario())
+
+
+def test_product_approve_becomes_stale_when_matching_major_incident_appears():
+    async def scenario() -> None:
+        store = _Store()
+        ids = iter(["MIP-1", "MIA-1"])
+        id_factory = lambda prefix: next(ids)
+        proposal_service = MajorIncidentProposalService(
+            lambda: _Uow(store),
+            clock=lambda: NOW,
+            id_factory=id_factory,
+        )
+        create_sources = _Sources()
+        created = await proposal_service.create(
+            ToolCallContext(tenant_id=TENANT, run_id=RUN_ID),
+            _request(),
+        )
+        assert created.ok is True
+
+        decision_sources = _Sources(existing_major_incidents=("MI-EXTERNAL",))
+        approval_service = MajorIncidentApprovalService(
+            lambda: _Uow(store),
+            local_health=decision_sources,
+            dependency_status=decision_sources,
+            major_incident_directory=decision_sources,
+            clock=lambda: NOW + timedelta(minutes=1),
+            id_factory=id_factory,
+        )
+        stale = await approval_service.decide(
+            ToolCallContext(tenant_id=TENANT, run_id=RUN_ID),
+            proposal_id=created.proposal.proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by="operator",
+        )
+        assert stale.ok is True
+        assert stale.proposal.status is ProposalStatus.STALE
+        assert stale.execution is None
+        assert stale.major_incident is None
+        assert store.major_incidents == {}
+
+    asyncio.run(scenario())
+
+
 def test_product_reject_creates_audit_decision_and_zero_execution():
     async def scenario() -> None:
         store = _Store()
