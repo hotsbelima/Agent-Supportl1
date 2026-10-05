@@ -1,4 +1,4 @@
-"""Pure Scenario 1 domain entities.
+"""Pure Product domain entities and shared typed Evidence.
 
 No FastAPI, Google ADK, database or provider types are imported here.
 """
