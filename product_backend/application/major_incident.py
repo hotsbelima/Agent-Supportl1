@@ -203,6 +203,7 @@ class MajorIncidentProposalService:
                 await uow.major_incident_proposals.get_pending_equivalent(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
+                    service_key=request.service_key,
                     correlation_key=request.correlation_key,
                     dependency_id=request.dependency_id,
                 )
@@ -216,6 +217,7 @@ class MajorIncidentProposalService:
 
             existing_major_incident = await uow.major_incidents.get_equivalent(
                 tenant_id=context.tenant_id,
+                service_key=request.service_key,
                 correlation_key=request.correlation_key,
                 dependency_id=request.dependency_id,
             )
@@ -451,6 +453,7 @@ class MajorIncidentApprovalService:
 
             equivalent = await uow.major_incidents.get_equivalent(
                 tenant_id=context.tenant_id,
+                service_key=proposal.service_key,
                 correlation_key=proposal.correlation_key,
                 dependency_id=proposal.dependency_id,
             )
