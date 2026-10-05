@@ -8,7 +8,10 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
-from product_backend.contracts.events import ApplicationEventType
+from product_backend.contracts.events import (
+    AGENT_DISPATCH_TOPIC,
+    ApplicationEventType,
+)
 from product_backend.contracts.run_state import (
     Scenario1Bootstrap,
     Scenario1RunStarted,
@@ -134,20 +137,34 @@ class Scenario1RunStartService:
                     "status": created_run.status.value,
                 },
             )
-            await uow.events.append(
+            signal_payload = {
+                "signal_type": "itsm.incident.created",
+                "details": {
+                    "incident_id": incident.incident_id,
+                    "site_id": incident.site_id,
+                    "reported_device_id": incident.reported_device_id,
+                    "symptom": incident.symptom,
+                },
+            }
+            signal_event = await uow.events.append(
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,
                 event_type=ApplicationEventType.EXTERNAL_SIGNAL,
-                payload={
-                    "signal_type": "itsm.incident.created",
-                    "details": {
-                        "incident_id": incident.incident_id,
-                        "site_id": incident.site_id,
-                        "reported_device_id": incident.reported_device_id,
-                        "symptom": incident.symptom,
-                    },
-                },
+                payload=signal_payload,
             )
+            outbox = getattr(uow, "outbox", None)
+            if outbox is not None:
+                await outbox.enqueue(
+                    tenant_id=context.tenant_id,
+                    run_id=context.run_id,
+                    event_seq=signal_event.seq,
+                    topic=AGENT_DISPATCH_TOPIC,
+                    payload={
+                        "event_id": signal_event.event_id,
+                        "event_seq": signal_event.seq,
+                        "signal": signal_payload,
+                    },
+                )
             await uow.runs.save(active_run)
             await uow.events.append(
                 tenant_id=context.tenant_id,
