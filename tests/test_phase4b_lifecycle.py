@@ -351,7 +351,6 @@ def _services(factory, ids: dict[str, str]):
     adapter = DefaultScenario1ToolAdapter(
         read_service=read_service,
         proposal_service=proposal_service,
-        lifecycle_service=lifecycle,
     )
     approval_service = FieldVisitApprovalService(
         lambda: SqlAlchemyApprovalExecutionUnitOfWork(factory),
@@ -576,7 +575,7 @@ def test_lifecycle_service_uses_server_time_validates_context_and_supports_curso
     asyncio.run(scenario())
 
 
-def test_tool_adapter_persists_started_and_finished_for_success_and_failure():
+def test_tool_adapter_does_not_persist_generic_runtime_lifecycle():
     async def scenario() -> None:
         ids = _ids()
         engine, factory = _new_db()
@@ -597,25 +596,12 @@ def test_tool_adapter_persists_started_and_finished_for_success_and_failure():
             )
             assert failure.ok is False
 
+            # Generic tool invocation lifecycle is ADK-owned in Phase 6.
+            # Product read services persist Evidence, but no longer manufacture
+            # tool.started/tool.finished execution events themselves.
             timeline = await lifecycle.timeline(context)
-            assert [item.event_type for item in timeline] == [
-                ApplicationEventType.TOOL_STARTED,
-                ApplicationEventType.TOOL_FINISHED,
-                ApplicationEventType.TOOL_STARTED,
-                ApplicationEventType.TOOL_FINISHED,
-            ]
-            assert timeline[0].payload["tool_name"] == "get_device"
-            assert timeline[1].payload["result"]["ok"] is True
-            assert (
-                timeline[1].payload["result"]["evidence"]["evidence_id"]
-                == success.evidence.evidence_id
-            )
-            assert timeline[3].payload["result"]["ok"] is False
-            assert (
-                timeline[3].payload["result"]["error"]["code"]
-                == "CONTEXT_MISMATCH"
-            )
-            assert await _event_outbox_counts(factory, ids) == (4, 4)
+            assert timeline == ()
+            assert await _event_outbox_counts(factory, ids) == (0, 0)
         finally:
             await engine.dispose()
 
@@ -804,29 +790,27 @@ def test_proposal_approval_action_timeline_is_complete_and_replay_is_not_duplica
 
             assert replay.ok is True and replay.replayed is True
             assert after_replay == before_replay
-            assert [item.seq for item in after_replay] == list(range(1, 8))
+            assert [item.seq for item in after_replay] == list(range(1, 6))
             assert [item.event_type for item in after_replay] == [
-                ApplicationEventType.TOOL_STARTED,
                 ApplicationEventType.PROPOSAL_CREATED,
                 ApplicationEventType.RUN_STATUS_CHANGED,
-                ApplicationEventType.TOOL_FINISHED,
                 ApplicationEventType.APPROVAL_DECIDED,
                 ApplicationEventType.ACTION_EXECUTED,
                 ApplicationEventType.RUN_STATUS_CHANGED,
             ]
-            assert after_replay[2].payload == {
+            assert after_replay[1].payload == {
                 "previous_status": "ACTIVE",
                 "status": "WAITING_APPROVAL",
                 "cause": "proposal_created",
                 "proposal_id": proposed.proposal.proposal_id,
             }
-            assert after_replay[4].payload["decision"] == "APPROVED"
+            assert after_replay[2].payload["decision"] == "APPROVED"
             assert (
-                after_replay[5].payload["work_order_id"]
+                after_replay[3].payload["work_order_id"]
                 == approved.work_order.work_order_id
             )
-            assert after_replay[6].payload["status"] == "ACTIVE"
-            assert await _event_outbox_counts(factory, ids) == (7, 7)
+            assert after_replay[4].payload["status"] == "ACTIVE"
+            assert await _event_outbox_counts(factory, ids) == (5, 5)
         finally:
             await engine.dispose()
 
