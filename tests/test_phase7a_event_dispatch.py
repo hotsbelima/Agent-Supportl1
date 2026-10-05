@@ -8,10 +8,12 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
 from agent_runtime.human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from agent_runtime.service import _find_operational_event_correlation
+from product_api.app import create_app
 from product_api.dispatch import Scenario1DispatchWorker
 from product_api.scenario1_fixture import AFFECTED_DEVICE_ID, Scenario1FixtureSources
 from product_backend.application.read_tools import EvidenceTtlPolicy, Scenario1ReadToolService
@@ -183,6 +185,30 @@ def test_dispatch_lease_must_outlive_bounded_agent_invocation():
             lease_seconds=5.0,
             invocation_timeout_seconds=5.0,
         )
+
+
+def test_start_stays_successful_when_eager_adk_session_provisioning_fails(
+    monkeypatch,
+):
+    async def fail_session_provisioning(*args, **kwargs):
+        raise RuntimeError("synthetic ADK session provisioning failure")
+
+    monkeypatch.setattr(
+        "product_api.app.ensure_run_session",
+        fail_session_provisioning,
+    )
+    tenant_id = f"TENANT-7A-START-RECOVERY-{uuid4().hex[:8]}"
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/v1/scenario-1/runs",
+            headers={"X-Tenant-ID": tenant_id},
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["run"]["tenant_id"] == tenant_id
+        assert body["run"]["status"] == "ACTIVE"
+        assert body["latest_event_seq"] == 3
 
 
 def test_run_start_atomically_persists_signal_and_dispatch_envelope():
