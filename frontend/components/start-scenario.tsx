@@ -77,9 +77,9 @@ export function StartScenario() {
         <p className="eyebrow">Scenario 1 · 8 Щупалец</p>
         <h2 id="scenario-title">Local terminal connectivity incident</h2>
         <p>
-          Start a persistent incident run. Phase 5 shows the operational state
-          and audit trail exactly as stored; live AI investigation arrives in
-          Phase 6.
+          Start the simulated environment. The first operational signal is
+          persisted by the Product backend, then the backend automatically
+          dispatches the same run to the native ADK agent.
         </p>
       </div>
 
@@ -118,7 +118,7 @@ export function StartScenario() {
         onClick={handleStart}
         disabled={starting || readiness.kind !== "ready"}
       >
-        {starting ? "Starting persistent run…" : "Start Scenario 1"}
+        {starting ? "Starting simulation…" : "Start simulation"}
       </button>
     </section>
   );
