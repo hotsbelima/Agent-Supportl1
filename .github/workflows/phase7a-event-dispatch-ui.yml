@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: phase7a-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   phase7a:
     runs-on: ubuntu-latest
