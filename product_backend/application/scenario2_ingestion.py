@@ -299,6 +299,9 @@ class Scenario2SignalIngestionService:
                     "Site/service already has a different active Scenario 2 symptom.",
                     "service_incident_symptom_conflict",
                 )
+            else:
+                incident = replace(incident, updated_at=now)
+                await uow.service_incidents.save(incident)
 
             signal_hint = (
                 _clean(signal_input.signal_id_hint)
