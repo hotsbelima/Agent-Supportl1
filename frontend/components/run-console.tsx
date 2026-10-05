@@ -91,6 +91,9 @@ export function RunConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [selectedObservationId, setSelectedObservationId] =
+    useState<string | null>(null);
 
   const timelineByRunRef = useRef(new Map<string, TimelineAccumulator>());
   const cursorByRunRef = useRef(new Map<string, number>());
@@ -307,7 +310,13 @@ export function RunConsole({ runId }: { runId: string }) {
     };
   }, [publishState, refreshState, runId]);
 
-  const incident = state?.incidents[0] ?? null;
+  const primaryIncident = state?.incidents[0] ?? null;
+  const selectedIncident = selectedIncidentId
+    ? state?.incidents.find((item) => item.incident_id === selectedIncidentId) ?? null
+    : null;
+  const selectedObservation = selectedObservationId
+    ? state?.evidence.find((item) => item.evidence_id === selectedObservationId) ?? null
+    : null;
   const lastSeq = events.at(-1)?.seq ?? 0;
 
   const latestProposal: ProposalView | null = state?.proposals.length
@@ -430,7 +439,7 @@ export function RunConsole({ runId }: { runId: string }) {
           </div>
           <div>
             <span>Incident</span>
-            <code>{incident?.incident_id ?? "—"}</code>
+            <code>{primaryIncident?.incident_id ?? "—"}</code>
           </div>
           <div>
             <span>Connection</span>
@@ -452,52 +461,96 @@ export function RunConsole({ runId }: { runId: string }) {
 
       <div className="console-grid">
         <section className="console-column">
-          <article className="panel">
+          <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Current state</p>
-                <h2>Incident</h2>
+                <h2>Incidents</h2>
               </div>
-              {incident ? (
+              {selectedIncident ? (
                 <StatusBadge
-                  value={incident.status}
-                  tone={incident.status === "ESCALATED" ? "warning" : "info"}
+                  value={selectedIncident.status}
+                  tone={
+                    selectedIncident.status === "ESCALATED"
+                      ? "warning"
+                      : "info"
+                  }
                 />
-              ) : null}
+              ) : (
+                <span className="panel-count">{state.incidents.length}</span>
+              )}
             </div>
 
-            {incident ? (
-              <dl className="facts-grid">
-                <div>
-                  <dt>Incident ID</dt>
-                  <dd><code>{incident.incident_id}</code></dd>
-                </div>
-                <div>
-                  <dt>Site</dt>
-                  <dd>{incident.site_id}</dd>
-                </div>
-                <div>
-                  <dt>Reported device</dt>
-                  <dd>{incident.reported_device_id}</dd>
-                </div>
-                <div className="wide">
-                  <dt>Symptom</dt>
-                  <dd>{incident.symptom}</dd>
-                </div>
-              </dl>
+            {selectedIncident ? (
+              <div className="entity-detail">
+                <button
+                  className="back-list-button"
+                  type="button"
+                  onClick={() => setSelectedIncidentId(null)}
+                >
+                  ← Назад к списку
+                </button>
+                <dl className="facts-grid">
+                  <div>
+                    <dt>Incident ID</dt>
+                    <dd><code>{selectedIncident.incident_id}</code></dd>
+                  </div>
+                  <div>
+                    <dt>Site</dt>
+                    <dd>{selectedIncident.site_id}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{selectedIncident.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Reported device</dt>
+                    <dd>{selectedIncident.reported_device_id}</dd>
+                  </div>
+                  <div className="wide">
+                    <dt>Summary</dt>
+                    <dd>{selectedIncident.symptom}</dd>
+                  </div>
+                  <div className="wide">
+                    <dt>Updated</dt>
+                    <dd>{formatTimestamp(selectedIncident.updated_at)}</dd>
+                  </div>
+                </dl>
+                {selectedIncident.status === "ESCALATED" ? (
+                  <p className="semantic-note">
+                    Escalated means field service has been requested; it does not
+                    mean the device is repaired or the incident is resolved.
+                  </p>
+                ) : null}
+              </div>
+            ) : state.incidents.length ? (
+              <div className="entity-list" role="list">
+                {state.incidents.map((item) => (
+                  <div className="entity-row" role="listitem" key={item.incident_id}>
+                    <div className="entity-row-main">
+                      <strong>{item.symptom}</strong>
+                      <span>{item.site_id}</span>
+                    </div>
+                    <StatusBadge
+                      value={item.status}
+                      tone={item.status === "ESCALATED" ? "warning" : "info"}
+                    />
+                    <button
+                      className="detail-button"
+                      type="button"
+                      onClick={() => setSelectedIncidentId(item.incident_id)}
+                    >
+                      Подробнее
+                    </button>
+                  </div>
+                ))}
+              </div>
             ) : (
               <EmptyPanel>No incident is persisted for this run.</EmptyPanel>
             )}
-
-            {incident?.status === "ESCALATED" ? (
-              <p className="semantic-note">
-                Escalated means field service has been requested; it does not
-                mean the device is repaired or the incident is resolved.
-              </p>
-            ) : null}
           </article>
 
-          <article className="panel">
+          <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Observations</p>
@@ -506,61 +559,105 @@ export function RunConsole({ runId }: { runId: string }) {
               <span className="panel-count">{state.evidence.length}</span>
             </div>
 
-            {state.evidence.length ? (
-              <div className="evidence-list">
+            {selectedObservation ? (
+              <div className="entity-detail">
+                <button
+                  className="back-list-button"
+                  type="button"
+                  onClick={() => setSelectedObservationId(null)}
+                >
+                  ← Назад к списку
+                </button>
+                <dl className="facts-grid">
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{selectedObservation.source_type}</dd>
+                  </div>
+                  <div>
+                    <dt>Captured</dt>
+                    <dd>{formatTimestamp(selectedObservation.captured_at)}</dd>
+                  </div>
+                  <div className="wide">
+                    <dt>Evidence ID</dt>
+                    <dd><code>{selectedObservation.evidence_id}</code></dd>
+                  </div>
+                  <div className="wide">
+                    <dt>Source / entity context</dt>
+                    <dd>
+                      {selectedObservation.entity_ids.length
+                        ? selectedObservation.entity_ids.join(" · ")
+                        : "—"}
+                    </dd>
+                  </div>
+                </dl>
+                {selectedObservation.facts.length ? (
+                  <ul className="facts-list observation-facts">
+                    {selectedObservation.facts.map((fact) => (
+                      <li key={fact}>{fact}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted-copy observation-copy">
+                    No normalized facts were persisted for this observation.
+                  </p>
+                )}
+                {selectedObservation.expires_at ? (
+                  <p className="expiry observation-copy">
+                    Validity timestamp:{" "}
+                    <strong>
+                      {formatTimestamp(selectedObservation.expires_at)}
+                    </strong>
+                  </p>
+                ) : null}
+                <div className="observation-payload">
+                  <span className="subtle-label payload-label">
+                    Typed safe payload
+                  </span>
+                  <pre className="payload-block">
+                    {JSON.stringify(selectedObservation.payload, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : state.evidence.length ? (
+              <div className="entity-list" role="list">
                 {state.evidence.map((evidence) => (
-                  <details className="evidence-card" key={evidence.evidence_id}>
-                    <summary>
-                      <div>
-                        <strong>{evidence.source_type}</strong>
-                        <span>{formatTimestamp(evidence.captured_at)}</span>
-                      </div>
-                      <span className="disclosure">View</span>
-                    </summary>
-                    <div className="evidence-body">
-                      <div className="chip-row">
-                        {evidence.entity_ids.map((id) => (
-                          <code key={id}>{id}</code>
-                        ))}
-                      </div>
-                      {evidence.facts.length ? (
-                        <ul className="facts-list">
-                          {evidence.facts.map((fact) => (
-                            <li key={fact}>{fact}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="muted-copy">
-                          No normalized facts were persisted for this evidence.
-                        </p>
-                      )}
-                      {evidence.expires_at ? (
-                        <p className="expiry">
-                          Validity timestamp:{" "}
-                          <strong>{formatTimestamp(evidence.expires_at)}</strong>
-                        </p>
-                      ) : null}
-                      <span className="subtle-label payload-label">
-                        Typed safe payload
+                  <div
+                    className="entity-row observation-row"
+                    role="listitem"
+                    key={evidence.evidence_id}
+                  >
+                    <div className="entity-row-main">
+                      <strong>{evidence.source_type}</strong>
+                      <span>
+                        {evidence.entity_ids[0] ?? "Product observation"}
                       </span>
-                      <pre className="payload-block">
-                        {JSON.stringify(evidence.payload, null, 2)}
-                      </pre>
+                      <time dateTime={evidence.captured_at}>
+                        {formatTimestamp(evidence.captured_at)}
+                      </time>
                     </div>
-                  </details>
+                    <button
+                      className="detail-button"
+                      type="button"
+                      onClick={() =>
+                        setSelectedObservationId(evidence.evidence_id)
+                      }
+                    >
+                      Подробнее
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : (
               <EmptyPanel>
-                No evidence has been persisted yet. Phase 6 will add live agent
-                tool activity.
+                No observations have been persisted yet. The event-driven agent
+                will add safe typed evidence as it investigates.
               </EmptyPanel>
             )}
           </article>
         </section>
 
         <section className="console-column timeline-column">
-          <article className="panel timeline-panel">
+          <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
                 <p className="panel-kicker">Persisted audit trail</p>
@@ -597,7 +694,7 @@ export function RunConsole({ runId }: { runId: string }) {
         </section>
 
         <section className="console-column">
-          <article className="panel">
+          <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Human boundary</p>
@@ -699,7 +796,7 @@ export function RunConsole({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel">
+          <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Registered outcome</p>
@@ -771,7 +868,7 @@ export function RunConsole({ runId }: { runId: string }) {
       <footer className="console-footer">
         <span>Persistent state: PostgreSQL</span>
         <span>Live transport: persisted SSE</span>
-        <span>AI agent wiring: Phase 6</span>
+        <span>AI dispatch: persisted event → native ADK</span>
       </footer>
     </main>
   );
