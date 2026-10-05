@@ -453,7 +453,7 @@ def test_database_constraint_accepts_every_declared_event_type():
     asyncio.run(scenario())
 
 
-def test_concurrent_event_writers_allocate_contiguous_per_run_sequence_and_outbox():
+def test_concurrent_event_writers_allocate_contiguous_sequence_without_generic_outbox():
     async def scenario() -> None:
         ids = _ids()
         engine, factory = _new_db()
@@ -482,7 +482,7 @@ def test_concurrent_event_writers_allocate_contiguous_per_run_sequence_and_outbo
                 event.event_type is ApplicationEventType.EXTERNAL_SIGNAL
                 for event in timeline
             )
-            assert await _event_outbox_counts(factory, ids) == (12, 12)
+            assert await _event_outbox_counts(factory, ids) == (12, 0)
         finally:
             await engine.dispose()
 
@@ -568,7 +568,7 @@ def test_lifecycle_service_uses_server_time_validates_context_and_supports_curso
                     ToolCallContext("OTHER-TENANT", ids["run"])
                 )
 
-            assert await _event_outbox_counts(factory, ids) == (3, 3)
+            assert await _event_outbox_counts(factory, ids) == (3, 0)
         finally:
             await engine.dispose()
 
@@ -810,7 +810,7 @@ def test_proposal_approval_action_timeline_is_complete_and_replay_is_not_duplica
                 == approved.work_order.work_order_id
             )
             assert after_replay[4].payload["status"] == "ACTIVE"
-            assert await _event_outbox_counts(factory, ids) == (5, 5)
+            assert await _event_outbox_counts(factory, ids) == (5, 0)
         finally:
             await engine.dispose()
 
