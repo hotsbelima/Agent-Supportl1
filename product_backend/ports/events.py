@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from product_backend.contracts.events import ApplicationEvent, ApplicationEventType
+from product_backend.contracts.events import (
+    ApplicationEvent,
+    ApplicationEventType,
+    ApplicationOutboxRecord,
+)
 
 
 class ApplicationEventRepository(Protocol):
@@ -27,4 +31,40 @@ class ApplicationEventRepository(Protocol):
     ) -> tuple[ApplicationEvent, ...]: ...
 
 
-__all__ = ["ApplicationEventRepository"]
+class ApplicationOutboxRepository(Protocol):
+    async def enqueue(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        event_seq: int,
+        topic: str,
+        payload: dict[str, Any],
+    ) -> ApplicationOutboxRecord: ...
+
+    async def claim_next(
+        self,
+        *,
+        topic: str,
+        lease_seconds: float,
+    ) -> ApplicationOutboxRecord | None: ...
+
+    async def mark_delivered(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        outbox_id: str,
+    ) -> ApplicationOutboxRecord: ...
+
+    async def reschedule(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        outbox_id: str,
+        delay_seconds: float,
+    ) -> ApplicationOutboxRecord: ...
+
+
+__all__ = ["ApplicationEventRepository", "ApplicationOutboxRepository"]
