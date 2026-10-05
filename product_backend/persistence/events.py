@@ -1,4 +1,4 @@
-"""PostgreSQL repository for safe application events and transactional outbox."""
+"""PostgreSQL repository for safe Product application events."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from product_backend.contracts.events import (
     validate_safe_event_payload,
 )
 
-from .tables import ApplicationEventRow, ApplicationOutboxRow, RunRow
+from .tables import ApplicationEventRow, RunRow
 
 
 Clock = Callable[[], datetime]
@@ -56,8 +56,10 @@ class SqlAlchemyApplicationEventRepository:
     """Allocate per-run sequence under a run-row lock.
 
     Locking the owning run serializes writers for that run. Different runs may
-    append concurrently. Each event also creates an outbox record in the same
-    database transaction so later delivery cannot observe a state/event split.
+    append concurrently. Phase 6A deliberately does not enqueue generic
+    application-event outbox rows: no consumer exists for them. The legacy
+    outbox table remains schema-only until Phase 6C either introduces a
+    dedicated durable ADK-resume consumer or deprecates it permanently.
     """
 
     def __init__(
@@ -115,29 +117,6 @@ class SqlAlchemyApplicationEventRepository:
             payload=safe_payload,
         )
         self._session.add(row)
-
-        outbox_payload = {
-            "event_id": event_id,
-            "event_type": event_type.value,
-            "seq": seq,
-            "occurred_at": occurred_at.isoformat(),
-            "payload": deepcopy(safe_payload),
-        }
-        validate_safe_event_payload(outbox_payload)
-        self._session.add(
-            ApplicationOutboxRow(
-                tenant_id=tenant_id,
-                run_id=run_id,
-                outbox_id=self._id_factory("outbox"),
-                event_seq=seq,
-                topic="application.event",
-                payload=outbox_payload,
-                created_at=occurred_at,
-                available_at=occurred_at,
-                delivered_at=None,
-                attempt_count=0,
-            )
-        )
 
         # Flush here so uniqueness/FK failures are raised inside the owning UoW,
         # not deferred beyond the application service boundary.
