@@ -21,6 +21,19 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Google ADK DatabaseSessionService owns these runtime tables. Product
+# Alembic must neither create nor propose dropping them during autogenerate/check.
+_ADK_OWNED_TABLES = frozenset(
+    {"adk_internal_metadata", "sessions", "events", "app_states", "user_states"}
+)
+
+
+def _include_object(object_, name, type_, reflected, compare_to) -> bool:
+    del object_, compare_to
+    if type_ == "table" and reflected and name in _ADK_OWNED_TABLES:
+        return False
+    return True
+
 
 def _database_url() -> str:
     raw_url = os.environ.get("DATABASE_URL")
@@ -38,6 +51,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=_include_object,
     )
 
     with context.begin_transaction():
@@ -49,6 +63,7 @@ def _run_sync_migrations(connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        include_object=_include_object,
     )
 
     with context.begin_transaction():
