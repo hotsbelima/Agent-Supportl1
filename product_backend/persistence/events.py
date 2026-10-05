@@ -59,9 +59,9 @@ class SqlAlchemyApplicationEventRepository:
 
     Locking the owning run serializes writers for that run. Different runs may
     append concurrently. Generic application events still do not create outbox
-    rows. Phase 7A uses the existing outbox table only for the concrete durable
-    operational-event -> ADK dispatch bridge, enqueued atomically by the
-    Scenario 1 start transaction for the persisted external signal.
+    rows. Concrete Product workflows enqueue only explicit dispatch records:
+    Scenario 1 uses its Phase 7A operational-event topic and Scenario 2 uses a
+    distinct Phase 7C signal topic awaiting its ADK consumer.
     """
 
     def __init__(
