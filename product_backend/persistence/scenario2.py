@@ -12,14 +12,43 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from product_backend.contracts.scenario2_signal import validate_operational_signal
-from product_backend.domain.enums import IncidentStatus
+from product_backend.domain.enums import HealthState, IncidentStatus
 from product_backend.domain.scenario2 import (
     OperationalSignal,
+    Scenario2FixtureState,
     Scenario2SignalSource,
     ServiceIncident,
 )
 
-from .tables import OperationalSignalRow, ServiceIncidentRow
+from .tables import (
+    OperationalSignalRow,
+    Scenario2FixtureStateRow,
+    ServiceIncidentRow,
+)
+
+
+def _fixture_state_from_row(
+    row: Scenario2FixtureStateRow,
+) -> Scenario2FixtureState:
+    return Scenario2FixtureState(
+        tenant_id=row.tenant_id,
+        run_id=row.run_id,
+        dependency_status=HealthState(row.dependency_status),
+        matching_major_incident_id=row.matching_major_incident_id,
+        updated_at=row.updated_at,
+    )
+
+
+def _fixture_state_to_row(
+    state: Scenario2FixtureState,
+) -> Scenario2FixtureStateRow:
+    return Scenario2FixtureStateRow(
+        tenant_id=state.tenant_id,
+        run_id=state.run_id,
+        dependency_status=state.dependency_status.value,
+        matching_major_incident_id=state.matching_major_incident_id,
+        updated_at=state.updated_at,
+    )
 
 
 def _service_incident_from_row(row: ServiceIncidentRow) -> ServiceIncident:
@@ -81,6 +110,55 @@ def _signal_to_row(signal: OperationalSignal) -> OperationalSignalRow:
         safe_payload=deepcopy(signal.safe_payload),
         incident_id=signal.incident_id,
     )
+
+
+class SqlAlchemyScenario2FixtureStateRepository:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        lock_for_update: bool = False,
+    ) -> None:
+        self._session = session
+        self._lock_for_update = lock_for_update
+
+    async def add(self, state: Scenario2FixtureState) -> None:
+        self._session.add(_fixture_state_to_row(state))
+        await self._session.flush()
+
+    async def get(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> Scenario2FixtureState | None:
+        statement = select(Scenario2FixtureStateRow).where(
+            Scenario2FixtureStateRow.tenant_id == tenant_id,
+            Scenario2FixtureStateRow.run_id == run_id,
+        )
+        if self._lock_for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
+        row = result.scalar_one_or_none()
+        return _fixture_state_from_row(row) if row is not None else None
+
+    async def save(self, state: Scenario2FixtureState) -> None:
+        statement = (
+            select(Scenario2FixtureStateRow)
+            .where(
+                Scenario2FixtureStateRow.tenant_id == state.tenant_id,
+                Scenario2FixtureStateRow.run_id == state.run_id,
+            )
+            .with_for_update()
+        )
+        result = await self._session.execute(statement)
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise ValueError("Scenario 2 fixture state does not exist")
+        row.dependency_status = state.dependency_status.value
+        row.matching_major_incident_id = state.matching_major_incident_id
+        row.updated_at = state.updated_at
+        await self._session.flush()
 
 
 class SqlAlchemyServiceIncidentRepository:
@@ -214,5 +292,6 @@ class SqlAlchemyOperationalSignalRepository:
 
 __all__ = [
     "SqlAlchemyOperationalSignalRepository",
+    "SqlAlchemyScenario2FixtureStateRepository",
     "SqlAlchemyServiceIncidentRepository",
 ]
