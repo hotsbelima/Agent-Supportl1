@@ -200,7 +200,7 @@ export function StartScenario() {
         <p className="scenario-demonstrates">{selected.demonstrates}</p>
       </div>
 
-      <div className="readiness-row">
+      <div className="readiness-row" role="status" aria-live="polite">
         <span
           className="status-dot"
           data-state={
