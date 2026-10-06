@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import os
@@ -56,6 +57,7 @@ class _OperationalEventCorrelation:
     final_answer: str | None
     pending_proposal_id: str | None
     paused_function_call_id: str | None
+    proposal_created_without_wait: bool
 
 
 def _safe_event_text(event: Any) -> str | None:
@@ -108,30 +110,94 @@ def _operational_event_id(event: Any) -> str | None:
     return event_id if isinstance(event_id, str) and event_id else None
 
 
+def _successful_pending_proposal_ids(
+    event: Any,
+    *,
+    tool_names: frozenset[str],
+) -> tuple[str, ...]:
+    """Extract successful PENDING_APPROVAL proposal IDs from Product tool responses."""
+    get_responses = getattr(event, "get_function_responses", None)
+    if not callable(get_responses):
+        return ()
+
+    proposal_ids: list[str] = []
+    for response in get_responses():
+        if response.name not in tool_names:
+            continue
+        payload = response.response
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            continue
+        proposal = payload.get("proposal")
+        if not isinstance(proposal, dict):
+            continue
+        proposal_id = proposal.get("proposal_id")
+        if (
+            proposal.get("status") == "PENDING_APPROVAL"
+            and isinstance(proposal_id, str)
+            and proposal_id
+        ):
+            proposal_ids.append(proposal_id)
+    return tuple(proposal_ids)
+
+
+def _pending_field_visit_proposal_id(event: Any) -> str | None:
+    proposal_ids = _successful_pending_proposal_ids(
+        event,
+        tool_names=frozenset({"propose_field_visit"}),
+    )
+    if len(set(proposal_ids)) > 1:
+        raise RuntimeError(
+            "Device-Incident invocation returned multiple pending field-visit proposals"
+        )
+    return proposal_ids[-1] if proposal_ids else None
+
+
 def _find_operational_event_correlation(
     events: list[Any],
     *,
     operational_event_id: str,
 ) -> _OperationalEventCorrelation | None:
-    invocation_id: str | None = None
-    for event in events:
-        if _operational_event_id(event) == operational_event_id:
-            invocation_id = event.invocation_id
-
-    if invocation_id is None:
+    invocation_ids = {
+        event.invocation_id
+        for event in events
+        if _operational_event_id(event) == operational_event_id
+        and getattr(event, "invocation_id", None)
+    }
+    if not invocation_ids:
         return None
+    if len(invocation_ids) != 1:
+        raise RuntimeError(
+            "Product operational event is correlated to multiple native invocations"
+        )
+    invocation_id = next(iter(invocation_ids))
 
     settled = False
     final_answer: str | None = None
     pending_proposal_id: str | None = None
     paused_function_call_id: str | None = None
+    proposal_created_without_wait = False
 
     for event in events:
         if getattr(event, "invocation_id", None) != invocation_id:
             continue
 
-        long_running_ids = set(event.long_running_tool_ids or [])
-        for call in event.get_function_calls():
+        created_proposal_id = _pending_field_visit_proposal_id(event)
+        if created_proposal_id is not None:
+            if (
+                pending_proposal_id is not None
+                and pending_proposal_id != created_proposal_id
+            ):
+                raise RuntimeError(
+                    "Device-Incident invocation created multiple pending proposals"
+                )
+            pending_proposal_id = created_proposal_id
+            proposal_created_without_wait = True
+
+        long_running_ids = set(
+            getattr(event, "long_running_tool_ids", None) or []
+        )
+        get_calls = getattr(event, "get_function_calls", None)
+        for call in (get_calls() if callable(get_calls) else []):
             if (
                 call.name == WAIT_FOR_HUMAN_DECISION_TOOL
                 and call.id
@@ -139,10 +205,19 @@ def _find_operational_event_correlation(
             ):
                 args = dict(call.args or {})
                 proposal_id = args.get("proposal_id")
-                if isinstance(proposal_id, str) and proposal_id:
-                    pending_proposal_id = proposal_id
-                    paused_function_call_id = call.id
-                    settled = True
+                if not isinstance(proposal_id, str) or not proposal_id:
+                    continue
+                if pending_proposal_id is None:
+                    raise RuntimeError(
+                        "Device-Incident native wait has no successful Product proposal"
+                    )
+                if pending_proposal_id != proposal_id:
+                    raise RuntimeError(
+                        "Device-Incident native wait does not match Product proposal"
+                    )
+                paused_function_call_id = call.id
+                proposal_created_without_wait = False
+                settled = True
 
         is_final = getattr(event, "is_final_response", None)
         if callable(is_final) and is_final():
@@ -155,12 +230,31 @@ def _find_operational_event_correlation(
         if actions is not None and getattr(actions, "end_of_agent", False):
             settled = True
 
+    if paused_function_call_id is not None:
+        response_delivered = any(
+            getattr(event, "invocation_id", None) == invocation_id
+            and getattr(event, "author", None) == "user"
+            and callable(getattr(event, "get_function_responses", None))
+            and any(
+                response.name == WAIT_FOR_HUMAN_DECISION_TOOL
+                and response.id == paused_function_call_id
+                for response in event.get_function_responses()
+            )
+            for event in events
+        )
+        if response_delivered:
+            paused_function_call_id = None
+
+    if proposal_created_without_wait:
+        settled = False
+
     return _OperationalEventCorrelation(
         invocation_id=invocation_id,
         settled=settled,
         final_answer=final_answer,
         pending_proposal_id=pending_proposal_id,
         paused_function_call_id=paused_function_call_id,
+        proposal_created_without_wait=proposal_created_without_wait,
     )
 
 
@@ -170,26 +264,45 @@ def _find_human_decision_correlation(
     session_id: str,
     proposal_id: str,
 ) -> _HumanDecisionCorrelation | None:
-    """Resolve Product proposal -> native ADK invocation/function-call link.
+    """Resolve only a successful Product proposal -> exact native wait link.
 
-    Correlation lives in the persistent native ADK Session Event stream:
-    proposal_id is an argument of await_human_decision, while invocation_id and
-    function-call id are framework-owned event metadata. A matching user
-    FunctionResponse proves decision delivery. Completion is separate: a
-    provider failure may happen after the FunctionResponse was persisted.
+    A wait call is eligible only when the same invocation previously observed a
+    successful PENDING_APPROVAL response from the corresponding Product proposal
+    tool. This supports both device-Incident field visits and the existing
+    Scenario 2 Major Incident path without trusting a bare model-supplied ID.
     """
+    created_by_invocation: dict[str, set[str]] = {}
     candidates: list[tuple[int, _HumanDecisionCorrelation]] = []
+    proposal_tools = frozenset({"propose_field_visit", "propose_major_incident"})
 
     for index, event in enumerate(events):
-        for call in event.get_function_calls():
+        invocation_id = getattr(event, "invocation_id", None)
+        if not invocation_id:
+            continue
+
+        created = created_by_invocation.setdefault(invocation_id, set())
+        created.update(
+            _successful_pending_proposal_ids(
+                event,
+                tool_names=proposal_tools,
+            )
+        )
+
+        long_running_ids = set(
+            getattr(event, "long_running_tool_ids", None) or []
+        )
+        get_calls = getattr(event, "get_function_calls", None)
+        for call in (get_calls() if callable(get_calls) else []):
             if (
                 call.name != WAIT_FOR_HUMAN_DECISION_TOOL
                 or not call.id
-                or not getattr(event, "invocation_id", None)
+                or call.id not in long_running_ids
             ):
                 continue
             args = dict(call.args or {})
             if args.get("proposal_id") != proposal_id:
+                continue
+            if proposal_id not in created:
                 continue
             candidates.append(
                 (
@@ -197,7 +310,7 @@ def _find_human_decision_correlation(
                     _HumanDecisionCorrelation(
                         proposal_id=proposal_id,
                         session_id=session_id,
-                        invocation_id=event.invocation_id,
+                        invocation_id=invocation_id,
                         function_call_id=call.id,
                         response_delivered=False,
                         completed=False,
@@ -215,10 +328,13 @@ def _find_human_decision_correlation(
             continue
         if getattr(event, "author", None) != "user":
             continue
+        get_responses = getattr(event, "get_function_responses", None)
+        if not callable(get_responses):
+            continue
         if any(
             response.name == WAIT_FOR_HUMAN_DECISION_TOOL
             and response.id == latest.function_call_id
-            for response in event.get_function_responses()
+            for response in get_responses()
         ):
             response_index = index
 
@@ -235,10 +351,12 @@ def _find_human_decision_correlation(
         if actions is not None and getattr(actions, "end_of_agent", False):
             completed = True
             break
+        get_calls = getattr(event, "get_function_calls", None)
+        get_responses = getattr(event, "get_function_responses", None)
         if (
-            not event.get_function_calls()
-            and not event.get_function_responses()
-            and not set(event.long_running_tool_ids or [])
+            not (get_calls() if callable(get_calls) else [])
+            and not (get_responses() if callable(get_responses) else [])
+            and not set(getattr(event, "long_running_tool_ids", None) or [])
             and _safe_event_text(event)
         ):
             completed = True
@@ -254,16 +372,21 @@ def _find_human_decision_correlation(
     )
 
 
-class Scenario1AgentRuntime:
-    """One resumable ADK Agent + Runner with persistent native sessions/events."""
+class DeviceIncidentAgentRuntime:
+    """Shared resumable native runtime for Scenario 1 and Scenario 3."""
 
     def __init__(
         self,
         *,
-        adapter: Scenario1ToolAdapter,
+        adapter: Any,
         session_service: DatabaseSessionService,
+        scenario_id: str,
+        agent_builder: Callable[[Any], Any],
     ) -> None:
-        agent = build_scenario1_agent(adapter)
+        if scenario_id not in {"scenario-1", "scenario-3"}:
+            raise ValueError("unsupported device-Incident scenario_id")
+        self._scenario_id = scenario_id
+        agent = agent_builder(adapter)
         app = App(
             name=ADK_APP_NAME,
             root_agent=agent,
@@ -357,7 +480,7 @@ class Scenario1AgentRuntime:
 
         envelope = {
             "type": "operational_signal",
-            "scenario": "scenario-1",
+            "scenario": self._scenario_id,
             "payload": operational_signal,
         }
         if operational_event_id:
@@ -380,8 +503,15 @@ class Scenario1AgentRuntime:
             correlation.invocation_id if correlation is not None else None
         )
         final_answer: str | None = None
-        pending_proposal_id: str | None = None
+        pending_proposal_id: str | None = (
+            correlation.pending_proposal_id if correlation is not None else None
+        )
         paused_function_call_id: str | None = None
+        proposal_created_without_wait = (
+            correlation.proposal_created_without_wait
+            if correlation is not None
+            else False
+        )
 
         if correlation is not None:
             stream = self._runner.run_async(
@@ -401,8 +531,23 @@ class Scenario1AgentRuntime:
             if invocation_id is None and event.invocation_id:
                 invocation_id = event.invocation_id
 
-            long_running_ids = set(event.long_running_tool_ids or [])
-            for call in event.get_function_calls():
+            created_proposal_id = _pending_field_visit_proposal_id(event)
+            if created_proposal_id is not None:
+                if (
+                    pending_proposal_id is not None
+                    and pending_proposal_id != created_proposal_id
+                ):
+                    raise RuntimeError(
+                        "Device-Incident invocation created multiple pending proposals"
+                    )
+                pending_proposal_id = created_proposal_id
+                proposal_created_without_wait = True
+
+            long_running_ids = set(
+                getattr(event, "long_running_tool_ids", None) or []
+            )
+            get_calls = getattr(event, "get_function_calls", None)
+            for call in (get_calls() if callable(get_calls) else []):
                 if (
                     call.name == WAIT_FOR_HUMAN_DECISION_TOOL
                     and call.id
@@ -410,15 +555,29 @@ class Scenario1AgentRuntime:
                 ):
                     args = dict(call.args or {})
                     proposal_id = args.get("proposal_id")
-                    if isinstance(proposal_id, str) and proposal_id:
-                        pending_proposal_id = proposal_id
-                        paused_function_call_id = call.id
-                        invocation_id = event.invocation_id or invocation_id
+                    if not isinstance(proposal_id, str) or not proposal_id:
+                        continue
+                    if pending_proposal_id is None:
+                        raise RuntimeError(
+                            "Device-Incident native wait has no successful Product proposal"
+                        )
+                    if pending_proposal_id != proposal_id:
+                        raise RuntimeError(
+                            "Device-Incident native wait does not match Product proposal"
+                        )
+                    paused_function_call_id = call.id
+                    proposal_created_without_wait = False
+                    invocation_id = event.invocation_id or invocation_id
 
             if event.is_final_response():
                 text = _safe_event_text(event)
                 if text:
                     final_answer = text
+
+        if proposal_created_without_wait:
+            raise RuntimeError(
+                "Pending field-visit proposal has no exact native wait correlation"
+            )
 
         return AgentInvocationResult(
             session_id=run_id,
@@ -532,3 +691,30 @@ class Scenario1AgentRuntime:
             final_answer=final_answer,
             already_resumed=False,
         )
+
+
+class Scenario1AgentRuntime(DeviceIncidentAgentRuntime):
+    """Historical Scenario 1 name backed by the shared device-Incident runtime."""
+
+    def __init__(
+        self,
+        *,
+        adapter: Scenario1ToolAdapter,
+        session_service: DatabaseSessionService,
+    ) -> None:
+        super().__init__(
+            adapter=adapter,
+            session_service=session_service,
+            scenario_id="scenario-1",
+            agent_builder=build_scenario1_agent,
+        )
+
+
+__all__ = [
+    "AgentInvocationResult",
+    "AgentResumeResult",
+    "DeviceIncidentAgentRuntime",
+    "Scenario1AgentRuntime",
+    "_find_human_decision_correlation",
+    "_latest_final_answer",
+]
