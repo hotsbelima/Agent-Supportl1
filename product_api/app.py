@@ -60,6 +60,10 @@ from product_backend.application.scenario2_read_tools import (
     Scenario2EvidenceTtlPolicy,
     Scenario2ReadToolService,
 )
+from product_backend.application.scenario3_provider_reads import (
+    Scenario3ProviderEvidenceTtlPolicy,
+    Scenario3ProviderReadService,
+)
 from product_backend.application.scenario2_results import (
     MajorIncidentDecisionProcessed,
     Scenario2OperationFailure,
@@ -104,6 +108,8 @@ from .dispatch import Scenario1DispatchWorker, Scenario2DispatchWorker
 from .scenario1_fixture import Scenario1FixtureSources
 from .scenario2_simulator import Scenario2SimulatorService
 from .scenario2_sources import PersistedScenario2FixtureSources
+from .scenario3_fixture import Scenario3FixtureSources
+from .scenario3_sources import Scenario3ProviderSources
 from .schemas import (
     AcceptanceAccessLinkStateRequest,
     AcceptanceAccessLinkStateResponse,
@@ -180,6 +186,9 @@ class ProductApiContainer:
     scenario2_approval_service: MajorIncidentApprovalService | None = None
     scenario2_simulator: Scenario2SimulatorService | None = None
     scenario2_sources: PersistedScenario2FixtureSources | None = None
+    scenario3_fixture: Scenario3FixtureSources | None = None
+    scenario3_sources: Scenario3ProviderSources | None = None
+    scenario3_provider_read_service: Scenario3ProviderReadService | None = None
 
     async def close(self) -> None:
         if self.scenario2_agent_runtime is not None:
@@ -283,6 +292,17 @@ def build_container_from_env() -> ProductApiContainer:
         agent_runtime=scenario2_agent_runtime,
     )
 
+    scenario3_fixture = Scenario3FixtureSources()
+    scenario3_sources = Scenario3ProviderSources()
+    scenario3_provider_read_service = Scenario3ProviderReadService(
+        read_uow_factory=lambda: SqlAlchemyToolReadUnitOfWork(session_factory),
+        dependency_mapping=scenario3_sources,
+        dependency_status=scenario3_sources,
+        ttl_policy=Scenario3ProviderEvidenceTtlPolicy(
+            external_dependency_status=timedelta(minutes=2),
+        ),
+    )
+
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
             lambda: SqlAlchemyRunStartUnitOfWork(session_factory)
@@ -314,6 +334,9 @@ def build_container_from_env() -> ProductApiContainer:
         scenario2_approval_service=scenario2_approval_service,
         scenario2_simulator=scenario2_simulator,
         scenario2_sources=scenario2_sources,
+        scenario3_fixture=scenario3_fixture,
+        scenario3_sources=scenario3_sources,
+        scenario3_provider_read_service=scenario3_provider_read_service,
     )
 
 
@@ -692,6 +715,11 @@ def create_app(
                 and services.scenario2_agent_runtime is not None
                 and services.scenario2_agent_runtime.resumability_wired
             ),
+            "scenario3_phase8c1_provider_reads_wired": (
+                services.scenario3_fixture is not None
+                and services.scenario3_sources is not None
+                and services.scenario3_provider_read_service is not None
+            ),
         }
 
     @app.post(
@@ -745,6 +773,46 @@ def create_app(
         if services.dispatch_worker is not None:
             services.dispatch_worker.wake()
 
+        return run_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/scenario-3/runs",
+        response_model=RunStateResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=_ERROR_RESPONSES,
+    )
+    async def start_scenario3_run(
+        request: Request,
+        tenant_id: TenantId,
+    ) -> RunStateResponse:
+        services = _container(request)
+        if services.scenario3_fixture is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO3_NOT_CONFIGURED",
+                message="Scenario 3 Product foundation is not configured.",
+                retryable=False,
+            )
+
+        started = await services.start_service.start(
+            tenant_id=tenant_id,
+            bootstrap=services.scenario3_fixture.bootstrap(),
+        )
+        snapshot = await services.state_service.get(
+            tenant_id=tenant_id,
+            run_id=started.run.run_id,
+        )
+        if snapshot is None:
+            _raise_api_error(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="STATE_PERSISTENCE_FAILED",
+                message="Scenario 3 run state is unavailable after start.",
+                retryable=True,
+            )
+
+        # Phase 8C1 persists the generic device-Incident dispatch envelope but
+        # deliberately does not provision/wake native ADK. Scenario-aware
+        # runtime selection on this shared topic is implemented in Phase 8C2.
         return run_state_response(snapshot)
 
     @app.post(
