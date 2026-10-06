@@ -5,8 +5,8 @@
 **Repository:** `hotsbelima/Agent-Supportl1`  
 **Implementation branch:** `phase-9b-public-demo-hardening`  
 **Base:** `phase-9a-ui-polish`  
-**Validated implementation SHA:** `b23d886e69a66f8633a48f88e78da4552ec515d5`  
-**GitHub Actions:** Phase 9B run `37536284809` — SUCCESS
+**Validated implementation SHA:** `5147057689bc44ec5722317e0fdf6aeb0aa5ab11`  
+**GitHub Actions:** Phase 9B run `37538822286` — SUCCESS
 
 ## Scope decision
 
@@ -30,7 +30,10 @@ In public-demo mode the server uses `PUBLIC_DEMO_TENANT_ID` as the Product
 tenant context.
 
 The browser may continue sending `X-Tenant-ID` for compatibility, but the
-server ignores that value in public mode. The header may also be absent.
+server ignores that value in public mode. The header may also be absent or
+invalid without changing server-side tenant selection.
+
+When `PUBLIC_DEMO=true`, `PUBLIC_DEMO_TENANT_ID` must be explicitly configured.
 
 This is a demo isolation rule, not authentication.
 
@@ -40,6 +43,7 @@ Public-demo middleware returns safe `404 NOT_FOUND` before request/body
 validation for:
 
 - `/api/v1/runs/{run_id}/agent/invoke`;
+- direct Scenario 2 `/signals` ingestion;
 - Scenario 2 dependency-status acceptance control;
 - Scenario 2 matching-major-incident acceptance control;
 - Phase 6D acceptance access-link hook.
@@ -65,8 +69,9 @@ quota error.
 
 The existing exact-origin CORS implementation is reused.
 
-When `PUBLIC_DEMO=true`, `FRONTEND_ORIGINS` must be explicitly configured.
-Wildcard origins remain rejected.
+When `PUBLIC_DEMO=true`, `FRONTEND_ORIGINS` must resolve to at least one valid
+exact http(s) origin. Wildcards, malformed origins and an empty origin list are
+rejected.
 
 ### Secret/static audit
 
@@ -115,8 +120,8 @@ Phase 9E.
 
 ## Verification
 
-Phase 9B run `37536284809` passed on implementation SHA
-`b23d886e69a66f8633a48f88e78da4552ec515d5`:
+Phase 9B run `37538822286` passed on implementation SHA
+`5147057689bc44ec5722317e0fdf6aeb0aa5ab11`:
 
 - Python dependency consistency;
 - Python compile;
@@ -140,6 +145,23 @@ The Phase 9B tests specifically prove:
 - internal/acceptance routes return `404` even with malformed JSON;
 - non-public tenant behavior is preserved;
 - health exposes release/public-demo identity safely.
+
+## Second audit corrections
+
+The second Phase 9B audit found and fixed five issues:
+
+- direct Scenario 2 raw signal ingestion could bypass the new-run cooldown; it
+  is now hidden in public-demo mode while the finite simulator remains public;
+- browser tenant-header validation could run before fixed server-side tenant
+  selection; public mode now ignores that header before tenant validation;
+- exact-origin CORS validation now applies to both environment and injected
+  configuration, including rejection of an empty public-demo origin list;
+- public-demo startup now requires an explicit `PUBLIC_DEMO_TENANT_ID`;
+- the frontend `HealthResponse` type now includes the Phase 9B release fields.
+
+The audit also confirmed that proposal decision replay is idempotent and that
+the Scenario 2 simulator has a finite canonical sequence, so no larger
+rate-limiting subsystem was added.
 
 ## Regression compatibility correction
 
