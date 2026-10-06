@@ -531,7 +531,7 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Статус</dt>
-                    <dd>{selectedIncident.status}</dd>
+                    <dd>{statusLabel(selectedIncident.status)}</dd>
                   </div>
                   <div>
                     <dt>Устройство</dt>
@@ -607,7 +607,7 @@ export function RunConsole({ runId }: { runId: string }) {
                     <dd>{formatTimestamp(selectedObservation.captured_at)}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Evidence ID</dt>
+                    <dt>ID наблюдения</dt>
                     <dd><code>{selectedObservation.evidence_id}</code></dd>
                   </div>
                   <div className="wide">
