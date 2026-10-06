@@ -428,6 +428,19 @@ class MajorIncidentApprovalService:
             )
 
         async with self._uow_factory() as uow:
+            # Lock order is Run -> Proposal, matching proposal creation and
+            # avoiding an approval/create deadlock pair.
+            run = await uow.runs.get(
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+            )
+            if run is None:
+                return _failure(
+                    ErrorCode.CONTEXT_MISMATCH,
+                    "Run context is not valid.",
+                    "run_not_found",
+                )
+
             proposal = await uow.major_incident_proposals.get(
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,
@@ -480,16 +493,6 @@ class MajorIncidentApprovalService:
                     "proposal_not_pending",
                 )
 
-            run = await uow.runs.get(
-                tenant_id=context.tenant_id,
-                run_id=context.run_id,
-            )
-            if run is None:
-                return _failure(
-                    ErrorCode.CONTEXT_MISMATCH,
-                    "Run context is not valid.",
-                    "run_not_found",
-                )
             if run.status is not RunStatus.WAITING_APPROVAL or not can_transition(
                 RUN_TRANSITIONS,
                 run.status,
