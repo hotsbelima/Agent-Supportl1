@@ -218,7 +218,7 @@ export function displayApiError(error: unknown): string {
       return "Gemini не настроен на Product API.";
     }
     if (error.code === "RUN_NOT_FOUND") {
-      return "Запуск не найден в текущем demo tenant.";
+      return "Запуск не найден в текущем демонстрационном контуре.";
     }
     if (error.status >= 500) {
       return `Product API временно недоступен (${error.code}).`;
