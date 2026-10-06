@@ -31,6 +31,14 @@ def _require_database() -> None:
         pytest.skip("DATABASE_URL is required for Product API integration tests")
 
 
+def test_public_demo_requires_explicit_tenant_when_enabled(monkeypatch):
+    monkeypatch.setenv("PUBLIC_DEMO", "true")
+    monkeypatch.delenv("PUBLIC_DEMO_TENANT_ID", raising=False)
+
+    with pytest.raises(RuntimeError, match="PUBLIC_DEMO_TENANT_ID"):
+        PublicDemoSettings.from_env()
+
+
 def test_public_demo_requires_explicit_exact_frontend_origins(monkeypatch):
     monkeypatch.delenv("FRONTEND_ORIGINS", raising=False)
 
