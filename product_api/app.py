@@ -455,8 +455,8 @@ def create_app(
         version="0.7.0",
         description=(
             "Scenario 1 retains Phase 7A native ADK dispatch. Scenario 2 adds "
-            "Product-owned persisted event ingestion and a durable dedicated "
-            "dispatch queue; its ADK consumer is intentionally not wired yet."
+            "Product-owned persisted event ingestion plus a dedicated durable "
+            "native ADK dispatch consumer for Phase 7C continuity."
         ),
         lifespan=lifespan,
     )
