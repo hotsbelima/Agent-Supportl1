@@ -267,7 +267,8 @@ Close the carried-forward light/white UI debt.
 
 Target:
 
-- light / white primary surface;
+- dark interface remains the default public experience;
+- light / white theme is available as an explicit user option and must not replace or remove the dark theme;
 - clear enterprise-operations visual language;
 - strong hierarchy rather than dashboard clutter;
 - readable evidence/timeline/proposal cards;
@@ -283,7 +284,17 @@ The core mental model remains:
 
 `operational event -> investigation -> Evidence -> proposal -> human decision -> action`
 
-## 9A.6 Reasoning privacy
+## 9A.6 Russian public UI and canonical terminology
+
+The public browser UI is Russian.
+
+Canonical English entity names and wire-level terminology must remain preserved
+in repository documentation/code contracts so UI localization does not rename
+domain concepts, API fields, event types or persistence semantics.
+
+At minimum keep a Russian-to-English entity glossary in the repository.
+
+## 9A.7 Reasoning privacy
 
 The UI may show:
 
@@ -828,7 +839,7 @@ Release:
 | --- | :---: | :---: | :---: | :---: | :---: |
 | Three-scenario launcher | X |  | X | X | X |
 | Scenario 2 browser demo | X |  | X | X | X |
-| Light/white final UI | X |  | X |  | X |
+| Dark-default UI + optional light theme | X |  | X |  | X |
 | Loading/empty/error/reconnect states | X |  | X |  | X |
 | New simulation without deleting history | X |  | X | X | X |
 | Acceptance/debug routes protected |  | X | X | X | X |
@@ -850,7 +861,7 @@ Phase 9 is DONE only when all of the following are true:
 
 1. all three completed scenarios are available through the final browser
    experience;
-2. the carried light/white UI debt is closed;
+2. the carried light/white UI debt is closed by an optional light theme while the dark theme remains the default;
 3. user-visible failure/recovery states are intentional;
 4. a new simulation never destroys previous audit history;
 5. public deployment does not expose acceptance/debug mutation controls;
@@ -878,7 +889,7 @@ Phase 9A should first deliver:
 
 1. three-scenario public launcher;
 2. Scenario 2 browser integration using existing Product APIs;
-3. final light/white visual system;
+3. final dark-default visual system with an optional light/white theme;
 4. New simulation / return-to-scenarios behavior without destructive reset;
 5. complete loading/empty/error/reconnect states;
 6. deterministic frontend/API coverage for the new UI behavior.
