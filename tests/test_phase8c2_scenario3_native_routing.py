@@ -38,7 +38,9 @@ from product_backend.domain.enums import (
     ActionType,
     ApprovalDecision,
     DiagnosisCode,
+    DiagnosticType,
     IncidentStatus,
+    OperationalState,
     ProposalStatus,
     RunStatus,
 )
@@ -151,6 +153,42 @@ def _tool_schema(tool: object) -> dict[str, Any]:
         by_alias=True,
         exclude_none=True,
     )
+
+
+def test_phase8c2_scenario1_and_scenario3_share_authoritative_access_link_truth():
+    async def scenario() -> None:
+        tenant_id = "TENANT-S3-8C2-SHARED-TRUTH"
+        run_id = "RUN-S3-8C2-SHARED-TRUTH"
+
+        with TestClient(create_app()) as client:
+            container = client.app.state.product_container
+            assert container.scenario3_fixture is not None
+
+            container.scenario3_fixture.set_access_link_operational_state(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                operational_state=OperationalState.UP,
+            )
+
+            scenario1_view = await container.fixture.run_diagnostic(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                diagnostic_type=DiagnosticType.ACCESS_LINK,
+                target_id="ATT-KZN17-POS02",
+            )
+            scenario3_view = await container.scenario3_fixture.run_diagnostic(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                diagnostic_type=DiagnosticType.ACCESS_LINK,
+                target_id="ATT-KZN17-POS02",
+            )
+
+            assert scenario1_view is not None
+            assert scenario3_view is not None
+            assert scenario1_view.operational_state is OperationalState.UP
+            assert scenario3_view.operational_state is OperationalState.UP
+
+    asyncio.run(scenario())
 
 
 def test_phase8c2_scenario3_tool_surface_is_exact_and_trusted_context_is_hidden():
