@@ -5,8 +5,8 @@ Status: **PASS — native Scenario 3 composition, shared device-Incident routing
 Base:
 - Phase 8C1 final branch head: `73cfefe0659f5a63c0ab57ae8eec70492a551c0b`
 - branch: `phase-8c2-scenario3-native-routing`
-- reviewed Phase 8C2 code checkpoint: `e927a6c07757dcc328c7c5df6fe37080ff8c1b76`
-- deterministic GitHub Actions run: `37495196318` — **SUCCESS**
+- reviewed Phase 8C2 code checkpoint: `9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`
+- deterministic GitHub Actions run: `37504606915` — **SUCCESS**
 
 ## Scope implemented
 
@@ -179,6 +179,33 @@ before checking redelivery correlation.
 
 Production behavior was not weakened to preserve the obsolete synthetic trace.
 
+## Post-implementation review correction
+
+A second code-level review found one real Scenario 3 stale-path composition
+defect that the original 8C2 gate did not exercise.
+
+Scenario 3 local diagnostics used `Scenario3FixtureSources`, while
+`FieldVisitApprovalService` revalidated current CMDB/monitoring truth through a
+separate `Scenario1FixtureSources` instance. Both instances had the same
+canonical topology/default state, but their process-local access-link override
+stores were independent. Therefore a Scenario 3 deterministic stale transition
+`OperationalState.DOWN -> OperationalState.UP` could be visible to Scenario 3
+diagnostic reads while approval revalidation still observed stale DOWN truth.
+
+The composition is now corrected without cloning approval logic or introducing
+Scenario 3 business state:
+
+- Scenario 1 and Scenario 3 keep separate bootstrap fixture objects;
+- both fixture objects receive one shared authoritative access-link override
+  store for the common physical topology;
+- Field Service approval revalidation and Scenario 3 diagnostic reads therefore
+  observe the same process-local source truth;
+- the existing Scenario 1 acceptance override semantics remain intact.
+
+A focused regression test now proves that an override applied through the
+Scenario 3 fixture is observed identically through the Scenario 1 source used by
+Field Service revalidation.
+
 ## Schema / architecture audit
 
 Compared with final Phase 8C1, Phase 8C2 adds no migration or business table.
@@ -205,16 +232,16 @@ Phase 8C2 also adds:
 
 Final deterministic code gate on:
 
-`e927a6c07757dcc328c7c5df6fe37080ff8c1b76`
+`9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`
 
 GitHub Actions run:
 
-`37495196318` — **SUCCESS**
+`37504606915` — **SUCCESS**
 
 Results:
 
 - focused Phase 8C1 regression: **5 passed**;
-- focused Phase 8C2 tests: **7 passed**;
+- focused Phase 8C2 tests: **8 passed**;
 - Alembic: **`20261006_0006 (head)`**;
 - Alembic autogenerate check: **No new upgrade operations detected**;
 - full Python regression: **207 passed**;
