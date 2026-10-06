@@ -5,7 +5,7 @@
 **Project:** Autonomous L1 Incident Agent  
 **Current development stop point:** **Phase 8C1 = DONE / PASS; Phase 8C2 = NEXT**  
 **Last live-validated code baseline:** `2f8dae61c06afd0f134c58e90aba0591a013a31e`  
-**Latest deterministic Phase 8 implementation checkpoint:** `7929f8ed7afc2734b5db77e0d200af9b5029fa89`
+**Latest deterministic Phase 8 implementation checkpoint:** `ceccf0f59950105e71fb35435118d3a26b473497`
 
 ---
 
@@ -50,7 +50,7 @@ When sources conflict, use this order:
 3. `Phase_8B_Contract_Tool_Gap_Analysis_and_Implementation_Plan_REVIEWED.md`
 4. `Phase_8A_Scenario_3_Specification_REVIEWED.md`
 5. cumulative handoff v7.0 / v6.9 for historical detail
-6. repository code at `7929f8ed7afc2734b5db77e0d200af9b5029fa89`
+6. repository code at `ceccf0f59950105e71fb35435118d3a26b473497`
 7. Phase 7 implementation notes/specs for historical detail
 
 The reviewed Phase 8B document supersedes the earlier non-reviewed Phase 8B draft.
@@ -753,16 +753,19 @@ Required deterministic PASS:
 Phase 8C1 implementation result:
 
 - branch: `phase-8c1-scenario3-provider-reads`;
-- implementation checkpoint: `7929f8ed7afc2734b5db77e0d200af9b5029fa89`;
-- deterministic CI run: `37485997182` — SUCCESS;
+- implementation checkpoint: `ceccf0f59950105e71fb35435118d3a26b473497`;
+- deterministic CI run: `37491364260` — SUCCESS;
 - `POST /api/v1/scenario-3/runs` creates one real device Incident and persists the existing generic device-Incident outbox envelope atomically;
 - Scenario 3 safe bootstrap persists `service_key=payment_gateway` and `symptom_key=payment_gateway_timeout` only in the existing initial Product signal shape;
 - provider reads are bound to those persisted Product facts;
 - external dependency status can be read only after same-run `SERVICE_DEPENDENCY_MAPPING` Evidence establishes the dependency ID;
 - canonical AcmePay status is persisted as `EXTERNAL_DEPENDENCY_STATUS=HEALTHY`;
-- unknown service/dependency and tenant/run context mismatches fail closed;
+- unknown service/dependency and tenant/run context mismatches fail closed, including same-tenant/different-run Evidence isolation;
+- post-implementation review found that omitting `wake()` was not enough because the existing Scenario 1 worker continuously polls the shared generic topic;
+- 8C1 now fails closed at dispatch: if persisted `Run.scenario_id != "scenario-1"`, the Scenario 1 worker reschedules the envelope and never invokes Scenario 1 native runtime;
+- this guard is temporary boundary protection only; actual Scenario 1/3 runtime selection remains 8C2 scope;
 - no Scenario 3 table or migration was added; Alembic remains `20261006_0006`;
-- no native Scenario 3 ADK runtime, tool wrappers, worker routing, HITL changes or replanning logic were added in 8C1.
+- no native Scenario 3 ADK runtime, tool wrappers, Scenario 1/3 worker routing, HITL changes or replanning logic were added in 8C1.
 
 ## 8C2 — NEXT
 ### Native Scenario 3 composition + runtime routing
@@ -890,7 +893,7 @@ Deterministic Phase 8 gates must not depend on provider quota.
 
 Start from Phase 8C1 implementation checkpoint:
 
-`7929f8ed7afc2734b5db77e0d200af9b5029fa89`
+`ceccf0f59950105e71fb35435118d3a26b473497`
 
 Branch:
 
@@ -922,4 +925,4 @@ Phase 8C2 must retain Scenario 1 and Scenario 2 regressions and prove the exact 
 > **Phase 8C1 = DONE / PASS**  
 > **Phase 8C2 = NEXT**
 
-Phase 8C1 is the first Phase 8 application implementation declared deterministic PASS. Managed/live Phase 8 acceptance remains deferred to Phase 8E.
+Phase 8C1 is the first Phase 8 application implementation declared deterministic PASS. A post-implementation review additionally hardened the shared dispatch boundary so Scenario 3 envelopes cannot leak into Scenario 1 runtime before 8C2 routing exists. Managed/live Phase 8 acceptance remains deferred to Phase 8E.
