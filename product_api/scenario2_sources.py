@@ -6,8 +6,12 @@ tool wrappers; hidden fixture truth never bypasses that boundary.
 
 from __future__ import annotations
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from product_backend.application.scenario2_state import Scenario2StateService
 from product_backend.domain.enums import HealthState
+from product_backend.persistence.tables import MajorIncidentRow
 from product_backend.domain.scenario2 import (
     DependencyKind,
     ExternalDependencyStatusSnapshot,
@@ -27,8 +31,13 @@ from .scenario2_fixture import (
 
 
 class PersistedScenario2FixtureSources:
-    def __init__(self, state_service: Scenario2StateService) -> None:
+    def __init__(
+        self,
+        state_service: Scenario2StateService,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
         self._state_service = state_service
+        self._session_factory = session_factory
 
     async def get_local_service_health(
         self,
@@ -127,6 +136,17 @@ class PersistedScenario2FixtureSources:
                 and item.dependency_id == dependency_id
             )
         }
+        if self._session_factory is not None:
+            async with self._session_factory() as session:
+                persisted = await session.execute(
+                    select(MajorIncidentRow.major_incident_id).where(
+                        MajorIncidentRow.tenant_id == tenant_id,
+                        MajorIncidentRow.service_key == service_key,
+                        MajorIncidentRow.correlation_key == correlation_key,
+                        MajorIncidentRow.dependency_id == dependency_id,
+                    )
+                )
+                open_ids.update(persisted.scalars().all())
         if (
             service_key == SERVICE_KEY
             and correlation_key == CORRELATION_KEY
