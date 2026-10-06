@@ -8,18 +8,18 @@ export default function HomePage() {
           <span className="brand-mark" aria-hidden="true">8O</span>
           <div>
             <p className="eyebrow">Публичное демо операционного AI</p>
-            <span className="brand-name">8 Щупалец · IT Operations</span>
+            <span className="brand-name">8 Щупалец · IT-операции</span>
           </div>
         </div>
 
         <div className="hero-copy">
-          <p className="hero-index">01 / Автономный L1 Incident Agent</p>
+          <p className="hero-index">01 / Автономный L1-агент по инцидентам</p>
           <h1>
             Инцидент расследуется по сохранённым фактам,
             <span> без показа скрытых рассуждений модели.</span>
           </h1>
           <p>
-            Event-driven демонстрация расследования: Product state и Evidence
+            Событийная демонстрация расследования: состояние продукта и наблюдений
             сохраняются, агент работает через native Google ADK, а побочные
             действия требуют решения человека.
           </p>
@@ -40,7 +40,7 @@ export default function HomePage() {
       <section className="home-principles" aria-label="Гарантии продукта">
         <article>
           <span>01</span>
-          <strong>Сначала Evidence</strong>
+          <strong>Сначала наблюдений</strong>
           <p>Наблюдаемые факты отделены от неподтверждённых предположений.</p>
         </article>
         <article>
@@ -50,8 +50,8 @@ export default function HomePage() {
         </article>
         <article>
           <span>03</span>
-          <strong>Восстановление из Product state</strong>
-          <p>Refresh и reconnect перечитывают сохранённую истину, а не локальную догадку UI.</p>
+          <strong>Восстановление из состояние продукта</strong>
+          <p>Обновление и переподключение перечитывают сохранённую истину, а не локальную догадку UI.</p>
         </article>
       </section>
     </main>
