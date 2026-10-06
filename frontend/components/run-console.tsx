@@ -640,7 +640,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Безопасный типизированный payload
+                    Безопасные типизированные данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
