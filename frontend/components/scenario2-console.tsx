@@ -296,7 +296,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
   if (loading) {
     return (
       <main className="console-shell">
-        <div className="console-loading">
+        <div className="console-loading" role="status" aria-live="polite">
           <span className="spinner" aria-hidden="true" />
           <strong>Загружаем сохранённый запуск</strong>
           <span>{runId}</span>
