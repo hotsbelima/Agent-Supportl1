@@ -3,6 +3,9 @@ import type {
   ApprovalDecisionResponse,
   HealthResponse,
   RunStateResponse,
+  Scenario2ApprovalDecisionResponse,
+  Scenario2IngestionStateResponse,
+  Scenario2SimulatorStepResponse,
   TimelineResponse,
 } from "./types";
 
@@ -35,16 +38,16 @@ export class ApiClientError extends Error {
     return new ApiClientError(
       response.status,
       error?.code ?? "HTTP_ERROR",
-      error?.message ?? "The product API request failed.",
+      error?.message ?? "Запрос к Product API завершился ошибкой.",
       error?.retryable ?? response.status >= 500,
     );
   }
 }
 
 export function configurationIssue(): string | null {
-  if (!API_BASE_URL) return "NEXT_PUBLIC_API_BASE_URL is not configured.";
+  if (!API_BASE_URL) return "Не настроен адрес Product API.";
   if (!DEMO_TENANT_ID) {
-    return "NEXT_PUBLIC_DEMO_TENANT_ID is not configured.";
+    return "Не настроен demo tenant для интерфейса.";
   }
   return null;
 }
@@ -92,6 +95,18 @@ export function startScenario1(signal?: AbortSignal): Promise<RunStateResponse> 
   });
 }
 
+export function startScenario2(
+  signal?: AbortSignal,
+): Promise<Scenario2IngestionStateResponse> {
+  return requestJson<Scenario2IngestionStateResponse>(
+    "/api/v1/scenario-2/runs",
+    {
+      method: "POST",
+      signal,
+    },
+  );
+}
+
 export function startScenario3(signal?: AbortSignal): Promise<RunStateResponse> {
   return requestJson<RunStateResponse>("/api/v1/scenario-3/runs", {
     method: "POST",
@@ -106,6 +121,49 @@ export function getRunState(
   return requestJson<RunStateResponse>(
     `/api/v1/runs/${encodeURIComponent(runId)}`,
     { signal },
+  );
+}
+
+export function getScenario2State(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<Scenario2IngestionStateResponse> {
+  return requestJson<Scenario2IngestionStateResponse>(
+    `/api/v1/scenario-2/runs/${encodeURIComponent(runId)}`,
+    { signal },
+  );
+}
+
+export function advanceScenario2Simulator(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<Scenario2SimulatorStepResponse> {
+  return requestJson<Scenario2SimulatorStepResponse>(
+    `/api/v1/scenario-2/runs/${encodeURIComponent(runId)}/simulator/next`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+}
+
+export function decideScenario2Proposal(
+  runId: string,
+  proposalId: string,
+  decision: "approve" | "reject",
+  decidedBy: string,
+  signal?: AbortSignal,
+): Promise<Scenario2ApprovalDecisionResponse> {
+  return requestJson<Scenario2ApprovalDecisionResponse>(
+    `/api/v1/scenario-2/runs/${encodeURIComponent(
+      runId,
+    )}/proposals/${encodeURIComponent(proposalId)}/${decision}`,
+    {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decided_by: decidedBy }),
+    },
   );
 }
 
@@ -153,10 +211,22 @@ export function isRetryableApiFailure(error: unknown): boolean {
 
 export function displayApiError(error: unknown): string {
   if (error instanceof ApiClientError) {
-    return `${error.code}: ${error.message}`;
+    if (error.status === 429) {
+      return `Лимит запросов к AI-провайдеру достигнут (${error.code}). Попробуйте позже.`;
+    }
+    if (error.code === "GEMINI_NOT_CONFIGURED") {
+      return "Gemini не настроен на Product API.";
+    }
+    if (error.code === "RUN_NOT_FOUND") {
+      return "Запуск не найден в текущем demo tenant.";
+    }
+    if (error.status >= 500) {
+      return `Product API временно недоступен (${error.code}).`;
+    }
+    return `Product API отклонил запрос (${error.code}).`;
   }
   if (error instanceof Error && error.name === "AbortError") {
-    return "Request cancelled.";
+    return "Запрос отменён.";
   }
-  return "The product API is currently unavailable.";
+  return "Product API сейчас недоступен.";
 }
