@@ -160,6 +160,15 @@ class Scenario1DispatchWorker:
             if snapshot is None:
                 raise RuntimeError("dispatch run state was not found")
 
+            # Phase 8C1 persists Scenario 3 envelopes on the shared generic
+            # device-Incident topic before Scenario-aware runtime routing exists.
+            # Fail closed here: never deliver a Scenario 3 envelope into the
+            # Scenario 1 native runtime. Phase 8C2 replaces this temporary guard
+            # with routing by persisted Run.scenario_id.
+            if snapshot.run.scenario_id != "scenario-1":
+                await self._reschedule(record)
+                return True
+
             operational_signal = {
                 "event_id": event_id,
                 "event_seq": record.event_seq,
