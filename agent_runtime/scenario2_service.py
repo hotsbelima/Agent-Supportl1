@@ -80,13 +80,19 @@ def _find_scenario2_event_correlation(
     product_event_id: str,
 ) -> _Scenario2EventCorrelation | None:
     """Find the one native invocation associated with a Product event ID."""
-    invocation_id: str | None = None
-    for event in events:
-        if _scenario2_product_event_id(event) == product_event_id:
-            invocation_id = event.invocation_id
-
-    if invocation_id is None:
+    invocation_ids = {
+        event.invocation_id
+        for event in events
+        if _scenario2_product_event_id(event) == product_event_id
+        and getattr(event, "invocation_id", None)
+    }
+    if not invocation_ids:
         return None
+    if len(invocation_ids) != 1:
+        raise RuntimeError(
+            "Product event is correlated to multiple native ADK invocations"
+        )
+    invocation_id = next(iter(invocation_ids))
 
     settled = False
     final_answer: str | None = None
@@ -222,7 +228,7 @@ class Scenario2AgentRuntime:
             session_id=run_id,
             invocation_id=invocation_id,
             final_answer=final_answer,
-            recoverable=recoverable,
+            recoverable=bool(recoverable and invocation_id),
         )
 
 
