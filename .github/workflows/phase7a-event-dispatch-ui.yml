@@ -128,6 +128,7 @@ jobs:
         run: docker build -f Dockerfile.product -t agent-supportl1:phase7a .
 
       - name: Create isolated database for live automatic-dispatch acceptance
+        if: github.event_name != 'pull_request'
         run: |
           python - <<'PY'
           import psycopg
@@ -145,11 +146,13 @@ jobs:
           PY
 
       - name: Apply migrations to isolated live database
+        if: github.event_name != 'pull_request'
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agent_supportl1_phase7a_live
         run: python -m alembic upgrade head
 
       - name: Live Start simulation -> automatic ADK -> approval/replay
+        if: github.event_name != 'pull_request'
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agent_supportl1_phase7a_live
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
