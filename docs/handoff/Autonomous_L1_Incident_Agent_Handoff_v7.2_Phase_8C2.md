@@ -5,7 +5,7 @@
 **Project:** Autonomous L1 Incident Agent  
 **Current development stop point:** **Phase 8C2 = DONE / PASS; Phase 8D = NEXT**  
 **Last live-validated code baseline:** `2f8dae61c06afd0f134c58e90aba0591a013a31e`  
-**Latest deterministic Phase 8 implementation checkpoint:** `e927a6c07757dcc328c7c5df6fe37080ff8c1b76`
+**Latest deterministic Phase 8 implementation checkpoint:** `9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`
 
 ---
 
@@ -51,7 +51,7 @@ When sources conflict, use this order:
 4. `Phase_8B_Contract_Tool_Gap_Analysis_and_Implementation_Plan_REVIEWED.md`
 5. `Phase_8A_Scenario_3_Specification_REVIEWED.md`
 6. cumulative handoff v7.1 / v7.0 / v6.9 for historical detail
-7. repository code at `e927a6c07757dcc328c7c5df6fe37080ff8c1b76`
+7. repository code at `9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`
 8. Phase 7 implementation notes/specs for historical detail
 
 The reviewed Phase 8B document supersedes the earlier non-reviewed Phase 8B draft.
@@ -777,11 +777,11 @@ Branch:
 
 Reviewed implementation checkpoint:
 
-`e927a6c07757dcc328c7c5df6fe37080ff8c1b76`
+`9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`
 
 Deterministic GitHub Actions run:
 
-`37495196318` — **SUCCESS**
+`37504606915` — **SUCCESS**
 
 Implemented:
 
@@ -840,7 +840,7 @@ Production safety was not weakened.
 Verification on the reviewed code checkpoint:
 
 - focused Phase 8C1 regression: **5 passed**;
-- focused Phase 8C2 tests: **7 passed**;
+- focused Phase 8C2 tests: **8 passed**;
 - full Python regression: **207 passed**;
 - retained historical Node regression: **5 passed**;
 - frontend tests: **42 passed**;
@@ -848,6 +848,21 @@ Verification on the reviewed code checkpoint:
 - Product Docker image build: PASS;
 - Alembic remains `20261006_0006 (head)`;
 - `alembic check`: **No new upgrade operations detected**.
+
+Post-implementation review correction:
+
+- a real stale-path composition defect was found after the initial 8C2 PASS;
+- Scenario 3 diagnostic reads and Field Service approval revalidation had been
+  wired to separate fixture instances with independent process-local
+  access-link override stores;
+- the two scenario fixture objects now share one authoritative access-link
+  override store while retaining separate bootstrap identities;
+- this guarantees that a Scenario 3 `DOWN -> UP` source-truth change is seen by
+  the existing Field Service approval revalidation path;
+- focused regression coverage was added for this shared stale truth;
+- the corrected exact code checkpoint is
+  `9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`;
+- deterministic GitHub Actions run `37504606915` is SUCCESS.
 
 ## 8D
 ### Deterministic Scenario 3 E2E + recovery/regressions + minimal UI exposure
@@ -952,7 +967,7 @@ Deterministic Phase 8 gates must not depend on provider quota.
 
 Start from Phase 8C2 reviewed implementation checkpoint:
 
-`e927a6c07757dcc328c7c5df6fe37080ff8c1b76`
+`9d9d6f2a44b709c6d443e9608e4d3e026ccb0470`
 
 Branch:
 
@@ -1002,6 +1017,6 @@ tables, Product-side replanning rules, or provider-health proposal prerequisites
 > **Phase 8D = NEXT**
 
 Phase 8C2 is deterministically verified on
-`e927a6c07757dcc328c7c5df6fe37080ff8c1b76` with GitHub Actions run
-`37495196318` SUCCESS. Managed/live Phase 8 acceptance remains deferred to
+`9d9d6f2a44b709c6d443e9608e4d3e026ccb0470` with GitHub Actions run
+`37504606915` SUCCESS. Managed/live Phase 8 acceptance remains deferred to
 Phase 8E.
