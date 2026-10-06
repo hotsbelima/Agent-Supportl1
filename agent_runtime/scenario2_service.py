@@ -90,7 +90,10 @@ def _scenario2_product_event_id(event: Any) -> str | None:
 
 def _pending_major_incident_proposal_id(event: Any) -> str | None:
     """Extract only a successful PENDING_APPROVAL proposal tool response."""
-    for response in event.get_function_responses():
+    get_responses = getattr(event, "get_function_responses", None)
+    if not callable(get_responses):
+        return None
+    for response in get_responses():
         if response.name != "propose_major_incident":
             continue
         payload = response.response
@@ -188,6 +191,7 @@ def _find_scenario2_event_correlation(
         response_delivered = any(
             getattr(event, "invocation_id", None) == invocation_id
             and getattr(event, "author", None) == "user"
+            and callable(getattr(event, "get_function_responses", None))
             and any(
                 response.name == WAIT_FOR_HUMAN_DECISION_TOOL
                 and response.id == paused_function_call_id
