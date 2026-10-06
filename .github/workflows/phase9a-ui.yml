@@ -1,0 +1,50 @@
+name: Phase 9A final UI check
+
+on:
+  push:
+    branches:
+      - phase-9a-ui-polish
+  pull_request:
+    branches:
+      - phase-9-scope-spec
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8080
+      NEXT_PUBLIC_DEMO_TENANT_ID: TENANT-8OCT
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend unit and API-contract tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
