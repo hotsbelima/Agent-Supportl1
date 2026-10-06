@@ -30,6 +30,10 @@ const terminology = readFileSync(
   new URL("../../docs/phase9a_ui_terminology.md", import.meta.url),
   "utf8",
 );
+const apiSource = readFileSync(
+  new URL("../lib/api.ts", import.meta.url),
+  "utf8",
+);
 
 describe("Phase 9A final public UI", () => {
   it("exposes all three persisted Product scenarios without browser agent orchestration", () => {
@@ -83,6 +87,14 @@ describe("Phase 9A final public UI", () => {
     expect(scenario2Console).toContain("Новый запуск");
     expect(standardConsole).not.toContain("delete");
     expect(scenario2Console).not.toContain("delete");
+  });
+
+  it("does not leak retained English UI copy in recovery and not-found states", () => {
+    expect(standardConsole).not.toContain("Retrying persisted run state");
+    expect(apiSource).not.toContain("demo tenant");
+    expect(standardConsole).not.toContain("Product API");
+    expect(scenario2Console).not.toContain("Product API");
+    expect(startSource).not.toContain("Product API");
   });
 
   it("keeps the public interface Russian while preserving canonical English domain terminology in GitHub", () => {
