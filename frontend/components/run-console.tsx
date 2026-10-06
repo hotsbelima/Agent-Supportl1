@@ -366,7 +366,7 @@ export function RunConsole({ runId }: { runId: string }) {
         await refreshState();
       } catch {
         setDecisionError(
-          "Решение сохранено, но полное состояние временно недоступно. После переподключения интерфейс синхронизируется с Product state.",
+          "Решение сохранено, но полное состояние временно недоступно. После переподключения интерфейс синхронизируется с состоянием продукта.",
         );
       }
     } catch (error) {
@@ -379,12 +379,12 @@ export function RunConsole({ runId }: { runId: string }) {
 
         if (recovery === "persisted") {
           setDecisionNotice(
-            "Ответ на решение прервался; сохранённое Product state успешно восстановлено.",
+            "Ответ на решение прервался; сохранённое состояние продукта успешно восстановлено.",
           );
           setDecisionError(null);
         } else if (recovery === "still-pending") {
           setDecisionError(
-            `${displayApiError(error)} Product state всё ещё ожидает решения; повтор безопасен.`,
+            `${displayApiError(error)} Состояние продукта всё ещё ожидает решения; повтор безопасен.`,
           );
         } else if (recovery === "inconsistent") {
           setDecisionError(
@@ -392,12 +392,12 @@ export function RunConsole({ runId }: { runId: string }) {
           );
         } else {
           setDecisionError(
-            "Ответ прервался, и предложение не удалось подтвердить по авторитетному Product state.",
+            "Ответ прервался, и предложение не удалось подтвердить по авторитетному состоянию продукта.",
           );
         }
       } catch {
         setDecisionError(
-          "Результат решения не подтверждён. Переподключение восстановит Product state; повтор решения остаётся идемпотентным.",
+          "Результат решения не подтверждён. Переподключение восстановит состояние продукта; повтор решения остаётся идемпотентным.",
         );
       }
     } finally {
@@ -437,11 +437,11 @@ export function RunConsole({ runId }: { runId: string }) {
     <main className="console-shell">
       <header className="run-header">
         <div className="brand-lockup">
-          <Link href="/" className="brand-mark" aria-label="Back to home">
+          <Link href="/" className="brand-mark" aria-label="На главную">
             8O
           </Link>
           <div>
-            <p className="eyebrow">Автономный L1 Incident Agent</p>
+            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
             <h1>{scenarioLabel} · операционная консоль</h1>
           </div>
         </div>
@@ -548,7 +548,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 </dl>
                 {selectedIncident.status === "ESCALATED" ? (
                   <p className="semantic-note">
-                    Эскалация означает, что выезд Field Service запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
+                    Эскалация означает, что выездной сервис запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
                   </p>
                 ) : null}
               </div>
@@ -582,7 +582,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Безопасные факты Product</p>
+                <p className="panel-kicker">Безопасные факты продукта</p>
                 <h2>Наблюдения</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
@@ -658,7 +658,7 @@ export function RunConsole({ runId }: { runId: string }) {
                     <div className="entity-row-main">
                       <strong>{evidence.source_type}</strong>
                       <span>
-                        {evidence.entity_ids[0] ?? "Product Evidence"}
+                        {evidence.entity_ids[0] ?? "Наблюдение"}
                       </span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
@@ -686,7 +686,7 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                Наблюдений пока нет. Event-driven агент добавит безопасные Evidence по мере расследования.
+                Наблюдений пока нет. Событийный агент добавит безопасные факты по мере расследования.
               </EmptyPanel>
             )}
           </article>
@@ -696,7 +696,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Сохранённый audit trail</p>
+                <p className="panel-kicker">Сохранённый журнал аудита</p>
                 <h2>Хронология</h2>
               </div>
               <span className="panel-count">{events.length}</span>
@@ -724,7 +724,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>Сохранённых application events пока нет.</EmptyPanel>
+              <EmptyPanel>Сохранённых событий приложения пока нет.</EmptyPanel>
             )}
           </article>
         </section>
@@ -767,7 +767,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 </div>
 
                 <div className="proposal-evidence">
-                  <span className="subtle-label">Evidence IDs</span>
+                  <span className="subtle-label">ID наблюдений</span>
                   <div className="chip-row">
                     {latestProposal.evidence_ids.map((id) => (
                       <code key={id}>{id}</code>
@@ -778,7 +778,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
-                      До регистрации действия Field Service требуется решение человека.
+                      До регистрации действия выездного сервиса требуется решение человека.
                     </p>
                     <div className="decision-buttons">
                       <button
@@ -825,7 +825,7 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                Предложения пока нет. Агент создаст его только после достаточного набора сохранённых Evidence.
+                Предложения пока нет. Агент создаст его только после достаточного набора сохранённых наблюдений.
               </EmptyPanel>
             )}
           </article>
@@ -834,7 +834,7 @@ export function RunConsole({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Зарегистрированный результат</p>
-                <h2>Выезд Field Service</h2>
+                <h2>Выездной сервис</h2>
               </div>
               <span className="panel-count">{state.work_orders.length}</span>
             </div>
@@ -858,7 +858,7 @@ export function RunConsole({ runId }: { runId: string }) {
                         </div>
                         <div>
                           <dt>Тип действия</dt>
-                          <dd>{action?.action_type ?? "Field service"}</dd>
+                          <dd>{action?.action_type ?? "Выездной сервис"}</dd>
                         </div>
                         <div>
                           <dt>Устройство</dt>
@@ -881,7 +881,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           </dd>
                         </div>
                         <div className="wide">
-                          <dt>Work Order создан</dt>
+                          <dt>Заявка на выезд создана</dt>
                           <dd>{formatTimestamp(order.created_at)}</dd>
                         </div>
                       </dl>
@@ -893,16 +893,16 @@ export function RunConsole({ runId }: { runId: string }) {
                 })}
               </div>
             ) : (
-              <EmptyPanel>Work Order Field Service ещё не зарегистрирован.</EmptyPanel>
+              <EmptyPanel>Заявка на выезд ещё не зарегистрирована.</EmptyPanel>
             )}
           </article>
         </section>
       </div>
 
       <footer className="console-footer">
-        <span>Источник истины: PostgreSQL Product state</span>
-        <span>Live transport: persisted SSE</span>
-        <span>AI dispatch: persisted event → native ADK</span>
+        <span>Источник истины: состояние продукта в PostgreSQL</span>
+        <span>Поток событий: сохранённый SSE</span>
+        <span>Запуск AI: сохранённое событие → native ADK</span>
       </footer>
     </main>
   );
