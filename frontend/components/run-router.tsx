@@ -54,7 +54,7 @@ export function RunRouter({ runId }: { runId: string }) {
 
   return (
     <main className="console-shell">
-      <div className="console-loading">
+      <div className="console-loading" role="status" aria-live="polite">
         <span className="spinner" aria-hidden="true" />
         <strong>Определяем сценарий запуска</strong>
         <span>{runId}</span>
