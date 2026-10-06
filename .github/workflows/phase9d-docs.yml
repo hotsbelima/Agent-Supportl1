@@ -1,0 +1,46 @@
+name: Phase 9D portfolio docs check
+
+on:
+  push:
+    branches:
+      - phase-9d-portfolio-docs
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify final portfolio documents exist
+        run: |
+          test -f README.md
+          test -f docs/architecture.md
+          test -f docs/scenarios.md
+          test -f docs/Phase_9D_Implementation_Notes.md
+          test -f docs/handoff/Autonomous_L1_Incident_Agent_Handoff_v8.0_Phase_9C_Final_Development.md
+
+      - name: Reject stale README claims
+        run: |
+          ! grep -Fq "Current scope — Phase 3 PASS" README.md
+          grep -Fq "PROJECT DEVELOPMENT COMPLETE" README.md
+          grep -Fq "Google ADK" README.md
+          grep -Fq "Scenario 2" README.md
+          grep -Fq "Scenario 3" README.md
+
+      - name: Verify architecture and scenario diagrams
+        run: |
+          grep -Fq "```mermaid" docs/architecture.md
+          grep -Fq "Product owns business truth" docs/architecture.md
+          grep -Fq "Scenario 1" docs/scenarios.md
+          grep -Fq "Scenario 2" docs/scenarios.md
+          grep -Fq "Scenario 3" docs/scenarios.md
+
+      - name: Verify final development handoff status
+        run: |
+          grep -Fq "PROJECT DEVELOPMENT COMPLETE" docs/handoff/Autonomous_L1_Incident_Agent_Handoff_v8.0_Phase_9C_Final_Development.md
