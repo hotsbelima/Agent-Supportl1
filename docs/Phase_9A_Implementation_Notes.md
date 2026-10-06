@@ -5,8 +5,8 @@
 **Repository:** `hotsbelima/Agent-Supportl1`  
 **Implementation branch:** `phase-9a-ui-polish`  
 **Baseline:** `85696a3b34c56b5149da2d83c8d3af65642a9584` (`phase-9-scope-spec`)  
-**Validated UI code SHA:** `3e3b3e75569eae35bd234515ee94e912733b82e6`  
-**GitHub Actions:** run `37531951443` — SUCCESS
+**Validated UI code SHA:** `4c48fbbe3c5845ee48db5239782ceeecc4fcc1c2`  
+**GitHub Actions:** run `37533545468` — SUCCESS
 
 ## Delivered
 
@@ -111,11 +111,27 @@ The frontend distinguishes and/or intentionally represents:
 
 No hidden model chain-of-thought is exposed.
 
+## Re-audit corrections
+
+A second specification/code audit found and fixed issues that were not caught
+by the first PASS review:
+
+- two residual English user-facing recovery/not-found strings;
+- remaining user-facing `Product API` wording, localized to `API продукта`;
+- incomplete light-theme overrides that left some header/card/detail surfaces
+  using dark-only colors;
+- dynamic readiness/loading regions missing semantic `role="status"` /
+  `aria-live="polite"`;
+- stale implementation-note SHA/CI metadata.
+
+Regression coverage was extended to guard the Russian UI copy, complete
+light-theme surfaces and semantic status regions.
+
 ## Verification
 
 A dedicated `.github/workflows/phase9a-ui.yml` deterministic gate was added.
 
-Validated run `37531951443` passed:
+Validated run `37533545468` passed:
 
 - `npm ci`;
 - TypeScript typecheck;
