@@ -150,6 +150,7 @@ jobs:
         run: python -m alembic upgrade head
 
       - name: Live Start simulation -> automatic ADK -> approval/replay
+        if: github.event_name != 'pull_request'
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agent_supportl1_phase7a_live
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
