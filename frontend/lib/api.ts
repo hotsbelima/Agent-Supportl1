@@ -47,7 +47,7 @@ export class ApiClientError extends Error {
 export function configurationIssue(): string | null {
   if (!API_BASE_URL) return "Не настроен адрес Product API.";
   if (!DEMO_TENANT_ID) {
-    return "Не настроен demo tenant для интерфейса.";
+    return "Не настроен демонстрационный контур интерфейса.";
   }
   return null;
 }
