@@ -103,21 +103,23 @@ class RunStartCooldown:
 
 
 def is_internal_public_demo_path(path: str) -> bool:
+    normalized = path.rstrip("/") or "/"
     return (
         (
-            path.startswith("/api/v1/runs/")
-            and path.endswith("/agent/invoke")
+            normalized.startswith("/api/v1/runs/")
+            and normalized.endswith("/agent/invoke")
         )
         or (
-            path.startswith("/api/v1/scenario-2/runs/")
+            normalized.startswith("/api/v1/scenario-2/runs/")
             and (
-                path.endswith("/acceptance/dependency-status")
-                or path.endswith("/acceptance/matching-major-incident")
+                normalized.endswith("/signals")
+                or normalized.endswith("/acceptance/dependency-status")
+                or normalized.endswith("/acceptance/matching-major-incident")
             )
         )
         or (
-            path.startswith("/__acceptance/phase6d/runs/")
-            and path.endswith("/access-link-state")
+            normalized.startswith("/__acceptance/phase6d/runs/")
+            and normalized.endswith("/access-link-state")
         )
     )
 
