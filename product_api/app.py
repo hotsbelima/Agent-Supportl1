@@ -1234,6 +1234,73 @@ def create_app(
             },
         )
 
+    async def decide_scenario2(
+        *,
+        request: Request,
+        tenant_id: str,
+        run_id: str,
+        proposal_id: str,
+        decision: ApprovalDecision,
+        decided_by: str,
+    ) -> Scenario2ApprovalDecisionResponse:
+        services = _container(request)
+        if services.scenario2_approval_service is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCENARIO2_HITL_UNAVAILABLE",
+                message="Scenario 2 Major Incident approval is not configured.",
+                retryable=True,
+            )
+
+        # Product truth commits first. Native ADK resume is a post-commit
+        # reconciliation step and may safely be retried through this endpoint.
+        result = await services.scenario2_approval_service.decide(
+            ToolCallContext(tenant_id=tenant_id, run_id=run_id),
+            proposal_id=proposal_id,
+            decision=decision,
+            decided_by=decided_by,
+        )
+        if isinstance(result, Scenario2OperationFailure):
+            _raise_domain_error(result.error)
+
+        agent_resume = AgentResumeView(
+            status="deferred",
+            retryable=True,
+        )
+        if services.scenario2_agent_runtime is not None:
+            try:
+                resumed = (
+                    await services.scenario2_agent_runtime.resume_human_decision(
+                        tenant_id=tenant_id,
+                        run_id=run_id,
+                        proposal_id=proposal_id,
+                        decision_payload=_scenario2_agent_decision_payload(result),
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    "Scenario 2 native ADK resume deferred for run=%s proposal=%s",
+                    run_id,
+                    proposal_id,
+                )
+            else:
+                agent_resume = AgentResumeView(
+                    status=(
+                        "already_resumed"
+                        if resumed.already_resumed
+                        else "resumed"
+                    ),
+                    invocation_id=resumed.invocation_id,
+                    function_call_id=resumed.function_call_id,
+                    final_answer=resumed.final_answer,
+                    retryable=False,
+                )
+
+        return scenario2_approval_response(
+            result,
+            agent_resume=agent_resume,
+        )
+
     async def decide(
         *,
         request: Request,
@@ -1375,6 +1442,48 @@ def create_app(
             tenant_id=tenant_id,
             run_id=run_id,
             operational_state=operational_state.value,
+        )
+
+    @app.post(
+        "/api/v1/scenario-2/runs/{run_id}/proposals/{proposal_id}/approve",
+        response_model=Scenario2ApprovalDecisionResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def approve_scenario2_major_incident(
+        run_id: Annotated[str, _ID_PATH],
+        proposal_id: Annotated[str, _ID_PATH],
+        body: HumanDecisionRequest,
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2ApprovalDecisionResponse:
+        return await decide_scenario2(
+            request=request,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.APPROVED,
+            decided_by=body.decided_by,
+        )
+
+    @app.post(
+        "/api/v1/scenario-2/runs/{run_id}/proposals/{proposal_id}/reject",
+        response_model=Scenario2ApprovalDecisionResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def reject_scenario2_major_incident(
+        run_id: Annotated[str, _ID_PATH],
+        proposal_id: Annotated[str, _ID_PATH],
+        body: HumanDecisionRequest,
+        request: Request,
+        tenant_id: TenantId,
+    ) -> Scenario2ApprovalDecisionResponse:
+        return await decide_scenario2(
+            request=request,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            proposal_id=proposal_id,
+            decision=ApprovalDecision.REJECTED,
+            decided_by=body.decided_by,
         )
 
     @app.post(
