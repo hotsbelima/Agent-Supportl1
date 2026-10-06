@@ -38,14 +38,14 @@ export class ApiClientError extends Error {
     return new ApiClientError(
       response.status,
       error?.code ?? "HTTP_ERROR",
-      error?.message ?? "Запрос к Product API завершился ошибкой.",
+      error?.message ?? "Запрос к API продукта завершился ошибкой.",
       error?.retryable ?? response.status >= 500,
     );
   }
 }
 
 export function configurationIssue(): string | null {
-  if (!API_BASE_URL) return "Не настроен адрес Product API.";
+  if (!API_BASE_URL) return "Не настроен адрес API продукта.";
   if (!DEMO_TENANT_ID) {
     return "Не настроен демонстрационный контур интерфейса.";
   }
@@ -215,18 +215,18 @@ export function displayApiError(error: unknown): string {
       return `Лимит запросов к AI-провайдеру достигнут (${error.code}). Попробуйте позже.`;
     }
     if (error.code === "GEMINI_NOT_CONFIGURED") {
-      return "Gemini не настроен на Product API.";
+      return "Gemini не настроен на API продукта.";
     }
     if (error.code === "RUN_NOT_FOUND") {
       return "Запуск не найден в текущем демонстрационном контуре.";
     }
     if (error.status >= 500) {
-      return `Product API временно недоступен (${error.code}).`;
+      return `API продукта временно недоступен (${error.code}).`;
     }
-    return `Product API отклонил запрос (${error.code}).`;
+    return `API продукта отклонил запрос (${error.code}).`;
   }
   if (error instanceof Error && error.name === "AbortError") {
     return "Запрос отменён.";
   }
-  return "Product API сейчас недоступен.";
+  return "API продукта сейчас недоступен.";
 }
