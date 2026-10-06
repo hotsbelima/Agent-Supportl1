@@ -63,9 +63,23 @@ class PublicDemoSettings:
 
     @classmethod
     def from_env(cls) -> "PublicDemoSettings":
+        enabled = _bool_env("PUBLIC_DEMO", False)
+        configured_tenant = os.environ.get("PUBLIC_DEMO_TENANT_ID")
+        if enabled and (
+            configured_tenant is None or not configured_tenant.strip()
+        ):
+            raise RuntimeError(
+                "PUBLIC_DEMO_TENANT_ID must be explicitly configured "
+                "when PUBLIC_DEMO is enabled"
+            )
+        tenant_id = (
+            configured_tenant.strip()
+            if configured_tenant is not None and configured_tenant.strip()
+            else "TENANT-8OCT"
+        )
         return cls(
-            enabled=_bool_env("PUBLIC_DEMO", False),
-            tenant_id=os.environ.get("PUBLIC_DEMO_TENANT_ID", "TENANT-8OCT").strip(),
+            enabled=enabled,
+            tenant_id=tenant_id,
             run_start_cooldown_seconds=_positive_float_env(
                 "PUBLIC_DEMO_COOLDOWN_SECONDS",
                 8.0,
