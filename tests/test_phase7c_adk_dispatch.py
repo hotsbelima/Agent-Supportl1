@@ -336,6 +336,40 @@ def test_native_history_correlation_recovers_the_same_invocation_id():
     assert correlation.settled is True
 
 
+def test_native_history_rejects_multiple_invocations_for_one_product_event():
+    event_id = "EVENT-7C-DUPLICATE"
+    first = _FakeEvent(
+        author="user",
+        invocation_id="INV-7C-A",
+        text=json.dumps(
+            {
+                "type": "scenario2_operational_signal",
+                "product_event_id": event_id,
+                "payload": {},
+            }
+        ),
+    )
+    second = _FakeEvent(
+        author="user",
+        invocation_id="INV-7C-B",
+        text=json.dumps(
+            {
+                "type": "scenario2_operational_signal",
+                "product_event_id": event_id,
+                "payload": {},
+            }
+        ),
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="multiple native ADK invocations",
+    ):
+        _find_scenario2_event_correlation(
+            [first, second],
+            product_event_id=event_id,
+        )
+
+
 def test_native_adk_session_survives_process_style_reconstruction_between_events():
     async def scenario() -> None:
         tenant_id = f"TENANT-7C-SESSION-{uuid4().hex[:10]}"
