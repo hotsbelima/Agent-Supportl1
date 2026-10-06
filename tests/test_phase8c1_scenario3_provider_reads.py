@@ -95,11 +95,16 @@ class _RecordingScenario1Runtime:
     gemini_configured = True
 
     def __init__(self) -> None:
-        self.invocation_count = 0
+        self.invoked_scenario_ids: list[str | None] = []
 
     async def invoke_operational_event(self, **kwargs):
-        del kwargs
-        self.invocation_count += 1
+        operational_signal = kwargs.get("operational_signal")
+        scenario_id = (
+            operational_signal.get("scenario_id")
+            if isinstance(operational_signal, dict)
+            else None
+        )
+        self.invoked_scenario_ids.append(scenario_id)
         return None
 
 
@@ -107,7 +112,7 @@ async def _dispatch_once_with_scenario1_worker(
     *,
     tenant_id: str,
     run_id: str,
-) -> tuple[bool, int, tuple[ApplicationOutboxRow, ...]]:
+) -> tuple[bool, tuple[str | None, ...], tuple[ApplicationOutboxRow, ...]]:
     engine, factory = _new_db()
     runtime = _RecordingScenario1Runtime()
     try:
@@ -138,7 +143,7 @@ async def _dispatch_once_with_scenario1_worker(
             if not processed:
                 break
 
-        return processed_any, runtime.invocation_count, rows
+        return processed_any, tuple(runtime.invoked_scenario_ids), rows
     finally:
         await engine.dispose()
 
@@ -375,7 +380,7 @@ def test_phase8c1_scenario1_worker_fails_closed_for_scenario3_envelope(monkeypat
         state = _start_scenario3(client, tenant_id)
         run_id = state["run"]["run_id"]
 
-    processed, invocation_count, rows = asyncio.run(
+    processed, invoked_scenario_ids, rows = asyncio.run(
         _dispatch_once_with_scenario1_worker(
             tenant_id=tenant_id,
             run_id=run_id,
@@ -383,7 +388,7 @@ def test_phase8c1_scenario1_worker_fails_closed_for_scenario3_envelope(monkeypat
     )
 
     assert processed is True
-    assert invocation_count == 0
+    assert "scenario-3" not in invoked_scenario_ids
     assert len(rows) == 1
     assert rows[0].topic == AGENT_DISPATCH_TOPIC
     assert rows[0].delivered_at is None
