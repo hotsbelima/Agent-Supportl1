@@ -841,7 +841,7 @@ Verification on the reviewed code checkpoint:
 
 - focused Phase 8C1 regression: **5 passed**;
 - focused Phase 8C2 tests: **8 passed**;
-- full Python regression: **207 passed**;
+- full Python regression: **208 passed**;
 - retained historical Node regression: **5 passed**;
 - frontend tests: **42 passed**;
 - frontend typecheck/lint/build/static audit: PASS;
