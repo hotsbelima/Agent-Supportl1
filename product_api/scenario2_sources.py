@@ -1,7 +1,7 @@
 """Scenario 2 deterministic source adapter backed by persisted Product state.
 
-This is not model-visible in Phase 7C. Phase 7D may place typed ADK tool wrappers
-on top of these provider-neutral methods.
+Phase 7D exposes these provider-neutral reads only through typed Product/ADK
+tool wrappers; hidden fixture truth never bypasses that boundary.
 """
 
 from __future__ import annotations
@@ -118,20 +118,28 @@ class PersistedScenario2FixtureSources:
         if state is None:
             raise RuntimeError("Scenario 2 Product state is unavailable")
 
-        open_ids: tuple[str, ...] = ()
+        open_ids = {
+            item.major_incident_id
+            for item in state.major_incidents
+            if (
+                item.service_key == service_key
+                and item.correlation_key == correlation_key
+                and item.dependency_id == dependency_id
+            )
+        }
         if (
             service_key == SERVICE_KEY
             and correlation_key == CORRELATION_KEY
             and dependency_id == ACMEPAY_DEPENDENCY_ID
             and state.fixture_state.matching_major_incident_id is not None
         ):
-            open_ids = (state.fixture_state.matching_major_incident_id,)
+            open_ids.add(state.fixture_state.matching_major_incident_id)
 
         return MajorIncidentSearchSnapshot(
             service_key=service_key,
             correlation_key=correlation_key,
             dependency_id=dependency_id,
-            open_major_incident_ids=open_ids,
+            open_major_incident_ids=tuple(sorted(open_ids)),
         )
 
 
