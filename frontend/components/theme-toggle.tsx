@@ -1,26 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 type Theme = "dark" | "light";
 
 const STORAGE_KEY = "agent-support-theme";
+const CHANGE_EVENT = "agent-support-theme-change";
+
+function getTheme(): Theme {
+  return window.localStorage.getItem(STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
+function subscribeTheme(onStoreChange: () => void) {
+  const handleStorage = () => onStoreChange();
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(CHANGE_EVENT, handleStorage);
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(CHANGE_EVENT, handleStorage);
+  };
+}
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, () => "dark");
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    const initial: Theme = saved === "light" ? "light" : "dark";
-    setTheme(initial);
-    document.documentElement.dataset.theme = initial;
-  }, []);
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.dataset.theme = next;
     window.localStorage.setItem(STORAGE_KEY, next);
+    window.dispatchEvent(new Event(CHANGE_EVENT));
   }
 
   return (
