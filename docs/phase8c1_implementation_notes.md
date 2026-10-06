@@ -5,8 +5,8 @@ Status: **PASS — Product foundation and Scenario 3 provider reads implemented 
 Base:
 - final Phase 7 / Phase 8 design baseline: `2f8dae61c06afd0f134c58e90aba0591a013a31e`
 - branch: `phase-8c1-scenario3-provider-reads`
-- implementation checkpoint: `7929f8ed7afc2734b5db77e0d200af9b5029fa89`
-- deterministic GitHub Actions run: `37485997182` — **SUCCESS**
+- reviewed implementation checkpoint: `ceccf0f59950105e71fb35435118d3a26b473497`
+- deterministic GitHub Actions run: `37491364260` — **SUCCESS**
 
 ## Scope implemented
 
@@ -109,13 +109,13 @@ behavior was weakened to make the regression pass.
 
 ## Verification
 
-Final deterministic gate on implementation checkpoint
-`7929f8ed7afc2734b5db77e0d200af9b5029fa89`:
+Final deterministic gate on reviewed implementation checkpoint
+`ceccf0f59950105e71fb35435118d3a26b473497`:
 
-- focused Phase 8C1 tests: **4 passed**;
+- focused Phase 8C1 tests: **5 passed**;
 - Alembic: **`20261006_0006 (head)`**;
 - Alembic autogenerate check: **No new upgrade operations detected**;
-- full Python regression: **199 passed**;
+- full Python regression: **200 passed**;
 - retained historical Node regression: **5 passed**;
 - frontend typecheck: PASS;
 - frontend lint: PASS;
@@ -125,6 +125,32 @@ Final deterministic gate on implementation checkpoint
 - Product Docker image build: PASS.
 
 GitHub Actions:
-`https://github.com/hotsbelima/Agent-Supportl1/actions/runs/37485997182`
+`https://github.com/hotsbelima/Agent-Supportl1/actions/runs/37491364260`
+
+## Post-implementation review hardening
+
+A second review found a real shared-topic boundary defect that the original
+focused tests did not cover.
+
+Scenario 3 correctly reused `AGENT_DISPATCH_TOPIC`, but the existing
+`Scenario1DispatchWorker` continuously polls that topic. Therefore merely
+omitting `wake()` from the Scenario 3 start endpoint was insufficient: with
+Gemini configured, the Phase 7 Scenario 1 worker could claim a Scenario 3
+envelope before Phase 8C2 runtime routing existed.
+
+Phase 8C1 now fails closed at that boundary. After reloading Product Run state,
+the Scenario 1 worker refuses any envelope whose persisted
+`run.scenario_id != "scenario-1"`, reschedules it, and does not invoke the
+Scenario 1 native runtime. Phase 8C2 remains responsible for replacing this
+temporary guard with real Scenario 1/3 runtime selection.
+
+Additional regression coverage now proves:
+
+- a Scenario 3 envelope on the shared topic is never delivered to Scenario 1
+  native runtime;
+- normal Scenario 1 envelopes may still be delivered by that worker;
+- the Scenario 3 envelope stays pending/undelivered for later 8C2 routing;
+- dependency Evidence does not authorize another Run even inside the same
+  tenant, in addition to cross-tenant isolation.
 
 Next: **Phase 8C2 — Native Scenario 3 composition + runtime routing**.
