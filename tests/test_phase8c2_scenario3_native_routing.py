@@ -525,6 +525,12 @@ class _FakeRunStateService:
         return self.snapshot
 
 
+class _FailingRunStateService:
+    async def get(self, *, tenant_id: str, run_id: str):
+        del tenant_id, run_id
+        raise RuntimeError("simulated post-commit state reload failure")
+
+
 class _RecordingResumeRuntime:
     gemini_configured = True
     resumability_wired = True
@@ -610,6 +616,40 @@ def _scenario3_rejected_result() -> tuple[RunStateSnapshot, ApprovalProcessed]:
         replayed=False,
     )
     return snapshot, result
+
+
+def test_phase8c2_committed_field_decision_survives_runtime_selection_failure():
+    snapshot, result = _scenario3_rejected_result()
+    approval_service = _FakeApprovalService(result)
+    scenario1_runtime = _RecordingResumeRuntime()
+    scenario3_runtime = _RecordingResumeRuntime()
+    container = ProductApiContainer(
+        start_service=object(),
+        state_service=_FailingRunStateService(),
+        lifecycle_service=object(),
+        approval_service=approval_service,
+        fixture=object(),
+        agent_runtime=scenario1_runtime,
+        scenario3_agent_runtime=scenario3_runtime,
+    )
+
+    with TestClient(create_app(container)) as client:
+        response = client.post(
+            (
+                f"/api/v1/runs/{snapshot.run.run_id}/proposals/"
+                f"{result.proposal.proposal_id}/reject"
+            ),
+            headers={"X-Tenant-ID": snapshot.run.tenant_id},
+            json={"decided_by": "phase8c2-test"},
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["approval"]["decision"] == "REJECTED"
+    assert body["agent_resume"]["status"] == "deferred"
+    assert body["agent_resume"]["retryable"] is True
+    assert scenario1_runtime.calls == []
+    assert scenario3_runtime.calls == []
 
 
 def test_phase8c2_generic_field_decision_routes_resume_by_persisted_scenario_id():
