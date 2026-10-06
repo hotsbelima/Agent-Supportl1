@@ -55,6 +55,9 @@ For Phase 2 deployment verification, `Dockerfile` runs the minimal `phase2_backe
 
 For project context, start with the canonical cumulative handoff:
 [`docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Cumulative.md).
+The final-stage entry points are
+[`Phase 1 Implementation Notes`](docs/phases/phase-1/final-stage/IMPLEMENTATION_NOTES.md)
+and [`Phase 2 Final Stage`](docs/phases/phase-2/final-stage/README.md).
 The phase documents are retained as deltas/evidence:
 [`v5.4 — Phase 1`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md)
 and [`v5.5 — Phase 2`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md).
