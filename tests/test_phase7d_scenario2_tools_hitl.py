@@ -950,20 +950,13 @@ def test_phase7d_pending_equivalent_is_blocked_tenant_wide_across_runs():
                 == "duplicate_pending_major_incident_proposal"
             )
 
-            first_state = await stack["state"].get(
+            second_state = await stack["state"].get(
                 tenant_id=tenant_id,
-                run_id=(
-                    await stack["state"]._query.get(  # type: ignore[attr-defined]
-                        tenant_id=tenant_id,
-                        run_id=second.run.run_id,
-                    )
-                ).run.run_id
-                if False
-                else second.run.run_id,
+                run_id=second.run.run_id,
             )
             assert first_proposal_id
-            assert first_state is not None
-            assert first_state.major_incident_proposals == ()
+            assert second_state is not None
+            assert second_state.major_incident_proposals == ()
         finally:
             await _clear_scenario2_outbox(factory, tenant_id)
             await engine.dispose()
