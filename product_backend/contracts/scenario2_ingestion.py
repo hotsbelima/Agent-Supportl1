@@ -54,12 +54,12 @@ class Scenario2IngestionStateSnapshot:
     service_incidents: tuple[ServiceIncident, ...]
     operational_signals: tuple[OperationalSignal, ...]
     evidence: tuple[Evidence, ...]
-    major_incident_proposals: tuple[MajorIncidentProposal, ...]
-    major_incident_approvals: tuple[MajorIncidentApproval, ...]
-    major_incident_executions: tuple[MajorIncidentExecution, ...]
-    major_incidents: tuple[MajorIncidentRecord, ...]
     fixture_state: Scenario2FixtureState
     latest_event_seq: int
+    major_incident_proposals: tuple[MajorIncidentProposal, ...] = ()
+    major_incident_approvals: tuple[MajorIncidentApproval, ...] = ()
+    major_incident_executions: tuple[MajorIncidentExecution, ...] = ()
+    major_incidents: tuple[MajorIncidentRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
