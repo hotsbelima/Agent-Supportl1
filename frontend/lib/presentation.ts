@@ -7,10 +7,10 @@ import type {
 } from "./types";
 
 export const FIELD_SERVICE_OUTCOME_NOTE =
-  "Onsite field-service work order registered. This is not proof of repair.";
+  "Выезд Field Service зарегистрирован. Это ещё не подтверждает ремонт устройства.";
 
 export const STALE_PROPOSAL_NOTE =
-  "Approval was recorded, but fresh authoritative conditions no longer allowed execution. No field-service action was created.";
+  "Решение человека сохранено, но свежие авторитетные данные больше не разрешают выполнение. Действие Field Service не создавалось.";
 
 function stringValue(
   payload: Record<string, JsonValue>,
@@ -24,43 +24,43 @@ export function eventSummary(event: ApplicationEventView): string {
   const payload = event.payload;
   switch (event.event_type) {
     case "simulation.started":
-      return "Run started";
+      return "Запуск симуляции";
     case "external.signal":
-      return "Incident signal received";
+      return "Получен операционный сигнал";
     case "observation.recorded": {
       const sourceType = stringValue(payload, "source_type");
       return sourceType
-        ? `Observation recorded: ${sourceType}`
-        : "Observation recorded";
+        ? `Сохранено наблюдение: ${sourceType}`
+        : "Сохранено наблюдение";
     }
     case "tool.started": {
       const tool = stringValue(payload, "tool_name");
-      return tool ? `Tool started: ${tool}` : "Tool started";
+      return tool ? `Запущен инструмент: ${tool}` : "Запущен инструмент";
     }
     case "tool.finished":
-      return "Tool finished";
+      return "Инструмент завершил работу";
     case "finding.recorded":
-      return "Finding recorded";
+      return "Сохранён вывод";
     case "proposal.created":
-      return "Field visit proposal created";
+      return "Создано предложение на действие";
     case "approval.decided": {
       const decision = stringValue(payload, "decision");
       return decision
-        ? `Human decision recorded: ${decision}`
-        : "Human decision recorded";
+        ? `Сохранено решение человека: ${statusLabel(decision)}`
+        : "Сохранено решение человека";
     }
     case "action.executed":
-      return "Field service action registered";
+      return "Product-действие зарегистрировано";
     case "run.status_changed": {
       const status = stringValue(payload, "status");
-      return status ? `Run status changed → ${status}` : "Run status changed";
+      return status
+        ? `Статус запуска → ${statusLabel(status)}`
+        : "Изменился статус запуска";
     }
     default:
       return event.event_type;
   }
 }
-
-
 
 export function observationState(evidence: EvidenceView): string | null {
   const payload = evidence.payload;
@@ -79,11 +79,40 @@ export function observationState(evidence: EvidenceView): string | null {
   return null;
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Активен",
+  WAITING_APPROVAL: "Ожидает решения",
+  PENDING_APPROVAL: "Ожидает решения",
+  APPROVED: "Одобрено",
+  REJECTED: "Отклонено",
+  STALE: "Устарело",
+  EXECUTED: "Выполнено",
+  ESCALATED: "Эскалирован",
+  OPEN: "Открыт",
+  CLOSED: "Закрыт",
+  REGISTERED: "Зарегистрирован",
+  HEALTHY: "Исправно",
+  DEGRADED: "Деградация",
+  DOWN: "Недоступно",
+  UNKNOWN: "Неизвестно",
+  NOT_APPROVED: "Не одобрено",
+};
+
+export function statusLabel(value: string): string {
+  return STATUS_LABELS[value] ?? value;
+}
+
+export function connectionLabel(state: ConnectionState): string {
+  if (state === "Live") return "Онлайн";
+  if (state === "Reconnecting") return "Переподключение";
+  return "Недоступно";
+}
+
 export function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return (
-    new Intl.DateTimeFormat("en-GB", {
+    new Intl.DateTimeFormat("ru-RU", {
       dateStyle: "medium",
       timeStyle: "medium",
       timeZone: "UTC",
@@ -92,7 +121,7 @@ export function formatTimestamp(value: string): string {
 }
 
 export function proposalTone(
-  status: ProposalView["status"],
+  status: ProposalView["status"] | string,
 ): "pending" | "rejected" | "stale" | "executed" | "neutral" {
   if (status === "PENDING_APPROVAL") return "pending";
   if (status === "REJECTED") return "rejected";
