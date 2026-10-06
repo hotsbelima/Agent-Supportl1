@@ -62,7 +62,7 @@ class SqlAlchemyApplicationEventRepository:
     append concurrently. Generic application events still do not create outbox
     rows. Concrete Product workflows enqueue only explicit dispatch records:
     Scenario 1 uses its Phase 7A operational-event topic and Scenario 2 uses a
-    distinct Phase 7C signal topic awaiting its ADK consumer.
+    distinct Scenario 2 topic consumed by the Phase 7C/7D native ADK bridge.
     """
 
     def __init__(
