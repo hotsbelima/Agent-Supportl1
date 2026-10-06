@@ -58,6 +58,7 @@ def test_controlled_seed_is_not_exposed_as_public_http_endpoint():
         "/health",
         "/api/v1/scenario-1/runs",
         "/api/v1/scenario-2/runs",
+        "/api/v1/scenario-3/runs",
         "/api/v1/scenario-2/runs/{run_id}",
         "/api/v1/scenario-2/runs/{run_id}/signals",
         "/api/v1/scenario-2/runs/{run_id}/simulator/next",
