@@ -251,6 +251,10 @@ export type HealthResponse = {
   status: string;
   phase: number;
   checkpoint: string;
+  release_version: string;
+  release_sha: string;
+  public_demo: boolean;
+  tenant_policy: "fixed_server_side" | "trusted_request_header";
   database_configured: boolean;
   database_reachable: boolean;
   adk_wired: boolean;
