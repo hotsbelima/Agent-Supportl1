@@ -1,4 +1,4 @@
-"""Stable Product API schemas through the Phase 6C ADK resume boundary."""
+"""Stable Product API schemas through Scenario 2 Phase 7D HITL."""
 
 from __future__ import annotations
 
