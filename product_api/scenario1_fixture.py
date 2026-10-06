@@ -43,10 +43,21 @@ INCIDENT_SYMPTOM = "Payment terminal is unavailable."
 class Scenario1FixtureSources:
     """Deterministic Scenario 1 sources plus a narrow Phase 6D test override."""
 
-    def __init__(self) -> None:
-        self._access_link_operational_overrides: dict[
+    def __init__(
+        self,
+        access_link_operational_overrides: dict[
             tuple[str, str], OperationalState
-        ] = {}
+        ] | None = None,
+    ) -> None:
+        # Scenario 1 and Scenario 3 may use distinct bootstrap identities while
+        # sharing one authoritative process-local monitoring truth for the same
+        # physical topology. This is required so human-approval revalidation
+        # observes the same access-link override as Scenario 3 diagnostics.
+        self._access_link_operational_overrides = (
+            access_link_operational_overrides
+            if access_link_operational_overrides is not None
+            else {}
+        )
 
     def set_access_link_operational_state(
         self,
