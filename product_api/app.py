@@ -26,11 +26,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from google.adk.sessions import DatabaseSessionService
 
-from agent_runtime.service import Scenario1AgentRuntime
+from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
 from agent_runtime.scenario2_service import Scenario2AgentRuntime
+from agent_runtime.scenario3_service import Scenario3AgentRuntime
 from agent_runtime.sessions import create_database_session_service
 from agent_runtime.sessions import ensure_run_session
 from product_backend.adapters.tool_adapters import DefaultScenario1ToolAdapter
+from product_backend.adapters.scenario3_tool_adapters import (
+    DefaultScenario3ToolAdapter,
+)
 from product_backend.adapters.scenario2_tool_adapters import (
     DefaultScenario2ToolAdapter,
 )
@@ -189,8 +193,11 @@ class ProductApiContainer:
     scenario3_fixture: Scenario3FixtureSources | None = None
     scenario3_sources: Scenario3ProviderSources | None = None
     scenario3_provider_read_service: Scenario3ProviderReadService | None = None
+    scenario3_agent_runtime: Scenario3AgentRuntime | None = None
 
     async def close(self) -> None:
+        if self.scenario3_agent_runtime is not None:
+            await self.scenario3_agent_runtime.close()
         if self.scenario2_agent_runtime is not None:
             await self.scenario2_agent_runtime.close()
         if self.agent_runtime is not None:
@@ -230,11 +237,6 @@ def build_container_from_env() -> ProductApiContainer:
     )
     state_service = RunStateService(
         SqlAlchemyRunStateQuery(session_factory)
-    )
-    dispatch_worker = Scenario1DispatchWorker(
-        uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(session_factory),
-        state_service=state_service,
-        agent_runtime=agent_runtime,
     )
 
     scenario2_state_service = Scenario2StateService(
@@ -303,6 +305,40 @@ def build_container_from_env() -> ProductApiContainer:
         ),
     )
 
+    scenario3_local_read_service = Scenario1ReadToolService(
+        read_uow_factory=lambda: SqlAlchemyToolReadUnitOfWork(session_factory),
+        cmdb=scenario3_fixture,
+        monitoring=scenario3_fixture,
+        itsm=scenario3_fixture,
+        kb=scenario3_fixture,
+        ttl_policy=EvidenceTtlPolicy(
+            site_health=timedelta(minutes=5),
+            access_link_diagnostic=timedelta(minutes=2),
+        ),
+    )
+    scenario3_local_adapter = DefaultScenario1ToolAdapter(
+        read_service=scenario3_local_read_service,
+        proposal_service=proposal_service,
+    )
+    scenario3_tool_adapter = DefaultScenario3ToolAdapter(
+        provider_read_service=scenario3_provider_read_service,
+        local_adapter=scenario3_local_adapter,
+    )
+    scenario3_agent_runtime = Scenario3AgentRuntime(
+        adapter=scenario3_tool_adapter,
+        session_service=adk_session_service,
+    )
+
+    # Scenario 1 and Scenario 3 share one durable device-Incident consumer.
+    # The worker reloads Product state and chooses the runtime only from the
+    # persisted Run.scenario_id.
+    dispatch_worker = Scenario1DispatchWorker(
+        uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(session_factory),
+        state_service=state_service,
+        agent_runtime=agent_runtime,
+        scenario3_agent_runtime=scenario3_agent_runtime,
+    )
+
     return ProductApiContainer(
         start_service=Scenario1RunStartService(
             lambda: SqlAlchemyRunStartUnitOfWork(session_factory)
@@ -337,6 +373,7 @@ def build_container_from_env() -> ProductApiContainer:
         scenario3_fixture=scenario3_fixture,
         scenario3_sources=scenario3_sources,
         scenario3_provider_read_service=scenario3_provider_read_service,
+        scenario3_agent_runtime=scenario3_agent_runtime,
     )
 
 
@@ -720,6 +757,11 @@ def create_app(
                 and services.scenario3_sources is not None
                 and services.scenario3_provider_read_service is not None
             ),
+            "scenario3_phase8c2_native_wired": (
+                services.scenario3_agent_runtime is not None
+                and services.scenario3_agent_runtime.resumability_wired
+                and services.dispatch_worker is not None
+            ),
         }
 
     @app.post(
@@ -798,6 +840,19 @@ def create_app(
             tenant_id=tenant_id,
             bootstrap=services.scenario3_fixture.bootstrap(),
         )
+        if services.adk_session_service is not None:
+            try:
+                await ensure_run_session(
+                    services.adk_session_service,
+                    tenant_id=tenant_id,
+                    run_id=started.run.run_id,
+                )
+            except Exception:
+                logger.warning(
+                    "Scenario 3 ADK session provisioning deferred for run=%s",
+                    started.run.run_id,
+                )
+
         snapshot = await services.state_service.get(
             tenant_id=tenant_id,
             run_id=started.run.run_id,
@@ -810,9 +865,9 @@ def create_app(
                 retryable=True,
             )
 
-        # Phase 8C1 persists the generic device-Incident dispatch envelope but
-        # deliberately does not provision/wake native ADK. Scenario-aware
-        # runtime selection on this shared topic is implemented in Phase 8C2.
+        if services.dispatch_worker is not None:
+            services.dispatch_worker.wake()
+
         return run_state_response(snapshot)
 
     @app.post(
@@ -1403,24 +1458,37 @@ def create_app(
             status="deferred",
             retryable=True,
         )
-        if services.agent_runtime is not None:
+
+        # Product truth is committed first. Runtime selection is then derived
+        # from the persisted Product Run, never from request/model input.
+        snapshot = await services.state_service.get(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        runtime: DeviceIncidentAgentRuntime | None = None
+        if snapshot is not None:
+            if snapshot.run.scenario_id == "scenario-1":
+                runtime = services.agent_runtime
+            elif snapshot.run.scenario_id == "scenario-3":
+                runtime = services.scenario3_agent_runtime
+
+        if runtime is not None:
             try:
-                resumed = await services.agent_runtime.resume_human_decision(
+                resumed = await runtime.resume_human_decision(
                     tenant_id=tenant_id,
                     run_id=run_id,
                     proposal_id=proposal_id,
                     decision_payload=_agent_decision_payload(result),
                 )
             except Exception:
-                # The Product decision is already committed. Returning it with
-                # deferred resume preserves business truth. Replaying the same
-                # existing Approve/Reject endpoint is the reconciliation path:
-                # Product idempotency replays the stored decision, while native
-                # ADK event history prevents duplicate FunctionResponse delivery.
+                # The Product decision is already committed. Replaying the same
+                # endpoint reconciles native delivery without duplicating the
+                # Product decision or FunctionResponse.
                 logger.warning(
-                    "Native ADK resume deferred for run=%s proposal=%s",
+                    "Native ADK resume deferred for run=%s proposal=%s scenario=%s",
                     run_id,
                     proposal_id,
+                    snapshot.run.scenario_id if snapshot is not None else "unknown",
                 )
             else:
                 agent_resume = AgentResumeView(
