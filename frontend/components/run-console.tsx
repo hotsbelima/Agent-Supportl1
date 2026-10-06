@@ -7,46 +7,48 @@ import type { ReactNode } from "react";
 import {
   decideProposal,
   displayApiError,
-  getRunState,
-  getRunTimeline,
+  getЗапускState,
+  getЗапускХронология,
   isRetryableApiFailure,
 } from "@/lib/api";
 import {
   abortableDelay,
-  applyTimelineEvent,
-  bootstrapPersistedRun,
+  applyХронологияEvent,
+  bootstrapPersistedЗапуск,
   connectionStateForFailure,
-  decisionRecoveryStatus,
-  emptyTimeline,
+  decisionRecoveryСтатус,
+  emptyХронология,
   isStateRefreshEvent,
-  mergeTimelineEvents,
+  mergeХронологияEvents,
   nextTransportFailure,
   prepareReconnect,
   reconnectDelayMs,
   replayNotice,
-  TimelineGapError,
-  type TimelineAccumulator,
+  ХронологияGapError,
+  type ХронологияAccumulator,
 } from "@/lib/recovery";
 import {
+  connectionLabel,
   connectionTone,
-  eventSummary,
+  eventОписание,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   observationState,
   proposalTone,
+  statusLabel,
   STALE_PROPOSAL_NOTE,
 } from "@/lib/presentation";
-import { streamRunEvents } from "@/lib/sse";
+import { streamЗапускEvents } from "@/lib/sse";
 import type {
   ApplicationEventView,
-  ConnectionState,
+  СоединениеState,
   ProposalView,
-  RunStateResponse,
+  ЗапускStateResponse,
 } from "@/lib/types";
 
 const DEMO_OPERATOR = "portfolio-demo-operator";
 
-function StatusBadge({
+function СтатусBadge({
   value,
   tone = "neutral",
 }: {
@@ -55,7 +57,7 @@ function StatusBadge({
 }) {
   return (
     <span className="status-badge" data-tone={tone}>
-      {value}
+      {statusLabel(value)}
     </span>
   );
 }
@@ -69,20 +71,20 @@ function isAbortError(error: unknown): boolean {
 }
 
 function recoveryMessage(error: unknown): string {
-  if (error instanceof TimelineGapError) {
-    return "Timeline gap detected; recovering missing persisted events.";
+  if (error instanceof ХронологияGapError) {
+    return "Обнаружен пропуск в хронологии; восстанавливаем сохранённые события.";
   }
   if (error instanceof Error && error.message === "Live event stream closed.") {
-    return "Live event stream closed; reconnecting from persisted state.";
+    return "Live-лента закрылась; переподключаемся из сохранённого состояния.";
   }
   return displayApiError(error);
 }
 
-export function RunConsole({ runId }: { runId: string }) {
-  const [state, setState] = useState<RunStateResponse | null>(null);
+export function ЗапускConsole({ runId }: { runId: string }) {
+  const [state, setState] = useState<ЗапускStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
-  const [connection, setConnection] =
-    useState<ConnectionState>("Reconnecting");
+  const [connection, setСоединение] =
+    useState<СоединениеState>("Reconnecting");
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -92,7 +94,7 @@ export function RunConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
-  const [selectedIncidentId, setSelectedIncidentId] = useState<{
+  const [selectedИнцидентId, setSelectedИнцидентId] = useState<{
     runId: string;
     id: string;
   } | null>(null);
@@ -101,15 +103,15 @@ export function RunConsole({ runId }: { runId: string }) {
     id: string;
   } | null>(null);
 
-  const timelineByRunRef = useRef(new Map<string, TimelineAccumulator>());
-  const cursorByRunRef = useRef(new Map<string, number>());
-  const stateSeqByRunRef = useRef(new Map<string, number>());
+  const timelineByЗапускRef = useRef(new Map<string, ХронологияAccumulator>());
+  const cursorByЗапускRef = useRef(new Map<string, number>());
+  const stateSeqByЗапускRef = useRef(new Map<string, number>());
 
   const publishState = useCallback(
-    (current: RunStateResponse) => {
-      const previousSeq = stateSeqByRunRef.current.get(runId) ?? -1;
+    (current: ЗапускStateResponse) => {
+      const previousSeq = stateSeqByЗапускRef.current.get(runId) ?? -1;
       if (current.latest_event_seq >= previousSeq) {
-        stateSeqByRunRef.current.set(runId, current.latest_event_seq);
+        stateSeqByЗапускRef.current.set(runId, current.latest_event_seq);
         setState(current);
       }
       return current;
@@ -119,7 +121,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
   const refreshState = useCallback(
     async (signal?: AbortSignal) => {
-      const current = await getRunState(runId, signal);
+      const current = await getЗапускState(runId, signal);
       return publishState(current);
     },
     [publishState, runId],
@@ -132,25 +134,25 @@ export function RunConsole({ runId }: { runId: string }) {
     let needsRecovery = false;
 
     const readState = (
-      requestedRunId: string,
+      requestedЗапускId: string,
       signal?: AbortSignal,
-    ) => getRunState(requestedRunId, signal);
+    ) => getЗапускState(requestedЗапускId, signal);
     const readPage = (
-      requestedRunId: string,
+      requestedЗапускId: string,
       afterSeq: number,
       limit: number,
       signal?: AbortSignal,
-    ) => getRunTimeline(requestedRunId, afterSeq, limit, signal);
+    ) => getЗапускХронология(requestedЗапускId, afterSeq, limit, signal);
 
-    function currentTimeline(): TimelineAccumulator {
-      return timelineByRunRef.current.get(runId) ?? emptyTimeline(
-        cursorByRunRef.current.get(runId) ?? 0,
+    function currentХронология(): ХронологияAccumulator {
+      return timelineByЗапускRef.current.get(runId) ?? emptyХронология(
+        cursorByЗапускRef.current.get(runId) ?? 0,
       );
     }
 
-    function publishTimeline(next: TimelineAccumulator) {
-      timelineByRunRef.current.set(runId, next);
-      cursorByRunRef.current.set(runId, next.cursor);
+    function publishХронология(next: ХронологияAccumulator) {
+      timelineByЗапускRef.current.set(runId, next);
+      cursorByЗапускRef.current.set(runId, next.cursor);
       if (mounted) setEvents(next.events);
     }
 
@@ -158,17 +160,17 @@ export function RunConsole({ runId }: { runId: string }) {
       setLoading(true);
       setPageError(null);
       setStreamError(null);
-      setConnection("Reconnecting");
+      setСоединение("Reconnecting");
       setDecisionError(null);
       setDecisionNotice(null);
 
-      timelineByRunRef.current.set(runId, emptyTimeline());
-      cursorByRunRef.current.set(runId, 0);
-      stateSeqByRunRef.current.set(runId, -1);
+      timelineByЗапускRef.current.set(runId, emptyХронология());
+      cursorByЗапускRef.current.set(runId, 0);
+      stateSeqByЗапускRef.current.set(runId, -1);
 
       while (!controller.signal.aborted) {
         try {
-          const bootstrapped = await bootstrapPersistedRun({
+          const bootstrapped = await bootstrapPersistedЗапуск({
             runId,
             readState,
             readPage,
@@ -177,9 +179,9 @@ export function RunConsole({ runId }: { runId: string }) {
           if (!mounted) return;
 
           publishState(bootstrapped.state);
-          publishTimeline(bootstrapped.timeline);
+          publishХронология(bootstrapped.timeline);
           failureCount = 0;
-          setConnection("Reconnecting");
+          setСоединение("Reconnecting");
           setPageError(null);
           setLoading(false);
           break;
@@ -194,14 +196,14 @@ export function RunConsole({ runId }: { runId: string }) {
 
           if (!isRetryableApiFailure(error)) {
             setLoading(false);
-            setConnection("Offline/Unavailable");
+            setСоединение("Offline/Unavailable");
             setPageError(displayApiError(error));
             return;
           }
 
           const failure = nextTransportFailure(failureCount);
           failureCount = failure.failureCount;
-          setConnection(failure.connection);
+          setСоединение(failure.connection);
           setPageError(
             `${displayApiError(error)} Retrying persisted run state…`,
           );
@@ -218,13 +220,13 @@ export function RunConsole({ runId }: { runId: string }) {
       while (!controller.signal.aborted) {
         try {
           if (needsRecovery) {
-            setConnection(connectionStateForFailure(failureCount));
+            setСоединение(connectionStateForFailure(failureCount));
             await abortableDelay(
               reconnectDelayMs(failureCount),
               controller.signal,
             );
 
-            const cursor = cursorByRunRef.current.get(runId) ?? 0;
+            const cursor = cursorByЗапускRef.current.get(runId) ?? 0;
             const recovered = await prepareReconnect({
               runId,
               cursor,
@@ -234,25 +236,25 @@ export function RunConsole({ runId }: { runId: string }) {
             });
             if (!mounted) return;
 
-            const merged = mergeTimelineEvents(
-              currentTimeline(),
+            const merged = mergeХронологияEvents(
+              currentХронология(),
               recovered.backfill.events,
               runId,
             );
             publishState(recovered.state);
-            publishTimeline(merged);
-            setConnection("Reconnecting");
+            publishХронология(merged);
+            setСоединение("Reconnecting");
           }
 
-          const cursor = cursorByRunRef.current.get(runId) ?? 0;
-          await streamRunEvents({
+          const cursor = cursorByЗапускRef.current.get(runId) ?? 0;
+          await streamЗапускEvents({
             runId,
             afterSeq: cursor,
             lastEventId: needsRecovery ? cursor : undefined,
             signal: controller.signal,
             onOpen: () => {
               if (!mounted) return;
-              setConnection("Live");
+              setСоединение("Live");
               setStreamError(null);
             },
             onHeartbeat: () => {
@@ -261,8 +263,8 @@ export function RunConsole({ runId }: { runId: string }) {
             onEvent: (event) => {
               if (!mounted) return;
 
-              const result = applyTimelineEvent(
-                currentTimeline(),
+              const result = applyХронологияEvent(
+                currentХронология(),
                 event,
                 runId,
               );
@@ -276,7 +278,7 @@ export function RunConsole({ runId }: { runId: string }) {
               }
 
               failureCount = 0;
-              publishTimeline(result.timeline);
+              publishХронология(result.timeline);
 
               if (isStateRefreshEvent(event)) {
                 void refreshState(controller.signal).catch(() => {
@@ -302,7 +304,7 @@ export function RunConsole({ runId }: { runId: string }) {
           const failure = nextTransportFailure(failureCount);
           failureCount = failure.failureCount;
           needsRecovery = true;
-          setConnection(failure.connection);
+          setСоединение(failure.connection);
           setStreamError(recoveryMessage(error));
         }
       }
@@ -316,13 +318,13 @@ export function RunConsole({ runId }: { runId: string }) {
     };
   }, [publishState, refreshState, runId]);
 
-  const primaryIncident = state?.incidents[0] ?? null;
-  const selectedIncidentKey =
-    selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
+  const primaryИнцидент = state?.incidents[0] ?? null;
+  const selectedИнцидентKey =
+    selectedИнцидентId?.runId === runId ? selectedИнцидентId.id : null;
   const selectedObservationKey =
     selectedObservationId?.runId === runId ? selectedObservationId.id : null;
-  const selectedIncident = selectedIncidentKey
-    ? state?.incidents.find((item) => item.incident_id === selectedIncidentKey) ?? null
+  const selectedИнцидент = selectedИнцидентKey
+    ? state?.incidents.find((item) => item.incident_id === selectedИнцидентKey) ?? null
     : null;
   const selectedObservation = selectedObservationKey
     ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
@@ -330,10 +332,10 @@ export function RunConsole({ runId }: { runId: string }) {
   const lastSeq = events.at(-1)?.seq ?? 0;
   const scenarioLabel =
     state?.run.scenario_id === "scenario-3"
-      ? "Scenario 3"
+      ? "Сценарий 3"
       : state?.run.scenario_id === "scenario-1"
-        ? "Scenario 1"
-        : state?.run.scenario_id ?? "Unknown scenario";
+        ? "Сценарий 1"
+        : state?.run.scenario_id ?? "Неизвестный сценарий";
 
   const latestProposal: ProposalView | null = state?.proposals.length
     ? [...state.proposals]
@@ -364,38 +366,38 @@ export function RunConsole({ runId }: { runId: string }) {
         await refreshState();
       } catch {
         setDecisionError(
-          "Decision was recorded, but the full state refresh is temporarily unavailable. Reconnect will synchronize authoritative state.",
+          "Решение сохранено, но полное состояние временно недоступно. После переподключения интерфейс синхронизируется с Product state.",
         );
       }
     } catch (error) {
       try {
         const recovered = await refreshState();
-        const recovery = decisionRecoveryStatus(
+        const recovery = decisionRecoveryСтатус(
           recovered,
           proposal.proposal_id,
         );
 
         if (recovery === "persisted") {
           setDecisionNotice(
-            "Decision response was interrupted; authoritative persisted state was recovered.",
+            "Ответ на решение прервался; сохранённое Product state успешно восстановлено.",
           );
           setDecisionError(null);
         } else if (recovery === "still-pending") {
           setDecisionError(
-            `${displayApiError(error)} Persisted state still shows this proposal as pending; retrying the same decision is safe.`,
+            `${displayApiError(error)} Product state всё ещё показывает ожидание решения; повтор того же решения безопасен.`,
           );
         } else if (recovery === "inconsistent") {
           setDecisionError(
-            "Decision response was interrupted and persisted state is internally inconsistent, so execution is not being presented as confirmed.",
+            "Ответ прервался, а сохранённое состояние выглядит несогласованным; выполнение не показывается как подтверждённое.",
           );
         } else {
           setDecisionError(
-            "Decision response was interrupted and the proposal could not be confirmed in authoritative state.",
+            "Ответ прервался, и предложение не удалось подтвердить по авторитетному Product state.",
           );
         }
       } catch {
         setDecisionError(
-          "Decision result could not be confirmed. Reconnect will recover authoritative state; retrying the same decision remains idempotent.",
+          "Результат решения не подтверждён. Переподключение восстановит Product state; повтор решения остаётся идемпотентным.",
         );
       }
     } finally {
@@ -408,7 +410,7 @@ export function RunConsole({ runId }: { runId: string }) {
       <main className="console-shell">
         <div className="console-loading">
           <span className="spinner" aria-hidden="true" />
-          <strong>Loading persisted run</strong>
+          <strong>Загружаем сохранённый запуск</strong>
           <span>{runId}</span>
           {pageError ? <span role="status">{pageError}</span> : null}
         </div>
@@ -420,11 +422,11 @@ export function RunConsole({ runId }: { runId: string }) {
     return (
       <main className="console-shell">
         <div className="fatal-card">
-          <p className="eyebrow">Run unavailable</p>
-          <h1>Operational state could not be loaded</h1>
-          <p>{pageError ?? "The product API did not return run state."}</p>
+          <p className="eyebrow">Запуск недоступен</p>
+          <h1>Не удалось загрузить операционное состояние</h1>
+          <p>{pageError ?? "Product API не вернул состояние запуска."}</p>
           <Link className="secondary-button" href="/">
-            Back to scenarios
+            К выбору сценариев
           </Link>
         </div>
       </main>
@@ -439,34 +441,40 @@ export function RunConsole({ runId }: { runId: string }) {
             8O
           </Link>
           <div>
-            <p className="eyebrow">Autonomous L1 Incident Agent</p>
-            <h1>{scenarioLabel} operational console</h1>
+            <p className="eyebrow">Автономный L1 Инцидент Agent</p>
+            <h1>{scenarioLabel} · операционная консоль</h1>
           </div>
+        </div>
+
+        <div className="run-header-actions">
+          <Link className="secondary-button compact-button" href="/">
+            Новый запуск
+          </Link>
         </div>
 
         <div className="run-header-grid">
           <div>
-            <span>Run</span>
+            <span>Запуск</span>
             <code>{state.run.run_id}</code>
           </div>
           <div>
-            <span>Scenario</span>
+            <span>Сценарий</span>
             <strong>{state.run.scenario_id}</strong>
           </div>
           <div>
-            <span>Run status</span>
-            <StatusBadge value={state.run.status} tone="info" />
+            <span>Статус запуска</span>
+            <СтатусBadge value={state.run.status} tone="info" />
           </div>
           <div>
-            <span>Incident</span>
-            <code>{primaryIncident?.incident_id ?? "—"}</code>
+            <span>Инцидент</span>
+            <code>{primaryИнцидент?.incident_id ?? "—"}</code>
           </div>
           <div>
-            <span>Connection</span>
-            <StatusBadge value={connection} tone={connectionTone(connection)} />
+            <span>Соединение</span>
+            <СтатусBadge value={connection} tone={connectionTone(connection)} />
           </div>
           <div>
-            <span>Last event seq</span>
+            <span>Последнее событие</span>
             <strong>#{lastSeq}</strong>
           </div>
         </div>
@@ -474,7 +482,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       {streamError ? (
         <div className="connection-warning" role="status">
-          Persisted state remains visible while live delivery recovers.{" "}
+          Сохранённое состояние остаётся доступным, пока live-доставка восстанавливается.{" "}
           <span>{streamError}</span>
         </div>
       ) : null}
@@ -484,14 +492,14 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Current state</p>
-                <h2>Incidents</h2>
+                <p className="panel-kicker">Текущее состояние</p>
+                <h2>Инцидентs</h2>
               </div>
-              {selectedIncident ? (
-                <StatusBadge
-                  value={selectedIncident.status}
+              {selectedИнцидент ? (
+                <СтатусBadge
+                  value={selectedИнцидент.status}
                   tone={
-                    selectedIncident.status === "ESCALATED"
+                    selectedИнцидент.status === "ESCALATED"
                       ? "warning"
                       : "info"
                   }
@@ -501,45 +509,44 @@ export function RunConsole({ runId }: { runId: string }) {
               )}
             </div>
 
-            {selectedIncident ? (
+            {selectedИнцидент ? (
               <div className="entity-detail">
                 <button
                   className="back-list-button"
                   type="button"
-                  onClick={() => setSelectedIncidentId(null)}
+                  onClick={() => setSelectedИнцидентId(null)}
                 >
                   ← Назад к списку
                 </button>
                 <dl className="facts-grid">
                   <div>
-                    <dt>Incident ID</dt>
-                    <dd><code>{selectedIncident.incident_id}</code></dd>
+                    <dt>Инцидент ID</dt>
+                    <dd><code>{selectedИнцидент.incident_id}</code></dd>
                   </div>
                   <div>
-                    <dt>Site</dt>
-                    <dd>{selectedIncident.site_id}</dd>
+                    <dt>Площадка</dt>
+                    <dd>{selectedИнцидент.site_id}</dd>
                   </div>
                   <div>
-                    <dt>Status</dt>
-                    <dd>{selectedIncident.status}</dd>
+                    <dt>Статус</dt>
+                    <dd>{selectedИнцидент.status}</dd>
                   </div>
                   <div>
-                    <dt>Reported device</dt>
-                    <dd>{selectedIncident.reported_device_id}</dd>
+                    <dt>Устройство</dt>
+                    <dd>{selectedИнцидент.reported_device_id}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Summary</dt>
-                    <dd>{selectedIncident.symptom}</dd>
+                    <dt>Описание</dt>
+                    <dd>{selectedИнцидент.symptom}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Updated</dt>
-                    <dd>{formatTimestamp(selectedIncident.updated_at)}</dd>
+                    <dt>Обновлён</dt>
+                    <dd>{formatTimestamp(selectedИнцидент.updated_at)}</dd>
                   </div>
                 </dl>
-                {selectedIncident.status === "ESCALATED" ? (
+                {selectedИнцидент.status === "ESCALATED" ? (
                   <p className="semantic-note">
-                    Escalated means field service has been requested; it does not
-                    mean the device is repaired or the incident is resolved.
+                    Эскалация означает, что выезд Field Service запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
                   </p>
                 ) : null}
               </div>
@@ -551,14 +558,14 @@ export function RunConsole({ runId }: { runId: string }) {
                       <strong>{item.symptom}</strong>
                       <span>{item.site_id}</span>
                     </div>
-                    <StatusBadge
-                      value={item.status}
+                    <СтатусBadge
+                      value={statusLabel(item.status)}
                       tone={item.status === "ESCALATED" ? "warning" : "info"}
                     />
                     <button
                       className="detail-button"
                       type="button"
-                      onClick={() => setSelectedIncidentId({ runId, id: item.incident_id })}
+                      onClick={() => setSelectedИнцидентId({ runId, id: item.incident_id })}
                     >
                       Подробнее
                     </button>
@@ -566,15 +573,15 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </div>
             ) : (
-              <EmptyPanel>No incident is persisted for this run.</EmptyPanel>
+              <EmptyPanel>Для этого запуска пока не сохранено ни одного инцидента.</EmptyPanel>
             )}
           </article>
 
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Safe Product evidence</p>
-                <h2>Observations</h2>
+                <p className="panel-kicker">Безопасные факты Product</p>
+                <h2>Наблюдения</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
             </div>
@@ -590,11 +597,11 @@ export function RunConsole({ runId }: { runId: string }) {
                 </button>
                 <dl className="facts-grid">
                   <div>
-                    <dt>Type</dt>
+                    <dt>Тип</dt>
                     <dd>{selectedObservation.source_type}</dd>
                   </div>
                   <div>
-                    <dt>Captured</dt>
+                    <dt>Получено</dt>
                     <dd>{formatTimestamp(selectedObservation.captured_at)}</dd>
                   </div>
                   <div className="wide">
@@ -602,7 +609,7 @@ export function RunConsole({ runId }: { runId: string }) {
                     <dd><code>{selectedObservation.evidence_id}</code></dd>
                   </div>
                   <div className="wide">
-                    <dt>Source / entity context</dt>
+                    <dt>Связанные сущности</dt>
                     <dd>
                       {selectedObservation.entity_ids.length
                         ? selectedObservation.entity_ids.join(" · ")
@@ -618,12 +625,12 @@ export function RunConsole({ runId }: { runId: string }) {
                   </ul>
                 ) : (
                   <p className="muted-copy observation-copy">
-                    No normalized facts were persisted for this observation.
+                    Для этого наблюдения пока нет нормализованных фактов.
                   </p>
                 )}
                 {selectedObservation.expires_at ? (
                   <p className="expiry observation-copy">
-                    Validity timestamp:{" "}
+                    Действительно до:{" "}
                     <strong>
                       {formatTimestamp(selectedObservation.expires_at)}
                     </strong>
@@ -631,7 +638,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Typed safe payload
+                    Типd safe payload
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
@@ -649,14 +656,14 @@ export function RunConsole({ runId }: { runId: string }) {
                     <div className="entity-row-main">
                       <strong>{evidence.source_type}</strong>
                       <span>
-                        {evidence.entity_ids[0] ?? "Product observation"}
+                        {evidence.entity_ids[0] ?? "Product Evidence"}
                       </span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
                       </time>
                       {observationState(evidence) ? (
                         <span className="observation-state">
-                          State: {observationState(evidence)}
+                          Состояние: {statusLabel(observationState(evidence)!)}
                         </span>
                       ) : null}
                     </div>
@@ -677,8 +684,7 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                No observations have been persisted yet. The event-driven agent
-                will add safe typed evidence as it investigates.
+                Наблюдений пока нет. Event-driven агент добавит безопасные Evidence по мере расследования.
               </EmptyPanel>
             )}
           </article>
@@ -688,8 +694,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Persisted audit trail</p>
-                <h2>Timeline</h2>
+                <p className="panel-kicker">Сохранённый audit trail</p>
+                <h2>Хронология</h2>
               </div>
               <span className="panel-count">{events.length}</span>
             </div>
@@ -701,14 +707,14 @@ export function RunConsole({ runId }: { runId: string }) {
                     <div className="timeline-rail"><span>{event.seq}</span></div>
                     <div className="timeline-content">
                       <div className="timeline-title">
-                        <strong>{eventSummary(event)}</strong>
+                        <strong>{eventОписание(event)}</strong>
                         <time dateTime={event.occurred_at}>
                           {formatTimestamp(event.occurred_at)}
                         </time>
                       </div>
                       <code className="event-type">{event.event_type}</code>
                       <details className="event-details">
-                        <summary>Safe persisted details</summary>
+                        <summary>Безопасные сохранённые детали</summary>
                         <pre>{JSON.stringify(event.payload, null, 2)}</pre>
                       </details>
                     </div>
@@ -716,7 +722,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>No persisted application events were returned.</EmptyPanel>
+              <EmptyPanel>Сохранённых application events пока нет.</EmptyPanel>
             )}
           </article>
         </section>
@@ -725,11 +731,11 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Human boundary</p>
-                <h2>Proposal & approval</h2>
+                <p className="panel-kicker">Граница человеческого решения</p>
+                <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
-                <StatusBadge
+                <СтатусBadge
                   value={latestProposal.status}
                   tone={proposalTone(latestProposal.status)}
                 />
@@ -740,21 +746,21 @@ export function RunConsole({ runId }: { runId: string }) {
               <div className="proposal-card">
                 <dl className="facts-grid">
                   <div className="wide">
-                    <dt>Proposal ID</dt>
+                    <dt>ID предложения</dt>
                     <dd><code>{latestProposal.proposal_id}</code></dd>
                   </div>
                   <div>
-                    <dt>Diagnosis</dt>
+                    <dt>Диагноз</dt>
                     <dd>{latestProposal.diagnosis}</dd>
                   </div>
                   <div>
-                    <dt>Action</dt>
+                    <dt>Действие</dt>
                     <dd>{latestProposal.action_type}</dd>
                   </div>
                 </dl>
 
                 <div className="proposal-rationale">
-                  <span>Rationale</span>
+                  <span>Обоснование</span>
                   <p>{latestProposal.rationale}</p>
                 </div>
 
@@ -770,8 +776,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
-                      Human confirmation is required before any field-service
-                      action can be registered.
+                      До регистрации действия Field Service требуется решение человека.
                     </p>
                     <div className="decision-buttons">
                       <button
@@ -782,7 +787,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           void handleDecision(latestProposal, "approve")
                         }
                       >
-                        {decision?.verb === "approve" ? "Approving…" : "Approve"}
+                        {decision?.verb === "approve" ? "Одобряем…" : "Одобрить"}
                       </button>
                       <button
                         className="reject-button"
@@ -792,7 +797,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           void handleDecision(latestProposal, "reject")
                         }
                       >
-                        {decision?.verb === "reject" ? "Rejecting…" : "Reject"}
+                        {decision?.verb === "reject" ? "Отклоняем…" : "Отклонить"}
                       </button>
                     </div>
                   </div>
@@ -818,8 +823,7 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                No proposal exists yet. The event-driven agent will create one
-                only after sufficient persisted evidence is collected.
+                Предложения пока нет. Агент создаст его только после достаточного набора сохранённых Evidence.
               </EmptyPanel>
             )}
           </article>
@@ -827,8 +831,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Registered outcome</p>
-                <h2>Field service</h2>
+                <p className="panel-kicker">Зарегистрированный результат</p>
+                <h2>Field Service</h2>
               </div>
               <span className="panel-count">{state.work_orders.length}</span>
             </div>
@@ -842,32 +846,32 @@ export function RunConsole({ runId }: { runId: string }) {
                   return (
                     <div className="work-order-card" key={order.work_order_id}>
                       <div className="work-order-heading">
-                        <StatusBadge value="REGISTERED" tone="executed" />
+                        <СтатусBadge value="REGISTERED" tone="executed" />
                         <code>{order.work_order_id}</code>
                       </div>
                       <dl className="facts-grid">
                         <div className="wide">
-                          <dt>Action ID</dt>
+                          <dt>Действие ID</dt>
                           <dd><code>{action?.action_id ?? "—"}</code></dd>
                         </div>
                         <div>
-                          <dt>Action type</dt>
-                          <dd>{action?.action_type ?? "Field service"}</dd>
+                          <dt>Действие type</dt>
+                          <dd>{action?.action_type ?? "Field Service"}</dd>
                         </div>
                         <div>
-                          <dt>Device</dt>
+                          <dt>Устройство</dt>
                           <dd>{order.device_id}</dd>
                         </div>
                         <div>
-                          <dt>Site</dt>
+                          <dt>Площадка</dt>
                           <dd>{order.site_id}</dd>
                         </div>
                         <div>
-                          <dt>Switch / port</dt>
+                          <dt>Коммутатор / порт</dt>
                           <dd>{order.switch_id} · {order.port_id}</dd>
                         </div>
                         <div>
-                          <dt>Executed</dt>
+                          <dt>Выполнено</dt>
                           <dd>
                             {action?.executed_at
                               ? formatTimestamp(action.executed_at)
@@ -875,7 +879,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           </dd>
                         </div>
                         <div className="wide">
-                          <dt>Work order created</dt>
+                          <dt>Work Order создан</dt>
                           <dd>{formatTimestamp(order.created_at)}</dd>
                         </div>
                       </dl>
@@ -887,14 +891,14 @@ export function RunConsole({ runId }: { runId: string }) {
                 })}
               </div>
             ) : (
-              <EmptyPanel>No field-service work order has been registered.</EmptyPanel>
+              <EmptyPanel>Work Order Field Service ещё не зарегистрирован.</EmptyPanel>
             )}
           </article>
         </section>
       </div>
 
       <footer className="console-footer">
-        <span>Persistent state: PostgreSQL</span>
+        <span>Источник истины: PostgreSQL Product state</span>
         <span>Live transport: persisted SSE</span>
         <span>AI dispatch: persisted event → native ADK</span>
       </footer>
