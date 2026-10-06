@@ -22,6 +22,7 @@ from product_backend.adapters.scenario2_tool_adapters import Scenario2ToolAdapte
 
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .scenario2_agent import build_scenario2_agent
+from .retry import ProductRetryableToolPlugin
 from .service import (
     AgentResumeResult,
     _find_human_decision_correlation,
@@ -160,14 +161,14 @@ def _find_scenario2_event_correlation(
                 args = dict(call.args or {})
                 proposal_id = args.get("proposal_id")
                 if isinstance(proposal_id, str) and proposal_id:
-                    if (
-                        pending_proposal_id is not None
-                        and pending_proposal_id != proposal_id
-                    ):
+                    if pending_proposal_id is None:
                         raise RuntimeError(
-                            "Scenario 2 invocation contains multiple pending proposals"
+                            "Scenario 2 native wait has no successful Product proposal"
                         )
-                    pending_proposal_id = proposal_id
+                    if pending_proposal_id != proposal_id:
+                        raise RuntimeError(
+                            "Scenario 2 native wait does not match Product proposal"
+                        )
                     paused_function_call_id = call.id
                     proposal_created_without_wait = False
                     settled = True
@@ -182,6 +183,20 @@ def _find_scenario2_event_correlation(
         actions = getattr(event, "actions", None)
         if actions is not None and getattr(actions, "end_of_agent", False):
             settled = True
+
+    if paused_function_call_id is not None:
+        response_delivered = any(
+            getattr(event, "invocation_id", None) == invocation_id
+            and getattr(event, "author", None) == "user"
+            and any(
+                response.name == WAIT_FOR_HUMAN_DECISION_TOOL
+                and response.id == paused_function_call_id
+                for response in event.get_function_responses()
+            )
+            for event in events
+        )
+        if response_delivered:
+            paused_function_call_id = None
 
     if proposal_created_without_wait:
         settled = False
@@ -208,6 +223,12 @@ class Scenario2AgentRuntime:
         app = App(
             name=ADK_APP_NAME,
             root_agent=build_scenario2_agent(adapter),
+            plugins=[
+                ProductRetryableToolPlugin(
+                    max_retries=2,
+                    throw_exception_if_retry_exceeded=False,
+                )
+            ],
             resumability_config=ResumabilityConfig(is_resumable=True),
         )
         self._runner = Runner(
@@ -329,7 +350,14 @@ class Scenario2AgentRuntime:
                     args = dict(call.args or {})
                     proposal_id = args.get("proposal_id")
                     if isinstance(proposal_id, str) and proposal_id:
-                        pending_proposal_id = proposal_id
+                        if pending_proposal_id is None:
+                            raise RuntimeError(
+                                "Scenario 2 native wait has no successful Product proposal"
+                            )
+                        if pending_proposal_id != proposal_id:
+                            raise RuntimeError(
+                                "Scenario 2 native wait does not match Product proposal"
+                            )
                         paused_function_call_id = call.id
                         proposal_created_without_wait = False
                         invocation_id = event.invocation_id or invocation_id
