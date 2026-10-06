@@ -122,12 +122,14 @@ async def _dispatch_once_with_scenario1_worker(
             agent_runtime=runtime,
         )
 
-        # Earlier focused tests intentionally leave their Scenario 3 envelopes
-        # pending. Drain enough due generic-topic envelopes to ensure this exact
-        # run is claimed without deleting or mutating unrelated Product truth.
+        # Earlier tests may leave any finite number of generic-topic envelopes
+        # pending. Drain due work until this exact run is claimed; do not make
+        # correctness depend on a magic queue-depth limit or mutate unrelated
+        # Product truth. The recording runtime cannot enqueue new work, and
+        # dispatch_once() returns False once no due envelope remains.
         processed_any = False
         rows: tuple[ApplicationOutboxRow, ...] = ()
-        for _ in range(10):
+        while True:
             processed = await worker.dispatch_once()
             processed_any = processed_any or processed
             async with factory() as session:
