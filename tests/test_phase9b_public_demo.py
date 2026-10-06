@@ -160,6 +160,14 @@ def test_public_demo_hides_internal_and_acceptance_routes(monkeypatch):
             assert response.json()["error"]["code"] == "NOT_FOUND"
             assert response.json()["error"]["message"] == "Resource was not found."
 
+        malformed = client.post(
+            "/api/v1/scenario-2/runs/RUN-NOT-NEEDED/acceptance/dependency-status",
+            content="{not-json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert malformed.status_code == 404
+        assert malformed.json()["error"]["code"] == "NOT_FOUND"
+
 
 def test_non_public_mode_keeps_existing_tenant_behavior():
     _require_database()
