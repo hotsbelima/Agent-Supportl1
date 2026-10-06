@@ -5,8 +5,8 @@
 **Repository:** `hotsbelima/Agent-Supportl1`  
 **Implementation branch:** `phase-9b-public-demo-hardening`  
 **Base:** `phase-9a-ui-polish`  
-**Validated implementation SHA:** `04089830da3623fde4ac5ad3ae67defb7dd5bcf6`  
-**GitHub Actions:** run `37535627761` — SUCCESS
+**Validated implementation SHA:** `b23d886e69a66f8633a48f88e78da4552ec515d5`  
+**GitHub Actions:** Phase 9B run `37536284809` — SUCCESS
 
 ## Scope decision
 
@@ -115,8 +115,8 @@ Phase 9E.
 
 ## Verification
 
-Run `37535627761` passed on implementation SHA
-`04089830da3623fde4ac5ad3ae67defb7dd5bcf6`:
+Phase 9B run `37536284809` passed on implementation SHA
+`b23d886e69a66f8633a48f88e78da4552ec515d5`:
 
 - Python dependency consistency;
 - Python compile;
@@ -140,6 +140,31 @@ The Phase 9B tests specifically prove:
 - internal/acceptance routes return `404` even with malformed JSON;
 - non-public tenant behavior is preserved;
 - health exposes release/public-demo identity safely.
+
+## Regression compatibility correction
+
+Opening the Phase 9B PR exposed one stale historical assertion:
+`test_phase8d_health_reports_current_checkpoint` permanently required
+`phase == 8` / `checkpoint == 8D`. Phase 9 legitimately advances global
+release metadata, so the Phase 8D test was corrected to verify the Scenario 3
+readiness guarantees it actually owns instead of freezing the repository's
+future release number.
+
+After that correction, the current code SHA passed all automatically triggered
+historical PR gates:
+
+- Phase 6A;
+- Phase 6B;
+- Phase 7A;
+- Phase 7B;
+- Phase 7C;
+- Phase 7D;
+- Phase 8C1;
+- Phase 8C2;
+- Phase 8D;
+- Phase 9B.
+
+No Product/ADK business semantics were changed to make those regressions pass.
 
 ## Files of note
 
