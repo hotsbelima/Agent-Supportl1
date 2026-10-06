@@ -50,6 +50,7 @@ class _Scenario2EventCorrelation:
     final_answer: str | None
     pending_proposal_id: str | None
     paused_function_call_id: str | None
+    proposal_created_without_wait: bool
 
 
 def _safe_event_text(event: Any) -> str | None:
@@ -86,6 +87,27 @@ def _scenario2_product_event_id(event: Any) -> str | None:
     return event_id if isinstance(event_id, str) and event_id else None
 
 
+def _pending_major_incident_proposal_id(event: Any) -> str | None:
+    """Extract only a successful PENDING_APPROVAL proposal tool response."""
+    for response in event.get_function_responses():
+        if response.name != "propose_major_incident":
+            continue
+        payload = response.response
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            continue
+        proposal = payload.get("proposal")
+        if not isinstance(proposal, dict):
+            continue
+        proposal_id = proposal.get("proposal_id")
+        if (
+            proposal.get("status") == "PENDING_APPROVAL"
+            and isinstance(proposal_id, str)
+            and proposal_id
+        ):
+            return proposal_id
+    return None
+
+
 def _find_scenario2_event_correlation(
     events: list[Any],
     *,
@@ -110,10 +132,23 @@ def _find_scenario2_event_correlation(
     final_answer: str | None = None
     pending_proposal_id: str | None = None
     paused_function_call_id: str | None = None
+    proposal_created_without_wait = False
 
     for event in events:
         if getattr(event, "invocation_id", None) != invocation_id:
             continue
+
+        created_proposal_id = _pending_major_incident_proposal_id(event)
+        if created_proposal_id is not None:
+            if (
+                pending_proposal_id is not None
+                and pending_proposal_id != created_proposal_id
+            ):
+                raise RuntimeError(
+                    "Scenario 2 invocation created multiple pending proposals"
+                )
+            pending_proposal_id = created_proposal_id
+            proposal_created_without_wait = True
 
         long_running_ids = set(event.long_running_tool_ids or [])
         for call in event.get_function_calls():
@@ -134,6 +169,7 @@ def _find_scenario2_event_correlation(
                         )
                     pending_proposal_id = proposal_id
                     paused_function_call_id = call.id
+                    proposal_created_without_wait = False
                     settled = True
 
         is_final = getattr(event, "is_final_response", None)
@@ -147,12 +183,16 @@ def _find_scenario2_event_correlation(
         if actions is not None and getattr(actions, "end_of_agent", False):
             settled = True
 
+    if proposal_created_without_wait:
+        settled = False
+
     return _Scenario2EventCorrelation(
         invocation_id=invocation_id,
         settled=settled,
         final_answer=final_answer,
         pending_proposal_id=pending_proposal_id,
         paused_function_call_id=paused_function_call_id,
+        proposal_created_without_wait=proposal_created_without_wait,
     )
 
 
@@ -231,6 +271,7 @@ class Scenario2AgentRuntime:
         recoverable = False
         pending_proposal_id: str | None = None
         paused_function_call_id: str | None = None
+        proposal_created_without_wait = False
 
         if correlation is None:
             message = types.Content(
@@ -266,6 +307,18 @@ class Scenario2AgentRuntime:
             if invocation_id is None and event.invocation_id:
                 invocation_id = event.invocation_id
 
+            created_proposal_id = _pending_major_incident_proposal_id(event)
+            if created_proposal_id is not None:
+                if (
+                    pending_proposal_id is not None
+                    and pending_proposal_id != created_proposal_id
+                ):
+                    raise RuntimeError(
+                        "Scenario 2 invocation created multiple pending proposals"
+                    )
+                pending_proposal_id = created_proposal_id
+                proposal_created_without_wait = True
+
             long_running_ids = set(event.long_running_tool_ids or [])
             for call in event.get_function_calls():
                 if (
@@ -278,6 +331,7 @@ class Scenario2AgentRuntime:
                     if isinstance(proposal_id, str) and proposal_id:
                         pending_proposal_id = proposal_id
                         paused_function_call_id = call.id
+                        proposal_created_without_wait = False
                         invocation_id = event.invocation_id or invocation_id
                         recoverable = True
 
@@ -295,7 +349,11 @@ class Scenario2AgentRuntime:
             session_id=run_id,
             invocation_id=invocation_id,
             final_answer=final_answer,
-            recoverable=bool(recoverable and invocation_id),
+            recoverable=bool(
+                recoverable
+                and invocation_id
+                and not proposal_created_without_wait
+            ),
             awaiting_human_decision=paused_function_call_id is not None,
             pending_proposal_id=pending_proposal_id,
             paused_function_call_id=paused_function_call_id,
