@@ -1,191 +1,221 @@
 # Autonomous L1 Incident Agent
 
-## Current scope — Phase 3 PASS
+A portfolio-grade autonomous L1 incident-management agent built with
+**Google ADK + Gemini**, a persistent Product backend, PostgreSQL, HITL and a
+three-scenario operational console.
 
-Phases 1–2 remain a deliberately small **Google ADK function-tool** spike: Phase 1 proved the local ADK/Gemini dependency chain and Phase 2 proved the same runtime on Northflank. Phase 3 now adds a separate `product_backend/` foundation for Scenario 1: domain contracts, deterministic evidence/proposal validation, human approval/execution semantics and concrete integration of the six product tool contracts. It still has no product PostgreSQL implementation, UI, SSE stream, persistent workflow, product HTTP approval endpoint or live six-tool ADK wiring.
+The agent does not own business truth. It investigates through typed Product
+tools, persists Evidence, proposes an action, waits for a human decision and
+resumes against authoritative Product state.
 
-The retained `api/`, `public/`, and historical Dify material are evidence only; neither the Phase 1/2 spike nor `product_backend/` uses Dify.
+## What this project demonstrates
 
-### Pinned runtime
+- native Google ADK agent/tool execution;
+- Gemini-driven tool selection and replanning;
+- persisted Product state and Evidence;
+- PostgreSQL-backed native ADK session continuity;
+- durable outbox dispatch and restart recovery;
+- human approval/rejection with native wait/resume;
+- stale revalidation before execution;
+- idempotent/exactly-once business effects;
+- persisted SSE timeline and reconnect/backfill;
+- final browser UI for three distinct scenarios;
+- portfolio-grade public-demo hardening.
 
-| Component | Pin |
-| --- | --- |
-| Python | `3.12.14` (`.python-version`) |
-| Google ADK | `2.10.0` (`requirements.txt`) |
-| Gemini | `gemini-3.5-flash-lite` (stable model ID) |
-| FastAPI host probe | `fastapi==0.141.1`, `uvicorn==0.54.0` |
-| Test runner | `pytest==8.4.2` |
+This is an **agent**, not a hard-coded workflow: the model chooses investigation
+tools and can change its plan when Evidence contradicts a hypothesis. Product
+code still owns validation, approval and execution boundaries.
 
-### Phase 1/2 live ADK spike boundary
+## Three demo scenarios
 
-The **currently live-wired Phase 1/2 ADK spike** has exactly two ordinary Python function tools and no others. This statement does not describe the six-tool Scenario 1 product contract, which is not wired to live ADK yet.
-
-| Tool | Input | Output / dependency |
+| Scenario | Demonstrates | Human decision |
 | --- | --- | --- |
-| `get_device(device_id)` | `POS-KZN17-03` | Returns `attachment_id: ATT-KZN17-POS03-NIC` |
-| `run_diagnostic(attachment_id)` | Must use the first result | Returns a read-only `LINK_DOWN` observation |
+| **1 — Local device incident** | CMDB + monitoring + local access-link diagnosis | Field Service visit |
+| **2 — Multi-event service incident** | Multi-signal correlation, dependency/provider investigation | Major Incident |
+| **3 — Evidence-driven replanning** | Provider hypothesis is disproved, then investigation switches to local diagnostics | Field Service visit |
 
-The complete initial event is in `phase1_adk_spike/contracts.py`; it intentionally includes no `attachment_id`. The application never invokes a tool itself or copies an ID into the second call. Gemini must choose both calls through the native ADK loop.
+See [docs/scenarios.md](docs/scenarios.md) for the observable flows.
 
-### Run it
+## Architecture
 
-Create an environment with Python 3.12.14, install the pinned dependencies, and create a local `.env` file (ignored by Git) containing exactly `GOOGLE_API_KEY=your_key`. Do not put a key into an issue, chat, trace, or committed file.
+```text
+Next.js operational console
+        |
+        | HTTPS + persisted SSE
+        v
+FastAPI Product API
+        |
+        +--> Product application/domain services
+        |       |
+        |       +--> PostgreSQL business state + Evidence + events
+        |       +--> durable outbox
+        |       +--> HITL / stale / idempotency rules
+        |
+        +--> Google ADK runtimes
+                |
+                +--> Gemini
+                +--> typed Product tools
+                +--> native persistent ADK sessions
+```
 
-```powershell
+The key ownership rule is:
+
+> **Product owns business truth; ADK owns generic agent runtime continuity.**
+
+Detailed architecture: [docs/architecture.md](docs/architecture.md).
+
+## Product flow
+
+```text
+operational event
+    -> persisted Product state
+    -> durable agent dispatch
+    -> investigation / typed tools
+    -> Evidence
+    -> proposal
+    -> human Approve / Reject
+    -> deterministic Product execution
+    -> persisted recovery/audit timeline
+```
+
+Hidden chain-of-thought is neither Product state nor UI content.
+
+## Technology stack
+
+| Layer | Technology |
+| --- | --- |
+| Agent runtime | Google ADK 2.10.0 |
+| Model integration | Gemini |
+| Backend | Python 3.12.14, FastAPI 0.141.1 |
+| Persistence | PostgreSQL 16, SQLAlchemy 2.0.54, Alembic 1.20.0 |
+| Frontend | Next.js 16.3.8, React 19.3.0, TypeScript 6.0.3 |
+| Frontend tests | Vitest 5.0.3 |
+| Packaging | Docker |
+
+## Repository map
+
+- `agent_runtime/` — native ADK agent/runtime/session integration.
+- `product_backend/` — domain, application services, adapters and persistence.
+- `product_api/` — FastAPI composition, HTTP/SSE boundary and dispatch workers.
+- `frontend/` — final three-scenario operational console.
+- `alembic/` — Product schema migrations.
+- `tests/` — deterministic backend/integration regression.
+- `docs/` — architecture, scenarios, phase notes and handoffs.
+
+## Local backend
+
+Requirements:
+
+- Python 3.12.14;
+- PostgreSQL;
+- a Gemini API key only when running the live model path.
+
+Install:
+
+```bash
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m phase1_adk_spike.runner --runs 3
+python -m pip install -r requirements.txt
 ```
 
-Each real attempt uses one new native `InMemorySessionService` session and saves a redacted, audit-safe event trace under `traces/` plus a summary under `results/`. Traces retain only function calls, function results, final answers and failures; they deliberately omit model reasoning/thought fields. Generated run files are ignored by Git so credentials and transient reports are never committed.
+Set at minimum:
 
-The Phase 1 acceptance sample was run successfully on 3 October 2026: all three independent Gemini runs made exactly `get_device` followed by `run_diagnostic`, and each second argument matched the attachment ID returned by the preceding tool result. The updated handoff records the exact run and trace filenames.
-
-The command returns non-zero when any observed call fails the acceptance check. With no `GOOGLE_API_KEY`, it makes no network/model request and records a `not_run` preflight report instead.
-
-### Verification
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+```text
+DATABASE_URL=postgresql+psycopg://...
+FRONTEND_ORIGINS=http://localhost:3000
+GOOGLE_API_KEY=<only for live Gemini execution>
 ```
 
-The local tests validate the two-tool boundary, absence of `attachment_id` in initial input, the fixture dependency, and rejection of an invented second argument. They do not substitute for live Gemini execution.
+Apply migrations and start the Product API:
 
-For Phase 2 deployment verification, `Dockerfile` runs the minimal `phase2_backend` service on port 8080. Its `/health` endpoint exposes no credential, and `POST /spike/runs` returns audit-safe observed tool calls/results for this temporary runtime check.
-
-For project context, start with the canonical cumulative handoff:
-[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md).
-The phase documents are retained as deltas/evidence:
-[`v5.4 — Phase 1`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.4_Phase_1_Update.md)
-and [`v5.5 — Phase 2`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.5_Phase_2_Update.md).
-The fixed Phase 2 spike contracts are in
-[`docs/contracts/PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md`](docs/contracts/PHASE_2_TOOL_AND_DOMAIN_CONTRACTS.md).
-
-
-### Phase 3A contract checkpoint
-
-The Phase 3A design checkpoint is documented in [`docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3A_DOMAIN_AND_TOOL_CONTRACTS.md). It is historical and is superseded by the final Phase 3 contract. The `product_backend/` package is intentionally separate from `phase1_adk_spike/` and `phase2_backend/`; the verified spike code remains unchanged.
-
-
-### Phase 3B deterministic domain checkpoint
-
-Phase 3B adds:
-
-- typed validation of the four required evidence classes for `LOCAL_ACCESS_LINK_FAILURE`;
-- TTL enforcement for dynamic proposal evidence;
-- proposal creation only after deterministic validation, with `PENDING_APPROVAL`;
-- fresh trusted CMDB + access-link reads on human Approve;
-- `APPROVED + stale conditions -> STALE` with zero execution;
-- valid Approve -> exactly one `ExecutedAction` and one `FieldServiceWorkOrder`, incident `ESCALATED`;
-- Reject -> `REJECTED`, no execution, incident stays open;
-- replay of the same human decision returns the stored result and creates no duplicate action/work order.
-
-The work order receives site/link fields derived from trusted CMDB topology; the model never supplies queue/address/engineer/work-order routing fields. Repository ports state the uniqueness requirements that the future PostgreSQL implementation must enforce transactionally.
-
-For the product-domain checkpoint only:
-
-```powershell
-python -m pytest -q tests/test_phase3a_contracts.py tests/test_phase3b_domain_logic.py
+```bash
+python -m alembic upgrade head
+python -m product_api
 ```
 
-Phase 3B intentionally does not add PostgreSQL, product FastAPI routes, SSE, UI, or six-tool ADK integration.
+The default local API port is `8000` unless `PORT` is set.
 
+## Local frontend
 
-### Phase 3 final contract and handoff
+```bash
+cd frontend
+npm ci
+cp .env.example .env.local
+npm run dev
+```
 
-The final Phase 3 contract is
-[`docs/contracts/PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md`](docs/contracts/PHASE_3_DOMAIN_AND_TOOL_CONTRACTS.md).
+The frontend environment expects:
 
-Phase 3 completion evidence is recorded in
-[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Phase_3_Update.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.6_Phase_3_Update.md).
+```text
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_DEMO_TENANT_ID=TENANT-8OCT
+```
 
-The cumulative source of truth for the next implementation stage is now
-[`docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md`](docs/handoff/ALP_ITSM_Agent_Handoff_v5.7_Cumulative.md). Phase 4 is explicitly defined there as the persistent application backend foundation.
+## Verification
 
-The final Phase 3 audit also moved ownership/provider orchestration out of the
-model-facing adapter into `Scenario1ReadToolService`, moved pure type-aware ID/topology rules into `domain/read_model.py`, restored the Phase 2 top-level diagnostic fields, added explicit
-JSON-safe tool-result serialization, hardened evidence timestamps and added
-architecture tests against layer leakage and hardcoded fixture truth.
+Backend:
 
-The Phase 3 CI gate compiles the product backend, runs the 3A/3B/3C
-architecture/domain suite, then installs the pinned runtime dependencies and
-runs the full Python and retained Node regression suites.
+```bash
+python -m pytest -q
+python -m alembic current
+python -m alembic check
+docker build -f Dockerfile.product -t agent-supportl1 .
+```
 
-Final audited checkpoint:
+Frontend:
 
-- architecture/domain: **69 passed**;
-- full Python regression: **77 passed, 1 dependency deprecation warning**;
-- retained Node regression: **5 passed, 0 failed**;
-- `pip check`: **No broken requirements found**.
+```bash
+cd frontend
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
 
-### Phase 4A PostgreSQL persistence checkpoint
+The final Phase 9C release gate combines the three scenarios, public-demo
+security regression, full Python regression, frontend recovery/contracts,
+static secret audit, Alembic and Docker build **without requiring a live Gemini
+credential**.
 
-Branch `phase-4a-postgres-persistence` adds the first implementation pass of
-the Phase 4A persistence layer defined by cumulative handoff v5.7:
+## Public-demo guardrails
 
-- Alembic PostgreSQL schema for product-owned state;
-- async SQLAlchemy repositories implementing the Phase 3 ports;
-- transactional UoWs with row locking on proposal/approval mutation paths;
-- DB uniqueness constraints for approval/action/work-order idempotency;
-- typed Evidence <-> JSONB mapping;
-- schema reservation for application events/outbox, without Phase 4B lifecycle logic.
+When `PUBLIC_DEMO=true`:
 
-Detailed design/status:
-[`docs/contracts/PHASE_4A_POSTGRES_PERSISTENCE.md`](docs/contracts/PHASE_4A_POSTGRES_PERSISTENCE.md).
+- the backend uses one server-side demo tenant;
+- browser tenant input cannot select arbitrary tenant context;
+- internal/manual/acceptance mutation routes are hidden;
+- direct Scenario 2 raw signal ingestion is hidden;
+- new demo runs use a simple server-side cooldown;
+- CORS must use explicit exact origins;
+- browser assets are audited for server secrets.
 
-Phase 4A now has a PostgreSQL 16 CI gate covering migrations, repository
-round-trip, tenant/run isolation, cross-context FK protection and concurrent
-Approve idempotency. The verified result is 7/7 Phase 4A integration tests,
-84/84 full Python tests (with the retained dependency warning) and 5/5 Node
-tests. Managed Northflank infrastructure acceptance is still separate, and
-Phase 4 itself is not PASS until 4B/4C and that final acceptance are complete.
-\n
+This is intentionally not an enterprise auth/RBAC implementation.
 
-### Phase 4B persisted lifecycle checkpoint
+## Portfolio limitations
 
-Branch `phase-4b-persisted-lifecycle` adds the persisted lifecycle/audit layer
-on top of verified Phase 4A:
+The demo uses controlled source adapters instead of real customer integrations
+for monitoring, CMDB, ITSM, knowledge, provider health and operational side
+effects.
 
-- safe closed-set application event contracts;
-- server-side UTC timestamps and monotonic per-run sequence;
-- transactional one-event/one-outbox persistence;
-- timeline cursor reads for the future SSE layer;
-- tool start/finish audit;
-- proposal, approval, action and run-status events;
-- explicit protection against persisting hidden reasoning/credential fields.
+Field Service work orders and Major Incidents are demo Product records; the
+project does not change real customer infrastructure.
 
-PostgreSQL 16 CI is green: Phase 3 **69/69**, Phase 4A **7/7**, Phase 4B
-**8/8**, full Python **92/92** (one retained dependency warning), Node
-**5/5**.
+Gemini availability/quota is an external runtime dependency when the live model
+path is used.
 
-Detailed checkpoint:
-[`docs/contracts/PHASE_4B_PERSISTED_LIFECYCLE.md`](docs/contracts/PHASE_4B_PERSISTED_LIFECYCLE.md).
+## Development status
 
-Phase 4 itself is not complete yet: Product FastAPI boundary 4C and the final
-managed Northflank infrastructure acceptance remain.
+> **PROJECT DEVELOPMENT COMPLETE**
 
-### Phase 4C Product FastAPI checkpoint
+All planned product functionality is implemented through Phase 9C and the
+final deterministic release gate is green. Phase 9D packages the completed
+system for portfolio review.
 
-Branch `phase-4c-product-api` adds the product HTTP/application boundary on
-top of verified Phase 4A/4B:
+Deployment/publication can be performed separately and does not change the
+development-completion boundary.
 
-- explicit Scenario 1 persistent start without Gemini/ADK;
-- tenant/run-scoped current-state read;
-- persisted event timeline read with cursor;
-- human Approve/Reject delegated to the existing deterministic approval service;
-- typed/safe HTTP errors;
-- PostgreSQL-aware health endpoint;
-- canonical Scenario 1 API composition kept outside `product_backend`.
+## Start here
 
-Detailed checkpoint:
-[`docs/contracts/PHASE_4C_PRODUCT_API.md`](docs/contracts/PHASE_4C_PRODUCT_API.md).
-
-Phase 4C has now completed its dedicated PostgreSQL + FastAPI verification:
-**10/10 Phase 4C tests**, full Python **102/102** with one retained external
-FastAPI/TestClient dependency warning, and Node **5/5**. The review also
-hardened run-state snapshot consistency against concurrent mutations and fixed
-internal-failure HTTP classification.
-
-Phase 4C is **PASS in CI**. Full Phase 4 is still pending the separate managed
-Northflank deployment/restart acceptance.
-
+- [Architecture](docs/architecture.md)
+- [Three scenarios](docs/scenarios.md)
+- [Final development handoff](docs/handoff/Autonomous_L1_Incident_Agent_Handoff_v8.0_Phase_9C_Final_Development.md)
+- [Phase 9C deterministic release notes](docs/Phase_9C_Implementation_Notes.md)
