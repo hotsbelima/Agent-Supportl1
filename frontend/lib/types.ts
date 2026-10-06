@@ -147,6 +147,8 @@ export type HealthResponse = {
   adk_model: string | null;
   sse_wired: boolean;
   automatic_dispatch_wired: boolean;
+  scenario3_phase8c1_provider_reads_wired: boolean;
+  scenario3_phase8c2_native_wired: boolean;
 };
 
 export type ConnectionState =
