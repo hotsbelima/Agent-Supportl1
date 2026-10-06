@@ -624,7 +624,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Корреляция и решение</p>
-                <h2>Предложение крупный инцидент</h2>
+                <h2>Предложение крупного инцидента</h2>
               </div>
               {latestProposal ? (
                 <StatusBadge
@@ -639,7 +639,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <span className="subtle-label">Демонстрационный поток</span>
                 <p>
                   Сигналов сохранено: <strong>{state.operational_signals.length}</strong>.
-                  Каждый шаг пишет событие в состояние продукта до agent dispatch.
+                  Каждый шаг сохраняет событие в состоянии продукта до отправки агенту.
                 </p>
               </div>
               <button
@@ -699,7 +699,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
-                      Для создания крупный инцидент требуется решение человека.
+                      Для создания крупного инцидента требуется решение человека.
                     </p>
                     <div className="decision-buttons">
                       <button
@@ -759,8 +759,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Результат после решение человека</p>
-                <h2>крупный инцидент</h2>
+                <p className="panel-kicker">Результат после решения человека</p>
+                <h2>Крупный инцидент</h2>
               </div>
               <span className="panel-count">{state.major_incidents.length}</span>
             </div>
@@ -794,13 +794,13 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </dl>
                 <p className="semantic-note">
-                  крупный инцидент зарегистрирован как демонстрационное Product-действие.
+                  Крупный инцидент зарегистрирован как демонстрационное действие продукта.
                   Это не изменение реальной клиентской инфраструктуры.
                 </p>
               </div>
             ) : (
               <EmptyPanel>
-                крупный инцидент ещё не создан. До человеческого решения побочный
+                Крупный инцидент ещё не создан. До человеческого решения побочный
                 эффект запрещён.
               </EmptyPanel>
             )}
@@ -809,8 +809,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
       </div>
 
       <footer className="console-footer">
-        <span>Источник истины: PostgreSQL состояние продукта</span>
-        <span>Поток событий: persisted SSE</span>
+        <span>Источник истины: состояние продукта в PostgreSQL</span>
+        <span>Поток событий: сохранённый SSE</span>
         <span>Среда AI: Google ADK + Gemini</span>
       </footer>
     </main>
