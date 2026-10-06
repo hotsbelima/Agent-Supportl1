@@ -6,8 +6,9 @@ import asyncio
 from collections.abc import Callable
 from typing import Protocol
 
-from agent_runtime.service import Scenario1AgentRuntime
+from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
 from agent_runtime.scenario2_service import Scenario2AgentRuntime
+from agent_runtime.scenario3_service import Scenario3AgentRuntime
 from product_backend.application.lifecycle import ApplicationLifecycleService
 from product_backend.application.run_state import RunStateService
 from product_backend.application.scenario2_state import Scenario2StateService
@@ -54,6 +55,7 @@ class Scenario1DispatchWorker:
         uow_factory: DispatchUowFactory,
         state_service: RunStateService,
         agent_runtime: Scenario1AgentRuntime,
+        scenario3_agent_runtime: Scenario3AgentRuntime | None = None,
         poll_interval_seconds: float = 0.5,
         lease_seconds: float = 180.0,
         invocation_timeout_seconds: float = 120.0,
@@ -71,6 +73,7 @@ class Scenario1DispatchWorker:
         self._uow_factory = uow_factory
         self._state_service = state_service
         self._agent_runtime = agent_runtime
+        self._scenario3_agent_runtime = scenario3_agent_runtime
         self._poll_interval = poll_interval_seconds
         self._lease_seconds = lease_seconds
         self._invocation_timeout = invocation_timeout_seconds
@@ -108,6 +111,16 @@ class Scenario1DispatchWorker:
         except asyncio.CancelledError:
             pass
 
+    def _runtime_for_scenario(
+        self,
+        scenario_id: str,
+    ) -> DeviceIncidentAgentRuntime | None:
+        if scenario_id == "scenario-1":
+            return self._agent_runtime
+        if scenario_id == "scenario-3":
+            return self._scenario3_agent_runtime
+        return None
+
     async def _claim(self) -> ApplicationOutboxRecord | None:
         async with self._uow_factory() as uow:
             record = await uow.outbox.claim_next(
@@ -138,7 +151,15 @@ class Scenario1DispatchWorker:
 
     async def dispatch_once(self) -> bool:
         """Process at most one due envelope; useful for deterministic tests."""
-        if not self._agent_runtime.gemini_configured:
+        configured_runtimes = [
+            runtime
+            for runtime in (
+                self._agent_runtime,
+                self._scenario3_agent_runtime,
+            )
+            if runtime is not None
+        ]
+        if not any(runtime.gemini_configured for runtime in configured_runtimes):
             return False
 
         record = await self._claim()
@@ -160,12 +181,11 @@ class Scenario1DispatchWorker:
             if snapshot is None:
                 raise RuntimeError("dispatch run state was not found")
 
-            # Phase 8C1 persists Scenario 3 envelopes on the shared generic
-            # device-Incident topic before Scenario-aware runtime routing exists.
-            # Fail closed here: never deliver a Scenario 3 envelope into the
-            # Scenario 1 native runtime. Phase 8C2 replaces this temporary guard
-            # with routing by persisted Run.scenario_id.
-            if snapshot.run.scenario_id != "scenario-1":
+            runtime = self._runtime_for_scenario(snapshot.run.scenario_id)
+            if runtime is None or not runtime.gemini_configured:
+                # Unknown/unconfigured scenarios fail closed on the durable row.
+                # Product truth remains committed and the envelope can be retried
+                # after runtime wiring is corrected.
                 await self._reschedule(record)
                 return True
 
@@ -187,7 +207,7 @@ class Scenario1DispatchWorker:
             }
 
             await asyncio.wait_for(
-                self._agent_runtime.invoke_operational_event(
+                runtime.invoke_operational_event(
                     tenant_id=record.tenant_id,
                     run_id=record.run_id,
                     operational_event_id=event_id,
