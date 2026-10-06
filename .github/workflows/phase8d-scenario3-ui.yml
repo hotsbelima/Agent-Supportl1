@@ -1,0 +1,66 @@
+name: Phase 8D Scenario 3 UI code validation
+
+on:
+  push:
+    branches:
+      - phase-8d-scenario3-ui
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase8d-code-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase8d-code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8080
+      NEXT_PUBLIC_DEMO_TENANT_ID: TENANT-8OCT
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Compile production Python
+        run: >-
+          python -m compileall -q
+          agent_runtime product_backend product_api
+          phase1_adk_spike phase2_backend scripts
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Audit frontend source and built public bundle
+        run: |
+          python scripts/phase5d1_static_audit.py --frontend-root frontend
+          python scripts/phase5d1_static_audit.py --frontend-root frontend --bundle-root frontend/.next/static
+
+      - name: Build Product image
+        run: docker build -f Dockerfile.product -t agent-supportl1:phase8d-code .
