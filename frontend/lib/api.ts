@@ -211,6 +211,9 @@ export function isRetryableApiFailure(error: unknown): boolean {
 
 export function displayApiError(error: unknown): string {
   if (error instanceof ApiClientError) {
+    if (error.code === "PUBLIC_DEMO_COOLDOWN") {
+      return "Слишком много новых запусков подряд. Повторите попытку через несколько секунд.";
+    }
     if (error.status === 429) {
       return `Лимит запросов к AI-провайдеру достигнут (${error.code}). Попробуйте позже.`;
     }

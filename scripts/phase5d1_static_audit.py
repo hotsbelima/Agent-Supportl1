@@ -25,6 +25,8 @@ FORBIDDEN_BROWSER_TOKENS = (
     "NORTHFLANK_ADMIN_URI",
     "POSTGRES_PASSWORD",
     "DB_PASSWORD",
+    "PHASE6D_ACCEPTANCE_TOKEN",
+    "X-Acceptance-Token",
     "postgresql://",
     "postgres://",
     "chain_of_thought",

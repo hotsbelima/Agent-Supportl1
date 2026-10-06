@@ -308,125 +308,122 @@ It must not display, infer or request hidden chain-of-thought.
 
 ---
 
-# 6. Phase 9B — Public-demo security and observability hardening
+# 6. Phase 9B — Simplified public-demo hardening
 
 ## Goal
 
-Make the public portfolio deployment safe enough for anonymous demonstration
-without pretending it is a full authenticated enterprise SaaS product.
+Apply portfolio-grade safety before publication without turning the pet project
+into an enterprise security/observability platform.
 
-## 9B.1 Public-demo mode
+The owner explicitly simplified the original Phase 9B scope. The project must
+show sensible public-demo boundaries, but it does **not** need production auth,
+RBAC, distributed rate limiting, Redis, a tracing platform, or a multi-mode
+operations framework.
 
-Introduce an explicit server-side public-demo mode/configuration boundary.
+## 9B.1 One public-demo switch
 
-It must be possible to distinguish:
+Use one explicit server-side switch:
 
-- local/development;
-- managed acceptance;
-- public demo.
+`PUBLIC_DEMO=true`
 
-Do not infer privileged behavior only from hostname or frontend input.
+When it is off, existing local/acceptance behavior remains available under its
+existing controls. Do not build a new local/managed/public environment
+framework solely for this portfolio demo.
 
-## 9B.2 Acceptance/debug endpoint protection
+## 9B.2 Hide internal controls
 
-In public-demo mode:
+When `PUBLIC_DEMO=true`, anonymous callers must receive safe `404 NOT_FOUND`
+for:
 
-- Scenario 2 acceptance dependency-status control must not be anonymously
-  usable;
-- Scenario 2 acceptance matching-major-incident control must not be
-  anonymously usable;
-- manual hidden `/agent/invoke` must not be anonymously usable;
-- Phase 6D acceptance hook remains disabled unless its explicit server-side
-  acceptance configuration/token is enabled.
+- hidden manual `/agent/invoke`;
+- direct Scenario 2 raw signal-ingestion endpoint `/signals` (the public UI
+  uses the bounded deterministic simulator instead);
+- Scenario 2 dependency-status acceptance control;
+- Scenario 2 matching-major-incident acceptance control;
+- the Phase 6D acceptance hook, even if its old enable/token variables are
+  accidentally present.
 
-Preferred behavior for disabled internal/acceptance surfaces:
+These routes may remain available outside public-demo mode for controlled
+acceptance/regression testing.
 
-- return safe `404 NOT_FOUND` rather than advertise privileged controls.
+## 9B.3 Fixed demo tenant
 
-If an acceptance route remains required for CI/live acceptance, gate it behind
-an explicit server-side enable flag and secret/token analogous to the existing
-Phase 6D hook.
+The public deployment uses one server-configured demo tenant.
 
-## 9B.3 Demo tenant boundary
+The browser's `X-Tenant-ID` value is compatibility metadata only in public
+mode; it must not be able to select another tenant and must be ignored even if
+the browser sends a malformed/oversized value. The server uses an explicitly
+configured `PUBLIC_DEMO_TENANT_ID` as Product context and must fail fast if
+that setting is missing while public-demo mode is enabled.
 
-Do not claim `X-Tenant-ID` is authentication.
+This is intentionally **not** authentication. Full accounts/RBAC/SSO remain
+out of scope.
 
-For the public demo, define a deterministic server-side policy for allowed
-demo tenant context. The browser must not be able to select arbitrary tenant
-identities merely by editing a header.
+## 9B.4 Simple run-start cooldown
 
-A full user-account/RBAC system is not required by Phase 9.
+Protect the Gemini-backed demo from rapid repeated new-run creation with a
+small server-side cooldown.
 
-The final docs must state:
+Requirements:
 
-- domain tenant/run isolation is implemented;
-- public portfolio access is a demo access model, not enterprise identity/auth.
+- process-local/in-memory is sufficient for this pet project;
+- no Redis, API gateway or distributed limiter is required;
+- return typed `429 PUBLIC_DEMO_COOLDOWN`;
+- include `Retry-After`;
+- keep Gemini/provider quota errors distinct in the UI;
+- keep the public Scenario 2 simulator finite/deterministic and hide raw signal
+  injection so one run cannot create an unbounded stream of agent dispatches.
 
-## 9B.4 Gemini request protection
+## 9B.5 CORS and frontend secret audit
 
-Public run-start behavior must have a server-side abuse/quota boundary.
+Reuse the existing exact-origin CORS implementation.
 
-At minimum, prevent an unbounded anonymous request loop from generating
-unlimited Gemini work.
+In public-demo mode, `FRONTEND_ORIGINS` must resolve to at least one valid
+exact http(s) origin. Do not fall back to a wildcard, accept malformed origins,
+or silently expose all origins.
 
-The implementation may use a deliberately simple demo-appropriate rate
-limit/cooldown, but it must:
+Retain the frontend static audit proving that database credentials, Gemini
+keys, acceptance tokens and similar server secrets are not shipped in browser
+source or the built static bundle.
 
-- be enforced server-side;
-- return typed/safe `429` behavior;
-- include a useful retry signal/message;
-- not rely solely on disabled frontend buttons.
+## 9B.6 Safe errors
 
-Do not add a billing platform or distributed API gateway solely for Phase 9.
+Keep the existing generic Product API exception boundary:
 
-## 9B.5 CORS / public environment audit
+- no stack traces;
+- no raw provider payloads;
+- no credentials;
+- no hidden model reasoning.
 
-Public deployment must use an explicit frontend origin allowlist.
+Do not add a new logging/observability platform for Phase 9B.
 
-Required checks:
+## 9B.7 Lightweight release identity
 
-- no wildcard CORS for the deployed demo;
-- no server secret in `NEXT_PUBLIC_*`;
-- no acceptance token in frontend env;
-- no Gemini key in browser bundle/static output;
-- current static/public-env audit remains green.
+Extend `/health` with only the information useful for a portfolio deployment:
 
-## 9B.6 Safe errors and logs
+- current API version;
+- release/commit SHA supplied by environment;
+- whether public-demo mode is active;
+- tenant policy label;
+- existing DB/Gemini/scenario readiness fields.
 
-Maintain the existing rule that API responses do not expose:
+Do not build a separate release registry or tracing service.
 
-- raw exceptions;
-- provider payloads;
-- credentials;
-- stack traces;
-- hidden reasoning.
+## Explicitly removed from 9B
 
-Add/standardize structured operational logging sufficient to correlate:
+The following original ideas are no longer required:
 
-- release SHA;
-- scenario ID;
-- tenant/run ID;
-- Product event/outbox ID where relevant;
-- ADK session/invocation ID where relevant;
-- provider error class;
-- approval/resume result.
+- a three-mode runtime-policy framework;
+- enterprise tenant/auth policy;
+- RBAC/SSO/user accounts;
+- Redis/distributed rate limiting;
+- mandatory correlation of every outbox/event/session/invocation ID in a new
+  observability layer;
+- a large standalone security regression suite;
+- any infrastructure redesign unrelated to making the portfolio demo safe.
 
-Logs must not contain secrets or hidden CoT.
-
-## 9B.7 Release metadata
-
-Expose current deployment identity safely.
-
-Health/release metadata should make it possible to identify:
-
-- release/project version;
-- commit SHA or deployment version supplied by server environment;
-- Product database reachability;
-- ADK/Gemini configured state;
-- relevant scenario wiring readiness.
-
-Do not use a historical phase checkpoint as the sole release-version
-mechanism.
+The intended result is a small, understandable public-demo boundary that an
+employer can inspect quickly.
 
 ---
 
