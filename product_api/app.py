@@ -1,8 +1,8 @@
-"""Persistent Product API boundary through the agent-free Phase 7C checkpoint.
+"""Persistent Product API boundary through Scenario 2 Phase 7D HITL.
 
-Product business state and human decisions remain in the existing
-application/domain layer. Google ADK owns agent execution, persistent runtime
-sessions/events, the long-running wait point and invocation resume mechanics.
+Product owns operational/business state and human decisions. Google ADK owns
+agent execution, persistent runtime sessions/events, the long-running wait point
+and invocation resume mechanics.
 """
 
 from __future__ import annotations
@@ -31,11 +31,18 @@ from agent_runtime.scenario2_service import Scenario2AgentRuntime
 from agent_runtime.sessions import create_database_session_service
 from agent_runtime.sessions import ensure_run_session
 from product_backend.adapters.tool_adapters import DefaultScenario1ToolAdapter
+from product_backend.adapters.scenario2_tool_adapters import (
+    DefaultScenario2ToolAdapter,
+)
 from product_backend.application.field_visit import (
     FieldVisitApprovalService,
     FieldVisitProposalService,
 )
 from product_backend.application.lifecycle import ApplicationLifecycleService
+from product_backend.application.major_incident import (
+    MajorIncidentApprovalService,
+    MajorIncidentProposalService,
+)
 from product_backend.application.read_tools import (
     EvidenceTtlPolicy,
     Scenario1ReadToolService,
@@ -49,6 +56,14 @@ from product_backend.application.scenario2_ingestion import (
     Scenario2SignalIngestionService,
 )
 from product_backend.application.scenario2_state import Scenario2StateService
+from product_backend.application.scenario2_read_tools import (
+    Scenario2EvidenceTtlPolicy,
+    Scenario2ReadToolService,
+)
+from product_backend.application.scenario2_results import (
+    MajorIncidentDecisionProcessed,
+    Scenario2OperationFailure,
+)
 from product_backend.contracts.events import ApplicationEventType
 from product_backend.contracts.scenario2_ingestion import Scenario2SignalInput
 from product_backend.contracts.tools import ToolCallContext
@@ -76,6 +91,9 @@ from product_backend.persistence.uow import (
     SqlAlchemyScenario2FixtureStateUnitOfWork,
     SqlAlchemyScenario2RunStartUnitOfWork,
     SqlAlchemyScenario2SignalIngestionUnitOfWork,
+    SqlAlchemyScenario2ToolReadUnitOfWork,
+    SqlAlchemyScenario2ProposalUnitOfWork,
+    SqlAlchemyScenario2ApprovalUnitOfWork,
     SqlAlchemyToolReadUnitOfWork,
 )
 from product_backend.persistence.scenario2_state import (
@@ -96,6 +114,7 @@ from .schemas import (
     ApprovalDecisionResponse,
     HumanDecisionRequest,
     RunStateResponse,
+    Scenario2ApprovalDecisionResponse,
     Scenario2DependencyStatusRequest,
     Scenario2IngestionStateResponse,
     Scenario2MatchingMajorIncidentRequest,
@@ -106,6 +125,7 @@ from .schemas import (
     approval_response,
     error_response,
     run_state_response,
+    scenario2_approval_response,
     scenario2_signal_response,
     scenario2_simulator_response,
     scenario2_state_response,
@@ -157,6 +177,7 @@ class ProductApiContainer:
     scenario2_ingestion_service: Scenario2SignalIngestionService | None = None
     scenario2_state_service: Scenario2StateService | None = None
     scenario2_fixture_service: Scenario2FixtureTransitionService | None = None
+    scenario2_approval_service: MajorIncidentApprovalService | None = None
     scenario2_simulator: Scenario2SimulatorService | None = None
     scenario2_sources: PersistedScenario2FixtureSources | None = None
 
@@ -220,7 +241,36 @@ def build_container_from_env() -> ProductApiContainer:
     scenario2_sources = PersistedScenario2FixtureSources(
         scenario2_state_service
     )
+    scenario2_read_service = Scenario2ReadToolService(
+        read_uow_factory=lambda: SqlAlchemyScenario2ToolReadUnitOfWork(
+            session_factory
+        ),
+        local_health=scenario2_sources,
+        dependency_mapping=scenario2_sources,
+        dependency_status=scenario2_sources,
+        major_incident_directory=scenario2_sources,
+        ttl_policy=Scenario2EvidenceTtlPolicy(
+            local_service_health=timedelta(minutes=5),
+            external_dependency_status=timedelta(minutes=2),
+            major_incident_search=timedelta(minutes=2),
+        ),
+    )
+    scenario2_proposal_service = MajorIncidentProposalService(
+        lambda: SqlAlchemyScenario2ProposalUnitOfWork(session_factory)
+    )
+    scenario2_tool_adapter = DefaultScenario2ToolAdapter(
+        read_service=scenario2_read_service,
+        proposal_service=scenario2_proposal_service,
+    )
+    scenario2_approval_service = MajorIncidentApprovalService(
+        lambda: SqlAlchemyScenario2ApprovalUnitOfWork(session_factory),
+        local_health=scenario2_sources,
+        dependency_mapping=scenario2_sources,
+        dependency_status=scenario2_sources,
+        major_incident_directory=scenario2_sources,
+    )
     scenario2_agent_runtime = Scenario2AgentRuntime(
+        adapter=scenario2_tool_adapter,
         session_service=adk_session_service,
     )
     scenario2_dispatch_worker = Scenario2DispatchWorker(
@@ -260,6 +310,7 @@ def build_container_from_env() -> ProductApiContainer:
         scenario2_fixture_service=Scenario2FixtureTransitionService(
             lambda: SqlAlchemyScenario2FixtureStateUnitOfWork(session_factory)
         ),
+        scenario2_approval_service=scenario2_approval_service,
         scenario2_simulator=scenario2_simulator,
         scenario2_sources=scenario2_sources,
     )
@@ -408,6 +459,43 @@ def _agent_decision_payload(result: ApprovalProcessed) -> dict[str, Any]:
     }
 
 
+def _scenario2_agent_decision_payload(
+    result: MajorIncidentDecisionProcessed,
+) -> dict[str, Any]:
+    """Build safe Product truth returned to the paused Scenario 2 ADK call."""
+    execution = (
+        {
+            "execution_id": result.execution.execution_id,
+            "action_type": result.execution.action_type.value,
+            "major_incident_id": result.execution.major_incident_id,
+        }
+        if result.execution is not None
+        else None
+    )
+    major_incident = (
+        {
+            "major_incident_id": result.major_incident.major_incident_id,
+            "status": result.major_incident.status.value,
+            "service_key": result.major_incident.service_key,
+            "correlation_key": result.major_incident.correlation_key,
+            "dependency_id": result.major_incident.dependency_id,
+            "affected_site_ids": list(result.major_incident.affected_site_ids),
+        }
+        if result.major_incident is not None
+        else None
+    )
+    return {
+        "status": "human_decision_committed",
+        "decision": result.approval.decision.value,
+        "proposal_id": result.proposal.proposal_id,
+        "proposal_status": result.proposal.status.value,
+        "execution": execution,
+        "major_incident": major_incident,
+        "replayed": result.replayed,
+    }
+
+
+
 def create_app(
     container: ProductApiContainer | None = None,
     *,
@@ -452,11 +540,11 @@ def create_app(
 
     app = FastAPI(
         title="Autonomous L1 Incident Agent Product API",
-        version="0.7.0",
+        version="0.8.0",
         description=(
-            "Scenario 1 retains Phase 7A native ADK dispatch. Scenario 2 adds "
-            "Product-owned persisted event ingestion plus a dedicated durable "
-            "native ADK dispatch consumer for Phase 7C continuity."
+            "Scenario 1 retains its native ADK path. Scenario 2 adds Phase 7D "
+            "evidence-backed Product tools and native Major Incident HITL on top "
+            "of the durable Phase 7C event/session lifecycle."
         ),
         lifespan=lifespan,
     )
@@ -578,7 +666,7 @@ def create_app(
                 if services.dispatch_worker is not None
                 else False
             ),
-            "scenario2_checkpoint": "7C-adk-dispatch",
+            "scenario2_checkpoint": "7D-tools-hitl",
             "scenario2_ingestion_wired": (
                 services.scenario2_ingestion_service is not None
                 and services.scenario2_state_service is not None
@@ -588,6 +676,15 @@ def create_app(
                 services.scenario2_dispatch_worker.running
                 if services.scenario2_dispatch_worker is not None
                 else False
+            ),
+            "scenario2_tools_wired": (
+                services.scenario2_agent_runtime is not None
+                and services.scenario2_sources is not None
+            ),
+            "scenario2_hitl_wired": (
+                services.scenario2_approval_service is not None
+                and services.scenario2_agent_runtime is not None
+                and services.scenario2_agent_runtime.resumability_wired
             ),
         }
 
