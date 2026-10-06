@@ -15,9 +15,10 @@ ProposalId = Annotated[
     str,
     Field(
         description=(
-            "Exact proposal_id returned by the successful prior "
-            "propose_field_visit call. The Product proposal must already exist "
-            "with status PENDING_APPROVAL before this wait point is requested."
+            "Exact proposal_id returned by the successful prior Product proposal "
+            "tool (for example propose_field_visit or propose_major_incident). "
+            "The Product proposal must already exist with status PENDING_APPROVAL "
+            "before this wait point is requested."
         )
     ),
 ]
@@ -29,8 +30,9 @@ async def await_human_decision(
 ) -> None:
     """Wait for the external Product Approve/Reject decision for a proposal.
 
-    Call this exactly once immediately after propose_field_visit succeeds with
-    PENDING_APPROVAL. The human decision is made through the Product API/UI,
+    Call this exactly once immediately after the active scenario's Product
+    proposal tool succeeds with PENDING_APPROVAL. The human decision is made
+    through the Product API/UI,
     not by the model. ADK pauses this invocation at the long-running function
     call and later resumes the same invocation when the Product decision is
     supplied as the matching FunctionResponse.
@@ -43,7 +45,7 @@ async def await_human_decision(
 
 
 def build_human_decision_wait_tool() -> LongRunningFunctionTool:
-    """Build the native ADK long-running wait tool used only by Phase 6C."""
+    """Build the shared native ADK long-running Product approval wait tool."""
     return LongRunningFunctionTool(await_human_decision)
 
 
