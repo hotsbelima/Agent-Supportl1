@@ -424,7 +424,7 @@ export function RunConsole({ runId }: { runId: string }) {
         <div className="fatal-card">
           <p className="eyebrow">Запуск недоступен</p>
           <h1>Не удалось загрузить операционное состояние</h1>
-          <p>{pageError ?? "Product API не вернул состояние запуска."}</p>
+          <p>{pageError ?? "API продукта не вернул состояние запуска."}</p>
           <Link className="secondary-button" href="/">
             К выбору сценариев
           </Link>
