@@ -473,7 +473,7 @@ def _container(request: Request) -> ProductApiContainer:
 def _require_tenant_id(
     request: Request,
     x_tenant_id: Annotated[
-        str,
+        str | None,
         Header(
             alias="X-Tenant-ID",
             min_length=1,
@@ -483,7 +483,7 @@ def _require_tenant_id(
                 "this value and uses its fixed configured demo tenant."
             ),
         ),
-    ],
+    ] = None,
 ) -> str:
     public_demo: PublicDemoSettings | None = getattr(
         request.app.state,
@@ -492,6 +492,13 @@ def _require_tenant_id(
     )
     if public_demo is not None and public_demo.enabled:
         return public_demo.tenant_id
+
+    if x_tenant_id is None:
+        _raise_api_error(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code="INVALID_ARGUMENT",
+            message="Request validation failed.",
+        )
 
     tenant_id = x_tenant_id.strip()
     if not _TENANT_PATTERN.fullmatch(tenant_id):
