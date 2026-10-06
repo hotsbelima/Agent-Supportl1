@@ -8,6 +8,10 @@ from typing import Any
 from product_backend.contracts.events import ApplicationEvent, ApplicationOutboxRecord
 from product_backend.domain.models import Evidence, Run
 from product_backend.domain.scenario2 import (
+    MajorIncidentApproval,
+    MajorIncidentExecution,
+    MajorIncidentProposal,
+    MajorIncidentRecord,
     OperationalSignal,
     Scenario2FixtureState,
     Scenario2SignalSource,
@@ -50,6 +54,10 @@ class Scenario2IngestionStateSnapshot:
     service_incidents: tuple[ServiceIncident, ...]
     operational_signals: tuple[OperationalSignal, ...]
     evidence: tuple[Evidence, ...]
+    major_incident_proposals: tuple[MajorIncidentProposal, ...]
+    major_incident_approvals: tuple[MajorIncidentApproval, ...]
+    major_incident_executions: tuple[MajorIncidentExecution, ...]
+    major_incidents: tuple[MajorIncidentRecord, ...]
     fixture_state: Scenario2FixtureState
     latest_event_seq: int
 
