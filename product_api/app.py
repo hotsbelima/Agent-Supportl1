@@ -210,7 +210,8 @@ def build_container_from_env() -> ProductApiContainer:
     settings = DatabaseSettings.from_env()
     engine = create_engine(settings)
     session_factory = create_session_factory(engine)
-    fixture = Scenario1FixtureSources()
+    shared_access_link_overrides: dict[tuple[str, str], OperationalState] = {}
+    fixture = Scenario1FixtureSources(shared_access_link_overrides)
     adk_session_service = create_database_session_service(engine)
 
     read_service = Scenario1ReadToolService(
@@ -294,7 +295,7 @@ def build_container_from_env() -> ProductApiContainer:
         agent_runtime=scenario2_agent_runtime,
     )
 
-    scenario3_fixture = Scenario3FixtureSources()
+    scenario3_fixture = Scenario3FixtureSources(shared_access_link_overrides)
     scenario3_sources = Scenario3ProviderSources()
     scenario3_provider_read_service = Scenario3ProviderReadService(
         read_uow_factory=lambda: SqlAlchemyToolReadUnitOfWork(session_factory),
