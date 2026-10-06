@@ -418,6 +418,173 @@ class FieldServiceWorkOrderRow(Base):
     )
 
 
+class MajorIncidentProposalRow(Base):
+    __tablename__ = "major_incident_proposals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.run_id"],
+            name="fk_major_incident_proposals_run",
+        ),
+        CheckConstraint(
+            "action_type = 'CREATE_MAJOR_INCIDENT'",
+            name="ck_major_incident_proposals_action_type",
+        ),
+        CheckConstraint(
+            "status IN ('PENDING_APPROVAL', 'REJECTED', 'STALE', 'EXECUTED')",
+            name="ck_major_incident_proposals_status_known",
+        ),
+        Index(
+            "uq_major_incident_proposals_pending_equivalent",
+            "tenant_id",
+            "service_key",
+            "correlation_key",
+            "dependency_id",
+            unique=True,
+            postgresql_where=text("status = 'PENDING_APPROVAL'"),
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    correlation_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    service_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    affected_site_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    dependency_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    dependency_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MajorIncidentApprovalRow(Base):
+    __tablename__ = "major_incident_approvals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "proposal_id"],
+            [
+                "major_incident_proposals.tenant_id",
+                "major_incident_proposals.run_id",
+                "major_incident_proposals.proposal_id",
+            ],
+            name="fk_major_incident_approvals_proposal",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "proposal_id",
+            name="uq_major_incident_approvals_proposal",
+        ),
+        CheckConstraint(
+            "decision IN ('APPROVED', 'REJECTED')",
+            name="ck_major_incident_approvals_decision_known",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    decision: Mapped[str] = mapped_column(String(64), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decided_by: Mapped[str] = mapped_column(String(256), nullable=False)
+
+
+class MajorIncidentRow(Base):
+    __tablename__ = "major_incidents"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "proposal_id"],
+            [
+                "major_incident_proposals.tenant_id",
+                "major_incident_proposals.run_id",
+                "major_incident_proposals.proposal_id",
+            ],
+            name="fk_major_incidents_proposal",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "proposal_id",
+            name="uq_major_incidents_proposal",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "service_key",
+            "correlation_key",
+            "dependency_id",
+            name="uq_major_incidents_equivalent",
+        ),
+        CheckConstraint("status = 'OPEN'", name="ck_major_incidents_status_known"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    major_incident_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    service_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    affected_site_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    dependency_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    dependency_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MajorIncidentExecutionRow(Base):
+    __tablename__ = "major_incident_executions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "proposal_id"],
+            [
+                "major_incident_proposals.tenant_id",
+                "major_incident_proposals.run_id",
+                "major_incident_proposals.proposal_id",
+            ],
+            name="fk_major_incident_executions_proposal",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "major_incident_id"],
+            [
+                "major_incidents.tenant_id",
+                "major_incidents.run_id",
+                "major_incidents.major_incident_id",
+            ],
+            name="fk_major_incident_executions_major_incident",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "proposal_id",
+            name="uq_major_incident_executions_proposal",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "run_id",
+            "major_incident_id",
+            name="uq_major_incident_executions_major_incident",
+        ),
+        CheckConstraint(
+            "action_type = 'CREATE_MAJOR_INCIDENT'",
+            name="ck_major_incident_executions_action_type",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    major_incident_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ApplicationEventRow(Base):
     """Persisted safe event record; lifecycle semantics are added in Phase 4B."""
 
