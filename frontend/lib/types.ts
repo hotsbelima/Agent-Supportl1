@@ -100,6 +100,119 @@ export type RunStateResponse = {
   latest_event_seq: number;
 };
 
+export type ServiceIncidentView = {
+  incident_id: string;
+  tenant_id: string;
+  run_id: string;
+  site_id: string;
+  service_key: string;
+  symptom_key: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OperationalSignalView = {
+  signal_id: string;
+  tenant_id: string;
+  run_id: string;
+  source: string;
+  site_id: string;
+  service_key: string;
+  symptom_key: string;
+  source_ref: string;
+  received_at: string;
+  safe_payload: Record<string, JsonValue>;
+  incident_id: string | null;
+};
+
+export type MajorIncidentProposalView = {
+  proposal_id: string;
+  tenant_id: string;
+  run_id: string;
+  correlation_key: string;
+  service_key: string;
+  affected_site_ids: string[];
+  dependency_id: string;
+  dependency_name: string;
+  action_type: string;
+  evidence_ids: string[];
+  summary: string;
+  rationale: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MajorIncidentApprovalView = {
+  approval_id: string;
+  tenant_id: string;
+  run_id: string;
+  proposal_id: string;
+  decision: string;
+  decided_at: string;
+  decided_by: string;
+};
+
+export type MajorIncidentExecutionView = {
+  execution_id: string;
+  tenant_id: string;
+  run_id: string;
+  proposal_id: string;
+  action_type: string;
+  major_incident_id: string;
+  executed_at: string;
+};
+
+export type MajorIncidentView = {
+  major_incident_id: string;
+  tenant_id: string;
+  run_id: string;
+  proposal_id: string;
+  correlation_key: string;
+  service_key: string;
+  affected_site_ids: string[];
+  dependency_id: string;
+  dependency_name: string;
+  summary: string;
+  status: string;
+  created_at: string;
+};
+
+export type Scenario2IngestionStateResponse = {
+  run: RunView;
+  service_incidents: ServiceIncidentView[];
+  operational_signals: OperationalSignalView[];
+  evidence: EvidenceView[];
+  major_incident_proposals: MajorIncidentProposalView[];
+  major_incident_approvals: MajorIncidentApprovalView[];
+  major_incident_executions: MajorIncidentExecutionView[];
+  major_incidents: MajorIncidentView[];
+  latest_event_seq: number;
+};
+
+export type Scenario2SimulatorStepResponse = {
+  state: Scenario2IngestionStateResponse;
+  ingested: {
+    signal: OperationalSignalView;
+    service_incident: ServiceIncidentView;
+    evidence_id: string;
+    replayed: boolean;
+    event_seq: number | null;
+    dispatch_queued: boolean;
+  } | null;
+  complete: boolean;
+  next_index: number;
+};
+
+export type Scenario2ApprovalDecisionResponse = {
+  approval: MajorIncidentApprovalView;
+  proposal: MajorIncidentProposalView;
+  execution: MajorIncidentExecutionView | null;
+  major_incident: MajorIncidentView | null;
+  replayed: boolean;
+};
+
 export type ApplicationEventView = {
   event_id: string;
   tenant_id: string;
