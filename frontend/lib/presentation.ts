@@ -7,10 +7,10 @@ import type {
 } from "./types";
 
 export const FIELD_SERVICE_OUTCOME_NOTE =
-  "Выезд Field Service зарегистрирован. Это ещё не подтверждает ремонт устройства.";
+  "Заявка на выездной сервис зарегистрирована. Это ещё не подтверждает ремонт устройства.";
 
 export const STALE_PROPOSAL_NOTE =
-  "Решение человека сохранено, но свежие авторитетные данные больше не разрешают выполнение. Действие Field Service не создавалось.";
+  "Решение человека сохранено, но свежие авторитетные данные больше не разрешают выполнение. Действие выездного сервиса не создавалось.";
 
 function stringValue(
   payload: Record<string, JsonValue>,
@@ -50,7 +50,7 @@ export function eventSummary(event: ApplicationEventView): string {
         : "Сохранено решение человека";
     }
     case "action.executed":
-      return "Product-действие зарегистрировано";
+      return "Действие продукта зарегистрировано";
     case "run.status_changed": {
       const status = stringValue(payload, "status");
       return status
