@@ -92,6 +92,12 @@ describe("Phase 9A final public UI", () => {
     expect(scenario2Console).not.toContain("delete");
   });
 
+  it("exposes dynamic readiness and loading as semantic status regions", () => {
+    expect(startSource).toContain('className="readiness-row" role="status" aria-live="polite"');
+    expect(standardConsole).toContain('className="console-loading" role="status" aria-live="polite"');
+    expect(scenario2Console).toContain('className="console-loading" role="status" aria-live="polite"');
+  });
+
   it("does not leak retained English UI copy in recovery and not-found states", () => {
     expect(standardConsole).not.toContain("Retrying persisted run state");
     expect(apiSource).not.toContain("demo tenant");
