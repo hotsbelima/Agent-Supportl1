@@ -75,7 +75,7 @@ function recoveryMessage(error: unknown): string {
     return "Обнаружен пропуск в хронологии; восстанавливаем сохранённые события.";
   }
   if (error instanceof Error && error.message === "Live event stream closed.") {
-    return "Live-лента закрылась; переподключаемся из сохранённого состояния.";
+    return "Поток событий прервался; переподключаемся из сохранённого состояния.";
   }
   return displayApiError(error);
 }
@@ -484,7 +484,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       {streamError ? (
         <div className="connection-warning" role="status">
-          Сохранённое состояние остаётся доступным, пока live-доставка восстанавливается.{" "}
+          Сохранённое состояние остаётся доступным, пока поток событий восстанавливается.{" "}
           <span>{streamError}</span>
         </div>
       ) : null}
@@ -865,7 +865,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           <dd>{order.device_id}</dd>
                         </div>
                         <div>
-                          <dt>Site</dt>
+                          <dt>Площадка</dt>
                           <dd>{order.site_id}</dd>
                         </div>
                         <div>
@@ -902,7 +902,7 @@ export function RunConsole({ runId }: { runId: string }) {
       <footer className="console-footer">
         <span>Источник истины: состояние продукта в PostgreSQL</span>
         <span>Поток событий: сохранённый SSE</span>
-        <span>Запуск AI: сохранённое событие → native ADK</span>
+        <span>Запуск AI: сохранённое событие → Google ADK</span>
       </footer>
     </main>
   );
