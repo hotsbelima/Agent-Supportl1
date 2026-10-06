@@ -64,7 +64,8 @@ def run_acceptance(*, timeout_seconds: float) -> None:
         health = client.get("/health")
         assert health.status_code == 200, health.text
         health_body = health.json()
-        assert health_body["checkpoint"] == "7A"
+        # Historical Phase 7A acceptance owns the automatic-dispatch
+        # capabilities below, not the repository's current global checkpoint.
         assert health_body["gemini_configured"] is True
         assert health_body["adk_wired"] is True
         assert health_body["adk_session_persistence_wired"] is True
