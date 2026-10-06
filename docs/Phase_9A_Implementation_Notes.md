@@ -115,7 +115,7 @@ No hidden model chain-of-thought is exposed.
 
 A dedicated `.github/workflows/phase9a-ui.yml` deterministic gate was added.
 
-Validated run `37531722587` passed:
+Validated run `37531951443` passed:
 
 - `npm ci`;
 - TypeScript typecheck;
