@@ -514,6 +514,42 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   background: #f7fafb;
 }
 
+:root[data-theme="light"] .scenario-switcher,
+:root[data-theme="light"] .panel-count,
+:root[data-theme="light"] .status-badge,
+:root[data-theme="light"] .chip-row code {
+  background: rgba(19, 33, 43, 0.035);
+}
+
+:root[data-theme="light"] .home-principles article,
+:root[data-theme="light"] .run-header {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="light"] .run-header {
+  box-shadow: 0 16px 45px rgba(31, 45, 55, 0.1);
+}
+
+:root[data-theme="light"] .facts-grid dd,
+:root[data-theme="light"] .facts-grid code,
+:root[data-theme="light"] .proposal-rationale p {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .inline-error,
+:root[data-theme="light"] .reject-button {
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .connection-warning {
+  color: var(--warning);
+}
+
+:root[data-theme="light"] .decision-notice {
+  color: #176a59;
+}
+
+
 .theme-toggle {
   position: fixed;
   top: 14px;
