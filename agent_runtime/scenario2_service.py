@@ -154,8 +154,11 @@ def _find_scenario2_event_correlation(
             pending_proposal_id = created_proposal_id
             proposal_created_without_wait = True
 
-        long_running_ids = set(event.long_running_tool_ids or [])
-        for call in event.get_function_calls():
+        long_running_ids = set(
+            getattr(event, "long_running_tool_ids", None) or []
+        )
+        get_calls = getattr(event, "get_function_calls", None)
+        for call in (get_calls() if callable(get_calls) else []):
             if (
                 call.name == WAIT_FOR_HUMAN_DECISION_TOOL
                 and call.id
@@ -344,8 +347,11 @@ class Scenario2AgentRuntime:
                 pending_proposal_id = created_proposal_id
                 proposal_created_without_wait = True
 
-            long_running_ids = set(event.long_running_tool_ids or [])
-            for call in event.get_function_calls():
+            long_running_ids = set(
+                getattr(event, "long_running_tool_ids", None) or []
+            )
+            get_calls = getattr(event, "get_function_calls", None)
+            for call in (get_calls() if callable(get_calls) else []):
                 if (
                     call.name == WAIT_FOR_HUMAN_DECISION_TOOL
                     and call.id
