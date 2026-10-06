@@ -701,8 +701,8 @@ def create_app(
                 await connection.execute(text("SELECT 1"))
         return {
             "status": "ok",
-            "phase": 7,
-            "checkpoint": "7A",
+            "phase": 8,
+            "checkpoint": "8C2",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
             "adk_wired": services.agent_runtime is not None,
