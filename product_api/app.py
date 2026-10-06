@@ -702,7 +702,7 @@ def create_app(
         return {
             "status": "ok",
             "phase": 8,
-            "checkpoint": "8C2",
+            "checkpoint": "8D",
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
             "adk_wired": services.agent_runtime is not None,
