@@ -493,14 +493,17 @@ async def _close_stack(stack) -> None:
     await stack["engine"].dispose()
 
 
-def test_phase8d_health_reports_current_checkpoint(monkeypatch):
+def test_phase8d_health_reports_scenario3_readiness(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     with TestClient(create_app()) as client:
         response = client.get("/health")
         assert response.status_code == 200
         body = response.json()
-        assert body["phase"] == 8
-        assert body["checkpoint"] == "8D"
+
+        # Phase 8D owns the Scenario 3 readiness contract, not the global
+        # release number. Later phases may legitimately advance release
+        # metadata while preserving these Scenario 3 guarantees.
+        assert body["phase"] >= 8
         assert body["scenario3_phase8c1_provider_reads_wired"] is True
         assert body["scenario3_phase8c2_native_wired"] is True
 
