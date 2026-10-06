@@ -31,11 +31,29 @@ def _require_database() -> None:
         pytest.skip("DATABASE_URL is required for Product API integration tests")
 
 
-def test_public_demo_requires_explicit_frontend_origins(monkeypatch):
+def test_public_demo_requires_explicit_exact_frontend_origins(monkeypatch):
     monkeypatch.delenv("FRONTEND_ORIGINS", raising=False)
 
     with pytest.raises(RuntimeError, match="FRONTEND_ORIGINS"):
         create_app(public_demo_settings=_settings())
+
+    with pytest.raises(RuntimeError, match="at least one exact origin"):
+        create_app(
+            public_demo_settings=_settings(),
+            frontend_origins=(),
+        )
+
+    with pytest.raises(RuntimeError, match="not wildcards"):
+        create_app(
+            public_demo_settings=_settings(),
+            frontend_origins=("*",),
+        )
+
+    with pytest.raises(RuntimeError, match="exact http"):
+        create_app(
+            public_demo_settings=_settings(),
+            frontend_origins=("https://agent-demo.example/path",),
+        )
 
 
 def test_public_demo_uses_fixed_server_side_tenant_and_release_health(monkeypatch):
@@ -60,6 +78,13 @@ def test_public_demo_uses_fixed_server_side_tenant_and_release_health(monkeypatc
         )
         assert reread.status_code == 200, reread.text
         assert reread.json()["run"]["tenant_id"] == PUBLIC_TENANT
+
+        oversized_browser_tenant = client.get(
+            f"/api/v1/runs/{run_id}",
+            headers=_headers("X" * 512),
+        )
+        assert oversized_browser_tenant.status_code == 200
+        assert oversized_browser_tenant.json()["run"]["tenant_id"] == PUBLIC_TENANT
 
         health = client.get("/health")
         assert health.status_code == 200
@@ -138,6 +163,18 @@ def test_public_demo_hides_internal_and_acceptance_routes(monkeypatch):
                 {},
             ),
             (
+                "/api/v1/scenario-2/runs/RUN-NOT-NEEDED/signals",
+                {
+                    "source": "MONITORING",
+                    "site_id": "SITE-X",
+                    "service_key": "SERVICE-X",
+                    "symptom_key": "SYMPTOM-X",
+                    "source_ref": "REF-X",
+                    "safe_payload": {},
+                },
+                {},
+            ),
+            (
                 "/api/v1/scenario-2/runs/RUN-NOT-NEEDED/acceptance/dependency-status",
                 {"dependency_status": "HEALTHY"},
                 {},
@@ -161,12 +198,32 @@ def test_public_demo_hides_internal_and_acceptance_routes(monkeypatch):
             assert response.json()["error"]["message"] == "Resource was not found."
 
         malformed = client.post(
-            "/api/v1/scenario-2/runs/RUN-NOT-NEEDED/acceptance/dependency-status",
+            "/api/v1/scenario-2/runs/RUN-NOT-NEEDED/acceptance/dependency-status/",
             content="{not-json",
             headers={"Content-Type": "application/json"},
+            follow_redirects=False,
         )
         assert malformed.status_code == 404
         assert malformed.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_public_demo_keeps_scenario2_simulator_available():
+    _require_database()
+
+    app = create_app(
+        public_demo_settings=_settings(),
+        frontend_origins=(DEMO_ORIGIN,),
+    )
+    with TestClient(app) as client:
+        started = client.post("/api/v1/scenario-2/runs")
+        assert started.status_code == 201, started.text
+        run_id = started.json()["run"]["run_id"]
+
+        advanced = client.post(
+            f"/api/v1/scenario-2/runs/{run_id}/simulator/next"
+        )
+        assert advanced.status_code == 200, advanced.text
+        assert advanced.json()["state"]["run"]["run_id"] == run_id
 
 
 def test_non_public_mode_keeps_existing_tenant_behavior():
