@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 import json
 import os
 from datetime import timedelta
@@ -10,15 +11,29 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from google.adk.agents import LlmAgent
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
+from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool, LongRunningFunctionTool
+from google.genai import types
+from pydantic import Field, PrivateAttr
 from sqlalchemy import delete
 
-from agent_runtime.human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
+import agent_runtime.scenario2_service as scenario2_service_module
+from agent_runtime.human_decision import (
+    WAIT_FOR_HUMAN_DECISION_TOOL,
+    build_human_decision_wait_tool,
+)
 from agent_runtime.scenario2_agent import (
     SCENARIO2_AGENT_INSTRUCTION,
     build_scenario2_agent,
 )
-from agent_runtime.scenario2_service import _find_scenario2_event_correlation
+from agent_runtime.scenario2_service import (
+    Scenario2AgentRuntime,
+    _find_scenario2_event_correlation,
+)
 from product_api.app import create_app
 from product_api.scenario2_fixture import (
     ACMEPAY_DEPENDENCY_ID,
@@ -374,6 +389,187 @@ def test_phase7d_runtime_native_wait_stops_awaiting_after_function_response():
     assert resumed.pending_proposal_id == proposal_id
     assert resumed.paused_function_call_id is None
     assert resumed.final_answer == "Major Incident created after human approval."
+
+
+
+class _Scenario2ScriptedModel(BaseLlm):
+    model: str = "phase7d-scripted"
+    steps: list[Any]
+    requests: list[LlmRequest] = Field(default_factory=list)
+    _index: int = PrivateAttr(default=0)
+
+    async def generate_content_async(
+        self,
+        llm_request: LlmRequest,
+        stream: bool = False,
+    ) -> AsyncGenerator[LlmResponse, None]:
+        del stream
+        self.requests.append(llm_request)
+        if self._index >= len(self.steps):
+            raise AssertionError("Scenario 2 scripted model ran out of responses")
+        step = self.steps[self._index]
+        self._index += 1
+        if isinstance(step, BaseException):
+            raise step
+        if isinstance(step, types.Part):
+            yield LlmResponse(
+                content=types.Content(role="model", parts=[step])
+            )
+            return
+        if isinstance(step, str):
+            yield LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(text=step)],
+                )
+            )
+            return
+        raise TypeError(f"Unsupported scripted model step: {type(step)!r}")
+
+
+def _scripted_proposal_call() -> types.Part:
+    return types.Part.from_function_call(
+        name="propose_major_incident",
+        args={},
+    )
+
+
+def _scripted_wait_call(proposal_id: str) -> types.Part:
+    return types.Part.from_function_call(
+        name=WAIT_FOR_HUMAN_DECISION_TOOL,
+        args={"proposal_id": proposal_id},
+    )
+
+
+def _build_scripted_scenario2_agent(
+    model: BaseLlm,
+    proposal_id: str,
+    proposal_calls: list[str],
+) -> LlmAgent:
+    async def propose_major_incident() -> dict[str, Any]:
+        proposal_calls.append(proposal_id)
+        return {
+            "ok": True,
+            "proposal": {
+                "proposal_id": proposal_id,
+                "status": "PENDING_APPROVAL",
+            },
+        }
+
+    return LlmAgent(
+        name="phase7d_scripted_agent",
+        model=model,
+        instruction=(
+            "Create the Product Major Incident proposal, call the native wait "
+            "tool, then after resume report the committed human decision."
+        ),
+        tools=[
+            FunctionTool(propose_major_incident),
+            build_human_decision_wait_tool(),
+        ],
+    )
+
+
+def test_phase7d_native_adk_pause_resume_and_redelivery_use_same_invocation(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        proposal_id = "MI-PROP-7D-NATIVE"
+        proposal_calls: list[str] = []
+        model = _Scenario2ScriptedModel(
+            steps=[
+                _scripted_proposal_call(),
+                _scripted_wait_call(proposal_id),
+                "Major Incident was created after the committed human approval.",
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(
+                model,
+                proposal_id,
+                proposal_calls,
+            ),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            tenant_id = "TENANT-7D-NATIVE"
+            run_id = "RUN-7D-NATIVE"
+            event_id = "EVENT-7D-NATIVE"
+
+            paused = await runtime.invoke_operational_signal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                product_event_id=event_id,
+                operational_fact={"signal": {"signal_id": "SIG-7D-NATIVE"}},
+            )
+            assert proposal_calls == [proposal_id]
+            assert paused.recoverable is True
+            assert paused.awaiting_human_decision is True
+            assert paused.pending_proposal_id == proposal_id
+            assert paused.paused_function_call_id is not None
+            assert paused.invocation_id is not None
+
+            resumed = await runtime.resume_human_decision(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                proposal_id=proposal_id,
+                decision_payload={
+                    "status": "human_decision_committed",
+                    "decision": "APPROVED",
+                    "proposal_id": proposal_id,
+                    "proposal_status": "EXECUTED",
+                    "execution": {
+                        "execution_id": "MI-EXEC-7D-NATIVE",
+                        "action_type": "CREATE_MAJOR_INCIDENT",
+                        "major_incident_id": "MI-7D-NATIVE",
+                    },
+                    "major_incident": {
+                        "major_incident_id": "MI-7D-NATIVE",
+                        "status": "OPEN",
+                    },
+                    "replayed": False,
+                },
+            )
+            assert resumed.invocation_id == paused.invocation_id
+            assert resumed.function_call_id == paused.paused_function_call_id
+            assert resumed.already_resumed is False
+            assert "created" in (resumed.final_answer or "").lower()
+
+            replay_resume = await runtime.resume_human_decision(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                proposal_id=proposal_id,
+                decision_payload={
+                    "status": "human_decision_committed",
+                    "decision": "APPROVED",
+                    "proposal_id": proposal_id,
+                    "proposal_status": "EXECUTED",
+                    "replayed": True,
+                },
+            )
+            assert replay_resume.already_resumed is True
+            assert replay_resume.invocation_id == paused.invocation_id
+
+            redelivery = await runtime.invoke_operational_signal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                product_event_id=event_id,
+                operational_fact={"signal": {"signal_id": "SIG-7D-NATIVE"}},
+            )
+            assert redelivery.invocation_id == paused.invocation_id
+            assert redelivery.recoverable is True
+            assert redelivery.awaiting_human_decision is False
+            assert proposal_calls == [proposal_id]
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
 
 
 def _build_stack(factory):
