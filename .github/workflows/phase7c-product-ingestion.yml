@@ -1,9 +1,10 @@
-name: Phase 7C Product ingestion
+name: Phase 7C Product ingestion and ADK dispatch
 
 on:
   push:
     branches:
       - phase-7c-product-ingestion
+      - phase-7c-adk-dispatch-completion
   pull_request:
   workflow_dispatch:
 
@@ -71,6 +72,9 @@ jobs:
 
       - name: Run focused Phase 7C Product ingestion tests
         run: python -m pytest -q tests/test_phase7c_product_ingestion.py
+
+      - name: Run focused Phase 7C native ADK dispatch tests
+        run: python -m pytest -q tests/test_phase7c_adk_dispatch.py
 
       - name: Verify Alembic metadata is clean
         run: |
