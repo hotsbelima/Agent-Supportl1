@@ -92,6 +92,13 @@ export function startScenario1(signal?: AbortSignal): Promise<RunStateResponse> 
   });
 }
 
+export function startScenario3(signal?: AbortSignal): Promise<RunStateResponse> {
+  return requestJson<RunStateResponse>("/api/v1/scenario-3/runs", {
+    method: "POST",
+    signal,
+  });
+}
+
 export function getRunState(
   runId: string,
   signal?: AbortSignal,
