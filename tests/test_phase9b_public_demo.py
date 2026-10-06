@@ -47,10 +47,7 @@ def test_public_demo_uses_fixed_server_side_tenant_and_release_health(monkeypatc
         frontend_origins=(DEMO_ORIGIN,),
     )
     with TestClient(app) as client:
-        started = client.post(
-            "/api/v1/scenario-1/runs",
-            headers=_headers(),
-        )
+        started = client.post("/api/v1/scenario-1/runs")
         assert started.status_code == 201, started.text
         body = started.json()
         run_id = body["run"]["run_id"]
@@ -158,8 +155,7 @@ def test_public_demo_hides_internal_and_acceptance_routes(monkeypatch):
         )
 
         for path, payload, extra_headers in cases:
-            headers = {**_headers(), **extra_headers}
-            response = client.post(path, headers=headers, json=payload)
+            response = client.post(path, headers=extra_headers, json=payload)
             assert response.status_code == 404, (path, response.text)
             assert response.json()["error"]["code"] == "NOT_FOUND"
             assert response.json()["error"]["message"] == "Resource was not found."
