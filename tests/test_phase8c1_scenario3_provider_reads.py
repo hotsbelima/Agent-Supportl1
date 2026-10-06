@@ -222,6 +222,7 @@ async def _assert_context_isolation(
     owner_run_id: str,
     other_tenant_id: str,
     other_run_id: str,
+    same_tenant_other_run_id: str,
 ) -> None:
     engine, factory = _new_db()
     try:
@@ -267,6 +268,21 @@ async def _assert_context_isolation(
         )
         assert other_run_status.ok is False
         assert other_run_status.error.code is ErrorCode.CONTEXT_MISMATCH
+
+        same_tenant_other_run_status = await service.get_external_dependency_status(
+            ToolCallContext(
+                tenant_id=owner_tenant_id,
+                run_id=same_tenant_other_run_id,
+            ),
+            GetExternalDependencyStatusRequest(
+                dependency_id=ACMEPAY_DEPENDENCY_ID,
+            ),
+        )
+        assert same_tenant_other_run_status.ok is False
+        assert (
+            same_tenant_other_run_status.error.code
+            is ErrorCode.CONTEXT_MISMATCH
+        )
     finally:
         await engine.dispose()
 
@@ -386,6 +402,7 @@ def test_phase8c1_provider_context_is_tenant_and_run_isolated(monkeypatch):
 
     with TestClient(create_app()) as client:
         owner = _start_scenario3(client, owner_tenant_id)
+        same_tenant_other = _start_scenario3(client, owner_tenant_id)
         other = _start_scenario3(client, other_tenant_id)
 
     asyncio.run(
@@ -394,6 +411,7 @@ def test_phase8c1_provider_context_is_tenant_and_run_isolated(monkeypatch):
             owner_run_id=owner["run"]["run_id"],
             other_tenant_id=other_tenant_id,
             other_run_id=other["run"]["run_id"],
+            same_tenant_other_run_id=same_tenant_other["run"]["run_id"],
         )
     )
 
