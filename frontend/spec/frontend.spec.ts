@@ -95,7 +95,7 @@ describe("operational presentation", () => {
 
   it("never presents a registered work order as a completed repair", () => {
     expect(FIELD_SERVICE_OUTCOME_NOTE).toBe(
-      "Выезд Field Service зарегистрирован. Это ещё не подтверждает ремонт устройства.",
+      "Заявка на выездной сервис зарегистрирована. Это ещё не подтверждает ремонт устройства.",
     );
     expect(FIELD_SERVICE_OUTCOME_NOTE.toLowerCase()).not.toContain(
       "инцидент закрыт",
