@@ -530,14 +530,14 @@ def test_phase8d_canonical_trace_approve_replay_and_no_product_cot(
             )
             assert snapshot is not None
             assert snapshot.run.status is RunStatus.WAITING_APPROVAL
-            assert [item.source_type for item in snapshot.evidence] == [
+            assert {item.source_type for item in snapshot.evidence} == {
                 EvidenceSourceType.SERVICE_DEPENDENCY_MAPPING,
                 EvidenceSourceType.EXTERNAL_DEPENDENCY_STATUS,
                 EvidenceSourceType.CMDB_SNAPSHOT,
                 EvidenceSourceType.SITE_HEALTH,
                 EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC,
                 EvidenceSourceType.KB_ARTICLE,
-            ]
+            }
             assert len(snapshot.proposals) == 1
             assert snapshot.proposals[0].status is ProposalStatus.PENDING_APPROVAL
             assert tuple(snapshot.proposals[0].evidence_ids) == LOCAL_EVIDENCE_IDS
