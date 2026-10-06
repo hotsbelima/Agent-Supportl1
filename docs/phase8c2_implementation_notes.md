@@ -244,7 +244,7 @@ Results:
 - focused Phase 8C2 tests: **8 passed**;
 - Alembic: **`20261006_0006 (head)`**;
 - Alembic autogenerate check: **No new upgrade operations detected**;
-- full Python regression: **207 passed**;
+- full Python regression: **208 passed**;
 - retained historical Node regression: **5 passed**;
 - frontend typecheck: PASS;
 - frontend lint: PASS;
