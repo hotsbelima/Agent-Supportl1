@@ -88,6 +88,21 @@ class Scenario1RunStartService:
         if not bootstrap.symptom.strip():
             raise ValueError("symptom is required")
 
+        service_key = (
+            bootstrap.service_key.strip()
+            if bootstrap.service_key is not None
+            else None
+        )
+        symptom_key = (
+            bootstrap.symptom_key.strip()
+            if bootstrap.symptom_key is not None
+            else None
+        )
+        if (service_key is None) != (symptom_key is None):
+            raise ValueError("service_key and symptom_key must be provided together")
+        if service_key == "" or symptom_key == "":
+            raise ValueError("service_key and symptom_key must be non-empty")
+
         now = self._clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("run clock must return timezone-aware datetime")
@@ -141,14 +156,18 @@ class Scenario1RunStartService:
                     "status": created_run.status.value,
                 },
             )
+            signal_details = {
+                "incident_id": incident.incident_id,
+                "site_id": incident.site_id,
+                "reported_device_id": incident.reported_device_id,
+                "symptom": incident.symptom,
+            }
+            if service_key is not None and symptom_key is not None:
+                signal_details["service_key"] = service_key
+                signal_details["symptom_key"] = symptom_key
             signal_payload = {
                 "signal_type": "itsm.incident.created",
-                "details": {
-                    "incident_id": incident.incident_id,
-                    "site_id": incident.site_id,
-                    "reported_device_id": incident.reported_device_id,
-                    "symptom": incident.symptom,
-                },
+                "details": signal_details,
             }
             signal_event = await uow.events.append(
                 tenant_id=context.tenant_id,

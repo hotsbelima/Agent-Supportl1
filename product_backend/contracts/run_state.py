@@ -22,6 +22,8 @@ class Scenario1Bootstrap:
     site_id: str
     reported_device_id: str
     symptom: str
+    service_key: str | None = None
+    symptom_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
