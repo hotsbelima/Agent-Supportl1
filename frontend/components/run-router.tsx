@@ -43,7 +43,7 @@ export function RunRouter({ runId }: { runId: string }) {
         <div className="fatal-card">
           <p className="eyebrow">Запуск недоступен</p>
           <h1>Не удалось определить сценарий</h1>
-          <p>{error ?? "Product API не вернул состояние запуска."}</p>
+          <p>{error ?? "API продукта не вернул состояние запуска."}</p>
           <Link className="secondary-button" href="/">
             К выбору сценариев
           </Link>
