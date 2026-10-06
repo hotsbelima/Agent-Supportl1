@@ -7,51 +7,51 @@ export default function HomePage() {
         <div className="brand-lockup hero-brand">
           <span className="brand-mark" aria-hidden="true">8O</span>
           <div>
-            <p className="eyebrow">Operational AI portfolio demo</p>
+            <p className="eyebrow">Публичное демо операционного AI</p>
             <span className="brand-name">8 Щупалец · IT Operations</span>
           </div>
         </div>
 
         <div className="hero-copy">
-          <p className="hero-index">01 / Autonomous L1 Incident Agent</p>
+          <p className="hero-index">01 / Автономный L1 Incident Agent</p>
           <h1>
-            Persistent incident handling,
-            <span> visible without exposing model reasoning.</span>
+            Инцидент расследуется по сохранённым фактам,
+            <span> без показа скрытых рассуждений модели.</span>
           </h1>
           <p>
-            A production-shaped demo of event-driven investigation, persisted
-            evidence, human approval and audit events. Operational signals wake
-            the native ADK agent without browser-side orchestration.
+            Event-driven демонстрация расследования: Product state и Evidence
+            сохраняются, агент работает через native Google ADK, а побочные
+            действия требуют решения человека.
           </p>
         </div>
 
-        <div className="architecture-strip" aria-label="Architecture summary">
+        <div className="architecture-strip" aria-label="Краткая архитектура">
           <span>Next.js UI</span>
           <i aria-hidden="true">→</i>
-          <span>FastAPI</span>
+          <span>FastAPI Product API</span>
           <i aria-hidden="true">→</i>
           <span>PostgreSQL</span>
-          <b>Persisted source of truth</b>
+          <b>Сохранённый источник истины</b>
         </div>
       </section>
 
       <StartScenario />
 
-      <section className="home-principles" aria-label="Product guarantees">
+      <section className="home-principles" aria-label="Гарантии продукта">
         <article>
           <span>01</span>
-          <strong>Evidence first</strong>
-          <p>Operational observations stay separate from unsupported claims.</p>
+          <strong>Сначала Evidence</strong>
+          <p>Наблюдаемые факты отделены от неподтверждённых предположений.</p>
         </article>
         <article>
           <span>02</span>
-          <strong>Human boundary</strong>
-          <p>Field-service execution cannot happen before Approve.</p>
+          <strong>Решение человека</strong>
+          <p>Побочный эффект запрещён до явного одобрения.</p>
         </article>
         <article>
           <span>03</span>
-          <strong>Persistent audit</strong>
-          <p>Run state and timeline come from persisted backend state, not the React session.</p>
+          <strong>Восстановление из Product state</strong>
+          <p>Refresh и reconnect перечитывают сохранённую истину, а не локальную догадку UI.</p>
         </article>
       </section>
     </main>
