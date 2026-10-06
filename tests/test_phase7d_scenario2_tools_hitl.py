@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -402,9 +403,9 @@ def _build_stack(factory):
         dependency_status=sources,
         major_incident_directory=sources,
         ttl_policy=Scenario2EvidenceTtlPolicy(
-            local_service_health=__import__("datetime").timedelta(minutes=5),
-            external_dependency_status=__import__("datetime").timedelta(minutes=2),
-            major_incident_search=__import__("datetime").timedelta(minutes=2),
+            local_service_health=timedelta(minutes=5),
+            external_dependency_status=timedelta(minutes=2),
+            major_incident_search=timedelta(minutes=2),
         ),
     )
     proposal_service = MajorIncidentProposalService(
@@ -649,7 +650,7 @@ def test_phase7d_approve_goes_stale_when_provider_recovers_in_persisted_world():
                 run_id=run_id,
                 status=HealthState.HEALTHY,
             )
-            assert changed.ok is True
+            assert changed.dependency_status is HealthState.HEALTHY
 
             result = await stack["approval"].decide(
                 ToolCallContext(tenant_id=tenant_id, run_id=run_id),
