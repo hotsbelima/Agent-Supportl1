@@ -11,6 +11,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from product_backend.contracts.events import ApplicationEventType
 from product_backend.contracts.scenario2_tools import ProposeMajorIncidentRequest
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.domain.enums import (
@@ -52,6 +53,7 @@ from product_backend.ports.scenario2_sources import (
     ServiceDependencyPort,
 )
 
+from .lifecycle import append_uow_event
 from .scenario2_results import (
     MajorIncidentDecisionProcessed,
     MajorIncidentDecisionResult,
@@ -349,6 +351,32 @@ class MajorIncidentProposalService:
             )
             await uow.major_incident_proposals.add(proposal)
             await uow.runs.save(updated_run)
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.PROPOSAL_CREATED,
+                payload={
+                    "proposal_id": proposal.proposal_id,
+                    "action_type": proposal.action_type.value,
+                    "service_key": proposal.service_key,
+                    "correlation_key": proposal.correlation_key,
+                    "dependency_id": proposal.dependency_id,
+                    "affected_site_ids": list(proposal.affected_site_ids),
+                    "evidence_ids": list(proposal.evidence_ids),
+                    "status": proposal.status.value,
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                payload={
+                    "previous_status": run.status.value,
+                    "status": updated_run.status.value,
+                    "cause": "major_incident_proposal_created",
+                    "proposal_id": proposal.proposal_id,
+                },
+            )
             await uow.commit()
             return MajorIncidentProposalCreated(
                 ok=True,
@@ -507,6 +535,29 @@ class MajorIncidentApprovalService:
                 await uow.major_incident_approvals.add(approval)
                 await uow.major_incident_proposals.save(rejected)
                 await uow.runs.save(active_run)
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.APPROVAL_DECIDED,
+                    payload={
+                        "approval_id": approval.approval_id,
+                        "proposal_id": proposal.proposal_id,
+                        "decision": approval.decision.value,
+                        "decided_by": approval.decided_by,
+                        "proposal_status": rejected.status.value,
+                    },
+                )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                    payload={
+                        "previous_status": run.status.value,
+                        "status": active_run.status.value,
+                        "cause": "major_incident_proposal_rejected",
+                        "proposal_id": proposal.proposal_id,
+                    },
+                )
                 await uow.commit()
                 return MajorIncidentDecisionProcessed(
                     ok=True,
@@ -639,6 +690,38 @@ class MajorIncidentApprovalService:
                 await uow.major_incident_approvals.add(approval)
                 await uow.major_incident_proposals.save(stale)
                 await uow.runs.save(active_run)
+                stale_reason = next(
+                    (
+                        value
+                        for key, value in currentness_error.details
+                        if key == "reason"
+                    ),
+                    "currentness_invalid",
+                )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.APPROVAL_DECIDED,
+                    payload={
+                        "approval_id": approval.approval_id,
+                        "proposal_id": proposal.proposal_id,
+                        "decision": approval.decision.value,
+                        "decided_by": approval.decided_by,
+                        "proposal_status": stale.status.value,
+                        "stale_reason": stale_reason,
+                    },
+                )
+                await append_uow_event(
+                    uow,
+                    context=context,
+                    event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                    payload={
+                        "previous_status": run.status.value,
+                        "status": active_run.status.value,
+                        "cause": "major_incident_proposal_stale",
+                        "proposal_id": proposal.proposal_id,
+                    },
+                )
                 await uow.commit()
                 return MajorIncidentDecisionProcessed(
                     ok=True,
@@ -698,6 +781,45 @@ class MajorIncidentApprovalService:
             await uow.major_incident_executions.add(execution)
             await uow.major_incident_proposals.save(executed)
             await uow.runs.save(active_run)
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.APPROVAL_DECIDED,
+                payload={
+                    "approval_id": approval.approval_id,
+                    "proposal_id": proposal.proposal_id,
+                    "decision": approval.decision.value,
+                    "decided_by": approval.decided_by,
+                    "proposal_status": executed.status.value,
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.ACTION_EXECUTED,
+                payload={
+                    "execution_id": execution.execution_id,
+                    "proposal_id": proposal.proposal_id,
+                    "action_type": execution.action_type.value,
+                    "major_incident_id": major_incident.major_incident_id,
+                    "service_key": major_incident.service_key,
+                    "correlation_key": major_incident.correlation_key,
+                    "dependency_id": major_incident.dependency_id,
+                    "affected_site_ids": list(major_incident.affected_site_ids),
+                },
+            )
+            await append_uow_event(
+                uow,
+                context=context,
+                event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                payload={
+                    "previous_status": run.status.value,
+                    "status": active_run.status.value,
+                    "cause": "major_incident_created",
+                    "proposal_id": proposal.proposal_id,
+                    "major_incident_id": major_incident.major_incident_id,
+                },
+            )
             await uow.commit()
 
             return MajorIncidentDecisionProcessed(
