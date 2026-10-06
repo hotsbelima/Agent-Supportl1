@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from google.adk.agents import LlmAgent
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_request import LlmRequest
@@ -31,6 +32,7 @@ from agent_runtime.sessions import (
     ensure_run_session,
     get_run_session,
 )
+from product_api.app import create_app
 from product_api.scenario1_fixture import Scenario1FixtureSources
 from product_api.scenario3_fixture import (
     AFFECTED_DEVICE_ID,
@@ -489,6 +491,18 @@ def _decision_payload(result) -> dict[str, Any]:
 async def _close_stack(stack) -> None:
     await stack["runtime"].close()
     await stack["engine"].dispose()
+
+
+def test_phase8d_health_reports_current_checkpoint(monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    with TestClient(create_app()) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["phase"] == 8
+        assert body["checkpoint"] == "8D"
+        assert body["scenario3_phase8c1_provider_reads_wired"] is True
+        assert body["scenario3_phase8c2_native_wired"] is True
 
 
 def test_phase8d_canonical_trace_approve_replay_and_no_product_cot(
