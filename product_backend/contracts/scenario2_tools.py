@@ -1,6 +1,6 @@
 """Scenario 2 model-visible tool contracts.
 
-These are schema contracts only in Phase 7B. Live ADK wiring belongs to Phase 7D.
+Phase 7D wires these typed Product contracts into native ADK tools.
 Trusted tenant/run context remains outside model-visible arguments.
 """
 
