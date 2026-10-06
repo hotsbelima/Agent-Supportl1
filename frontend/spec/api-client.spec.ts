@@ -19,7 +19,7 @@ describe("browser API client contract", () => {
     const api = await import("../lib/api");
 
     expect(api.configurationIssue()).toBe(
-      "NEXT_PUBLIC_DEMO_TENANT_ID is not configured.",
+      "Не настроен demo tenant для интерфейса.",
     );
   });
 
@@ -64,6 +64,64 @@ describe("browser API client contract", () => {
     expect(init?.method).toBe("POST");
     const headers = init?.headers as Headers;
     expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
+  });
+
+  it("uses the real Scenario 2 Product API for start, simulator and HITL", async () => {
+    const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push([input, init]);
+        return new Response(
+          JSON.stringify({
+            run: {
+              run_id: "RUN-S2",
+              tenant_id: "TENANT-8OCT",
+              scenario_id: "scenario-2",
+              status: "ACTIVE",
+              created_at: "2026-10-06T00:00:00Z",
+              updated_at: "2026-10-06T00:00:00Z",
+            },
+            service_incidents: [],
+            operational_signals: [],
+            evidence: [],
+            major_incident_proposals: [],
+            major_incident_approvals: [],
+            major_incident_executions: [],
+            major_incidents: [],
+            latest_event_seq: 1,
+          }),
+          {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = await loadApi();
+    await api.startScenario2();
+    await api.advanceScenario2Simulator("RUN-S2");
+    await api.decideScenario2Proposal(
+      "RUN-S2",
+      "MI-PROP-1",
+      "approve",
+      "portfolio-demo-operator",
+    );
+
+    expect(calls[0]?.[0]).toBe(
+      "https://api.example.test/api/v1/scenario-2/runs",
+    );
+    expect(calls[1]?.[0]).toBe(
+      "https://api.example.test/api/v1/scenario-2/runs/RUN-S2/simulator/next",
+    );
+    expect(calls[2]?.[0]).toBe(
+      "https://api.example.test/api/v1/scenario-2/runs/RUN-S2/proposals/MI-PROP-1/approve",
+    );
+    for (const [, init] of calls) {
+      const headers = init?.headers as Headers;
+      expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
+    }
   });
 
   it("sends configured tenant header when starting Scenario 3", async () => {
