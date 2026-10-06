@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from product_api.app import create_app
+from product_api.dispatch import Scenario1DispatchWorker
 from product_api.scenario3_fixture import (
     AFFECTED_DEVICE_ID,
     INCIDENT_ID,
@@ -23,6 +24,7 @@ from product_api.scenario3_sources import (
     ACMEPAY_NAME,
     Scenario3ProviderSources,
 )
+from product_backend.application.run_state import RunStateService
 from product_backend.application.scenario3_provider_reads import (
     Scenario3ProviderEvidenceTtlPolicy,
     Scenario3ProviderReadService,
@@ -43,7 +45,10 @@ from product_backend.persistence.database import (
 )
 from product_backend.persistence.run_state import SqlAlchemyRunStateQuery
 from product_backend.persistence.tables import ApplicationOutboxRow
-from product_backend.persistence.uow import SqlAlchemyToolReadUnitOfWork
+from product_backend.persistence.uow import (
+    SqlAlchemyDispatchUnitOfWork,
+    SqlAlchemyToolReadUnitOfWork,
+)
 
 
 def _database_url() -> str:
@@ -82,6 +87,45 @@ async def _load_outbox(*, tenant_id: str, run_id: str):
                 )
             )
             return tuple(result.scalars().all())
+    finally:
+        await engine.dispose()
+
+
+class _RecordingScenario1Runtime:
+    gemini_configured = True
+
+    def __init__(self) -> None:
+        self.invocation_count = 0
+
+    async def invoke_operational_event(self, **kwargs):
+        del kwargs
+        self.invocation_count += 1
+        return None
+
+
+async def _dispatch_once_with_scenario1_worker(
+    *,
+    tenant_id: str,
+    run_id: str,
+) -> tuple[bool, int, tuple[ApplicationOutboxRow, ...]]:
+    engine, factory = _new_db()
+    runtime = _RecordingScenario1Runtime()
+    try:
+        worker = Scenario1DispatchWorker(
+            uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(factory),
+            state_service=RunStateService(SqlAlchemyRunStateQuery(factory)),
+            agent_runtime=runtime,
+        )
+        processed = await worker.dispatch_once()
+        async with factory() as session:
+            result = await session.execute(
+                select(ApplicationOutboxRow).where(
+                    ApplicationOutboxRow.tenant_id == tenant_id,
+                    ApplicationOutboxRow.run_id == run_id,
+                )
+            )
+            rows = tuple(result.scalars().all())
+        return processed, runtime.invocation_count, rows
     finally:
         await engine.dispose()
 
@@ -292,6 +336,29 @@ def test_phase8c1_scenario3_start_persists_safe_context_and_generic_outbox(
     assert outbox[0].delivered_at is None
     assert outbox[0].payload["signal"]["details"]["service_key"] == SERVICE_KEY
     assert outbox[0].payload["signal"]["details"]["symptom_key"] == SYMPTOM_KEY
+
+
+def test_phase8c1_scenario1_worker_fails_closed_for_scenario3_envelope(monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    tenant_id = f"TENANT-S3-DISPATCH-{uuid4().hex[:10]}"
+
+    with TestClient(create_app()) as client:
+        state = _start_scenario3(client, tenant_id)
+        run_id = state["run"]["run_id"]
+
+    processed, invocation_count, rows = asyncio.run(
+        _dispatch_once_with_scenario1_worker(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+    )
+
+    assert processed is True
+    assert invocation_count == 0
+    assert len(rows) == 1
+    assert rows[0].topic == AGENT_DISPATCH_TOPIC
+    assert rows[0].delivered_at is None
+    assert rows[0].attempt_count == 1
 
 
 def test_phase8c1_provider_reads_are_grounded_and_persist_evidence(monkeypatch):
