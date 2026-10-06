@@ -152,6 +152,7 @@ from .sse import (
     SseSettings,
     application_event_sse_frame,
     frontend_origins_from_env,
+    normalize_frontend_origins,
     resolve_sse_cursor,
 )
 
@@ -481,8 +482,6 @@ def _require_tenant_id(
         str | None,
         Header(
             alias="X-Tenant-ID",
-            min_length=1,
-            max_length=128,
             description=(
                 "Demo tenant context. In PUBLIC_DEMO mode the server ignores "
                 "this value and uses its fixed configured demo tenant."
@@ -638,10 +637,15 @@ def create_app(
             "FRONTEND_ORIGINS must be explicitly configured in PUBLIC_DEMO mode"
         )
     resolved_frontend_origins = (
-        frontend_origins
+        normalize_frontend_origins(frontend_origins)
         if frontend_origins is not None
         else frontend_origins_from_env()
     )
+    if resolved_public_demo.enabled and not resolved_frontend_origins:
+        raise RuntimeError(
+            "FRONTEND_ORIGINS must contain at least one exact origin "
+            "in PUBLIC_DEMO mode"
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
