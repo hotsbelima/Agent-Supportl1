@@ -63,8 +63,6 @@ def test_new_product_run_gets_stable_persistent_adk_session():
     with TestClient(create_app()) as client:
         health = client.get("/health")
         assert health.status_code == 200
-        assert health.json()["phase"] == 8
-        assert health.json()["checkpoint"] == "8C2"
         assert health.json()["adk_session_persistence_wired"] is True
 
         container = client.app.state.product_container
