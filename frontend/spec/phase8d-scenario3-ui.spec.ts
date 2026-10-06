@@ -11,7 +11,7 @@ const consoleSource = readFileSync(
   "utf8",
 );
 
-describe("Phase 8D Scenario 3 UI exposure", () => {
+describe("Phase 8D Сценарий 3 UI exposure", () => {
   it("offers Scenario 3 through the Product start API without browser agent orchestration", () => {
     expect(startSource).toContain("Scenario 3");
     expect(startSource).toContain("startScenario3()");
@@ -25,15 +25,16 @@ describe("Phase 8D Scenario 3 UI exposure", () => {
     expect(startSource).toContain(
       'useState<ScenarioChoice>("scenario-1")',
     );
-    expect(startSource).toContain('setSelectedScenario("scenario-3")');
-    expect(startSource).toContain('aria-pressed={selectedScenario === "scenario-3"}');
+    expect(startSource).toContain('"scenario-1", "scenario-2", "scenario-3"');
+    expect(startSource).toContain('setSelectedScenario(scenario)');
+    expect(startSource).toContain('aria-pressed={selectedScenario === scenario}');
   });
 
   it("reuses one persisted run console and derives scenario identity from Product state", () => {
     expect(consoleSource).toContain("state?.run.scenario_id");
-    expect(consoleSource).toContain("{scenarioLabel} operational console");
+    expect(consoleSource).toContain("{scenarioLabel} · операционная консоль");
     expect(consoleSource).toContain("{state.run.scenario_id}");
-    expect(consoleSource).not.toContain("Scenario 1 operational console");
-    expect(consoleSource).toContain("Back to scenarios");
+    expect(consoleSource).not.toContain("Сценарий 1 · операционная консоль");
+    expect(consoleSource).toContain("К выбору сценариев");
   });
 });
