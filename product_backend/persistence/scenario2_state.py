@@ -18,6 +18,12 @@ from product_backend.domain.scenario2 import (
 )
 
 from .repositories import _evidence_from_row
+from .scenario2_major_incident import (
+    SqlAlchemyMajorIncidentApprovalRepository,
+    SqlAlchemyMajorIncidentExecutionRepository,
+    SqlAlchemyMajorIncidentProposalRepository,
+    SqlAlchemyMajorIncidentRepository,
+)
 
 from .tables import (
     ApplicationEventRow,
@@ -94,6 +100,27 @@ class SqlAlchemyScenario2StateQuery:
                 )
             ).scalars().all()
 
+            proposal_repo = SqlAlchemyMajorIncidentProposalRepository(session)
+            approval_repo = SqlAlchemyMajorIncidentApprovalRepository(session)
+            execution_repo = SqlAlchemyMajorIncidentExecutionRepository(session)
+            major_incident_repo = SqlAlchemyMajorIncidentRepository(session)
+            proposals = await proposal_repo.list_for_run(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            approvals = await approval_repo.list_for_run(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            executions = await execution_repo.list_for_run(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            major_incidents = await major_incident_repo.list_for_run(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+
             fixture_row = (
                 await session.execute(
                     select(Scenario2FixtureStateRow).where(
@@ -165,6 +192,10 @@ class SqlAlchemyScenario2StateQuery:
                 service_incidents=incidents,
                 operational_signals=signals,
                 evidence=tuple(_evidence_from_row(row) for row in evidence_rows),
+                major_incident_proposals=proposals,
+                major_incident_approvals=approvals,
+                major_incident_executions=executions,
+                major_incidents=major_incidents,
                 fixture_state=fixture_state,
                 latest_event_seq=latest_event_seq,
             )
