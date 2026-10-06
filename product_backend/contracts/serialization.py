@@ -1,8 +1,4 @@
-"""JSON-safe serialization for typed Scenario 1 tool results.
-
-Google ADK wiring is intentionally deferred, but the Phase 3 contract must
-already define how typed dataclasses cross the eventual model boundary.
-"""
+"""JSON-safe serialization for typed Product tool results crossing ADK boundaries."""
 
 from __future__ import annotations
 
