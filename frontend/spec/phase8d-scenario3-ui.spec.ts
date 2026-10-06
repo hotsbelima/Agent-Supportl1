@@ -11,9 +11,9 @@ const consoleSource = readFileSync(
   "utf8",
 );
 
-describe("Phase 8D Сценарий 3 UI exposure", () => {
+describe("Phase 8D Scenario 3 UI exposure", () => {
   it("offers Scenario 3 through the Product start API without browser agent orchestration", () => {
-    expect(startSource).toContain("Scenario 3");
+    expect(startSource).toContain("Сценарий 3");
     expect(startSource).toContain("startScenario3()");
     expect(startSource).toContain("scenario3_phase8c1_provider_reads_wired");
     expect(startSource).toContain("scenario3_phase8c2_native_wired");
