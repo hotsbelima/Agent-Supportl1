@@ -15,6 +15,12 @@ from .scenario2 import (
     SqlAlchemyScenario2FixtureStateRepository,
     SqlAlchemyServiceIncidentRepository,
 )
+from .scenario2_major_incident import (
+    SqlAlchemyMajorIncidentApprovalRepository,
+    SqlAlchemyMajorIncidentExecutionRepository,
+    SqlAlchemyMajorIncidentProposalRepository,
+    SqlAlchemyMajorIncidentRepository,
+)
 from .repositories import (
     SqlAlchemyApprovalRepository,
     SqlAlchemyEvidenceRepository,
@@ -110,6 +116,67 @@ class SqlAlchemyScenario2FixtureStateUnitOfWork(_SqlAlchemyUnitOfWorkBase):
             self._session,
             lock_for_update=True,
         )
+
+
+class SqlAlchemyScenario2ToolReadUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Persist one Scenario 2 read-tool observation and Evidence atomically."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(self._session)
+        self.service_incidents = SqlAlchemyServiceIncidentRepository(self._session)
+        self.signals = SqlAlchemyOperationalSignalRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
+
+
+class SqlAlchemyScenario2ProposalUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Serialize Major Incident proposal creation on the Scenario 2 Run."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(self._session, lock_for_update=True)
+        self.service_incidents = SqlAlchemyServiceIncidentRepository(self._session)
+        self.signals = SqlAlchemyOperationalSignalRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.major_incident_proposals = SqlAlchemyMajorIncidentProposalRepository(
+            self._session,
+            lock_for_update=True,
+        )
+        self.major_incidents = SqlAlchemyMajorIncidentRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
+
+
+class SqlAlchemyScenario2ApprovalUnitOfWork(_SqlAlchemyUnitOfWorkBase):
+    """Serialize one Scenario 2 human decision and Major Incident execution."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(session_factory)
+        self.runs = SqlAlchemyRunRepository(self._session, lock_for_update=True)
+        self.service_incidents = SqlAlchemyServiceIncidentRepository(self._session)
+        self.signals = SqlAlchemyOperationalSignalRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.major_incident_proposals = SqlAlchemyMajorIncidentProposalRepository(
+            self._session,
+            lock_for_update=True,
+        )
+        self.major_incident_approvals = SqlAlchemyMajorIncidentApprovalRepository(
+            self._session
+        )
+        self.major_incidents = SqlAlchemyMajorIncidentRepository(self._session)
+        self.major_incident_executions = (
+            SqlAlchemyMajorIncidentExecutionRepository(self._session)
+        )
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
 
 
 class SqlAlchemyRunStartUnitOfWork(_SqlAlchemyUnitOfWorkBase):
