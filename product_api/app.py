@@ -667,7 +667,12 @@ def create_app(
                 if services.dispatch_worker is not None
                 else False
             ),
-            "scenario2_checkpoint": "7D-tools-hitl",
+            "scenario2_checkpoint": "7C-adk-dispatch",
+            "scenario2_phase7d_tools_hitl_wired": (
+                services.scenario2_approval_service is not None
+                and services.scenario2_agent_runtime is not None
+                and services.scenario2_agent_runtime.resumability_wired
+            ),
             "scenario2_ingestion_wired": (
                 services.scenario2_ingestion_service is not None
                 and services.scenario2_state_service is not None
