@@ -7,30 +7,30 @@ import type { ReactNode } from "react";
 import {
   decideProposal,
   displayApiError,
-  getЗапускState,
-  getЗапускХронология,
+  getRunState,
+  getRunTimeline,
   isRetryableApiFailure,
 } from "@/lib/api";
 import {
   abortableDelay,
-  applyХронологияEvent,
-  bootstrapPersistedЗапуск,
+  applyTimelineEvent,
+  bootstrapPersistedRun,
   connectionStateForFailure,
-  decisionRecoveryСтатус,
-  emptyХронология,
+  decisionRecoveryStatus,
+  emptyTimeline,
   isStateRefreshEvent,
-  mergeХронологияEvents,
+  mergeTimelineEvents,
   nextTransportFailure,
   prepareReconnect,
   reconnectDelayMs,
   replayNotice,
-  ХронологияGapError,
-  type ХронологияAccumulator,
+  TimelineGapError,
+  type TimelineAccumulator,
 } from "@/lib/recovery";
 import {
   connectionLabel,
   connectionTone,
-  eventОписание,
+  eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   observationState,
@@ -38,17 +38,17 @@ import {
   statusLabel,
   STALE_PROPOSAL_NOTE,
 } from "@/lib/presentation";
-import { streamЗапускEvents } from "@/lib/sse";
+import { streamRunEvents } from "@/lib/sse";
 import type {
   ApplicationEventView,
-  СоединениеState,
+  ConnectionState,
   ProposalView,
-  ЗапускStateResponse,
+  RunStateResponse,
 } from "@/lib/types";
 
 const DEMO_OPERATOR = "portfolio-demo-operator";
 
-function СтатусBadge({
+function StatusBadge({
   value,
   tone = "neutral",
 }: {
@@ -71,7 +71,7 @@ function isAbortError(error: unknown): boolean {
 }
 
 function recoveryMessage(error: unknown): string {
-  if (error instanceof ХронологияGapError) {
+  if (error instanceof TimelineGapError) {
     return "Обнаружен пропуск в хронологии; восстанавливаем сохранённые события.";
   }
   if (error instanceof Error && error.message === "Live event stream closed.") {
@@ -80,11 +80,11 @@ function recoveryMessage(error: unknown): string {
   return displayApiError(error);
 }
 
-export function ЗапускConsole({ runId }: { runId: string }) {
-  const [state, setState] = useState<ЗапускStateResponse | null>(null);
+export function RunConsole({ runId }: { runId: string }) {
+  const [state, setState] = useState<RunStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
-  const [connection, setСоединение] =
-    useState<СоединениеState>("Reconnecting");
+  const [connection, setConnection] =
+    useState<ConnectionState>("Reconnecting");
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -94,7 +94,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
-  const [selectedИнцидентId, setSelectedИнцидентId] = useState<{
+  const [selectedIncidentId, setSelectedIncidentId] = useState<{
     runId: string;
     id: string;
   } | null>(null);
@@ -103,15 +103,15 @@ export function ЗапускConsole({ runId }: { runId: string }) {
     id: string;
   } | null>(null);
 
-  const timelineByЗапускRef = useRef(new Map<string, ХронологияAccumulator>());
-  const cursorByЗапускRef = useRef(new Map<string, number>());
-  const stateSeqByЗапускRef = useRef(new Map<string, number>());
+  const timelineByRunRef = useRef(new Map<string, TimelineAccumulator>());
+  const cursorByRunRef = useRef(new Map<string, number>());
+  const stateSeqByRunRef = useRef(new Map<string, number>());
 
   const publishState = useCallback(
-    (current: ЗапускStateResponse) => {
-      const previousSeq = stateSeqByЗапускRef.current.get(runId) ?? -1;
+    (current: RunStateResponse) => {
+      const previousSeq = stateSeqByRunRef.current.get(runId) ?? -1;
       if (current.latest_event_seq >= previousSeq) {
-        stateSeqByЗапускRef.current.set(runId, current.latest_event_seq);
+        stateSeqByRunRef.current.set(runId, current.latest_event_seq);
         setState(current);
       }
       return current;
@@ -121,7 +121,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
 
   const refreshState = useCallback(
     async (signal?: AbortSignal) => {
-      const current = await getЗапускState(runId, signal);
+      const current = await getRunState(runId, signal);
       return publishState(current);
     },
     [publishState, runId],
@@ -134,25 +134,25 @@ export function ЗапускConsole({ runId }: { runId: string }) {
     let needsRecovery = false;
 
     const readState = (
-      requestedЗапускId: string,
+      requestedRunId: string,
       signal?: AbortSignal,
-    ) => getЗапускState(requestedЗапускId, signal);
+    ) => getRunState(requestedRunId, signal);
     const readPage = (
-      requestedЗапускId: string,
+      requestedRunId: string,
       afterSeq: number,
       limit: number,
       signal?: AbortSignal,
-    ) => getЗапускХронология(requestedЗапускId, afterSeq, limit, signal);
+    ) => getRunTimeline(requestedRunId, afterSeq, limit, signal);
 
-    function currentХронология(): ХронологияAccumulator {
-      return timelineByЗапускRef.current.get(runId) ?? emptyХронология(
-        cursorByЗапускRef.current.get(runId) ?? 0,
+    function currentTimeline(): TimelineAccumulator {
+      return timelineByRunRef.current.get(runId) ?? emptyTimeline(
+        cursorByRunRef.current.get(runId) ?? 0,
       );
     }
 
-    function publishХронология(next: ХронологияAccumulator) {
-      timelineByЗапускRef.current.set(runId, next);
-      cursorByЗапускRef.current.set(runId, next.cursor);
+    function publishTimeline(next: TimelineAccumulator) {
+      timelineByRunRef.current.set(runId, next);
+      cursorByRunRef.current.set(runId, next.cursor);
       if (mounted) setEvents(next.events);
     }
 
@@ -160,17 +160,17 @@ export function ЗапускConsole({ runId }: { runId: string }) {
       setLoading(true);
       setPageError(null);
       setStreamError(null);
-      setСоединение("Reconnecting");
+      setConnection("Reconnecting");
       setDecisionError(null);
       setDecisionNotice(null);
 
-      timelineByЗапускRef.current.set(runId, emptyХронология());
-      cursorByЗапускRef.current.set(runId, 0);
-      stateSeqByЗапускRef.current.set(runId, -1);
+      timelineByRunRef.current.set(runId, emptyTimeline());
+      cursorByRunRef.current.set(runId, 0);
+      stateSeqByRunRef.current.set(runId, -1);
 
       while (!controller.signal.aborted) {
         try {
-          const bootstrapped = await bootstrapPersistedЗапуск({
+          const bootstrapped = await bootstrapPersistedRun({
             runId,
             readState,
             readPage,
@@ -179,9 +179,9 @@ export function ЗапускConsole({ runId }: { runId: string }) {
           if (!mounted) return;
 
           publishState(bootstrapped.state);
-          publishХронология(bootstrapped.timeline);
+          publishTimeline(bootstrapped.timeline);
           failureCount = 0;
-          setСоединение("Reconnecting");
+          setConnection("Reconnecting");
           setPageError(null);
           setLoading(false);
           break;
@@ -196,14 +196,14 @@ export function ЗапускConsole({ runId }: { runId: string }) {
 
           if (!isRetryableApiFailure(error)) {
             setLoading(false);
-            setСоединение("Offline/Unavailable");
+            setConnection("Offline/Unavailable");
             setPageError(displayApiError(error));
             return;
           }
 
           const failure = nextTransportFailure(failureCount);
           failureCount = failure.failureCount;
-          setСоединение(failure.connection);
+          setConnection(failure.connection);
           setPageError(
             `${displayApiError(error)} Retrying persisted run state…`,
           );
@@ -220,13 +220,13 @@ export function ЗапускConsole({ runId }: { runId: string }) {
       while (!controller.signal.aborted) {
         try {
           if (needsRecovery) {
-            setСоединение(connectionStateForFailure(failureCount));
+            setConnection(connectionStateForFailure(failureCount));
             await abortableDelay(
               reconnectDelayMs(failureCount),
               controller.signal,
             );
 
-            const cursor = cursorByЗапускRef.current.get(runId) ?? 0;
+            const cursor = cursorByRunRef.current.get(runId) ?? 0;
             const recovered = await prepareReconnect({
               runId,
               cursor,
@@ -236,25 +236,25 @@ export function ЗапускConsole({ runId }: { runId: string }) {
             });
             if (!mounted) return;
 
-            const merged = mergeХронологияEvents(
-              currentХронология(),
+            const merged = mergeTimelineEvents(
+              currentTimeline(),
               recovered.backfill.events,
               runId,
             );
             publishState(recovered.state);
-            publishХронология(merged);
-            setСоединение("Reconnecting");
+            publishTimeline(merged);
+            setConnection("Reconnecting");
           }
 
-          const cursor = cursorByЗапускRef.current.get(runId) ?? 0;
-          await streamЗапускEvents({
+          const cursor = cursorByRunRef.current.get(runId) ?? 0;
+          await streamRunEvents({
             runId,
             afterSeq: cursor,
             lastEventId: needsRecovery ? cursor : undefined,
             signal: controller.signal,
             onOpen: () => {
               if (!mounted) return;
-              setСоединение("Live");
+              setConnection("Live");
               setStreamError(null);
             },
             onHeartbeat: () => {
@@ -263,8 +263,8 @@ export function ЗапускConsole({ runId }: { runId: string }) {
             onEvent: (event) => {
               if (!mounted) return;
 
-              const result = applyХронологияEvent(
-                currentХронология(),
+              const result = applyTimelineEvent(
+                currentTimeline(),
                 event,
                 runId,
               );
@@ -278,7 +278,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
               }
 
               failureCount = 0;
-              publishХронология(result.timeline);
+              publishTimeline(result.timeline);
 
               if (isStateRefreshEvent(event)) {
                 void refreshState(controller.signal).catch(() => {
@@ -304,7 +304,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
           const failure = nextTransportFailure(failureCount);
           failureCount = failure.failureCount;
           needsRecovery = true;
-          setСоединение(failure.connection);
+          setConnection(failure.connection);
           setStreamError(recoveryMessage(error));
         }
       }
@@ -318,13 +318,13 @@ export function ЗапускConsole({ runId }: { runId: string }) {
     };
   }, [publishState, refreshState, runId]);
 
-  const primaryИнцидент = state?.incidents[0] ?? null;
-  const selectedИнцидентKey =
-    selectedИнцидентId?.runId === runId ? selectedИнцидентId.id : null;
+  const primaryIncident = state?.incidents[0] ?? null;
+  const selectedIncidentKey =
+    selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
   const selectedObservationKey =
     selectedObservationId?.runId === runId ? selectedObservationId.id : null;
-  const selectedИнцидент = selectedИнцидентKey
-    ? state?.incidents.find((item) => item.incident_id === selectedИнцидентKey) ?? null
+  const selectedIncident = selectedIncidentKey
+    ? state?.incidents.find((item) => item.incident_id === selectedIncidentKey) ?? null
     : null;
   const selectedObservation = selectedObservationKey
     ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
@@ -372,7 +372,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
     } catch (error) {
       try {
         const recovered = await refreshState();
-        const recovery = decisionRecoveryСтатус(
+        const recovery = decisionRecoveryStatus(
           recovered,
           proposal.proposal_id,
         );
@@ -384,7 +384,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
           setDecisionError(null);
         } else if (recovery === "still-pending") {
           setDecisionError(
-            `${displayApiError(error)} Product state всё ещё показывает ожидание решения; повтор того же решения безопасен.`,
+            `${displayApiError(error)} Product state всё ещё ожидает решения; повтор безопасен.`,
           );
         } else if (recovery === "inconsistent") {
           setDecisionError(
@@ -441,7 +441,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
             8O
           </Link>
           <div>
-            <p className="eyebrow">Автономный L1 Инцидент Agent</p>
+            <p className="eyebrow">Автономный L1 Incident Agent</p>
             <h1>{scenarioLabel} · операционная консоль</h1>
           </div>
         </div>
@@ -463,15 +463,17 @@ export function ЗапускConsole({ runId }: { runId: string }) {
           </div>
           <div>
             <span>Статус запуска</span>
-            <СтатусBadge value={state.run.status} tone="info" />
+            <StatusBadge value={state.run.status} tone="info" />
           </div>
           <div>
             <span>Инцидент</span>
-            <code>{primaryИнцидент?.incident_id ?? "—"}</code>
+            <code>{primaryIncident?.incident_id ?? "—"}</code>
           </div>
           <div>
             <span>Соединение</span>
-            <СтатусBadge value={connection} tone={connectionTone(connection)} />
+            <span className="status-badge" data-tone={connectionTone(connection)}>
+              {connectionLabel(connection)}
+            </span>
           </div>
           <div>
             <span>Последнее событие</span>
@@ -493,13 +495,13 @@ export function ЗапускConsole({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Текущее состояние</p>
-                <h2>Инцидентs</h2>
+                <h2>Инциденты</h2>
               </div>
-              {selectedИнцидент ? (
-                <СтатусBadge
-                  value={selectedИнцидент.status}
+              {selectedIncident ? (
+                <StatusBadge
+                  value={selectedIncident.status}
                   tone={
-                    selectedИнцидент.status === "ESCALATED"
+                    selectedIncident.status === "ESCALATED"
                       ? "warning"
                       : "info"
                   }
@@ -509,42 +511,42 @@ export function ЗапускConsole({ runId }: { runId: string }) {
               )}
             </div>
 
-            {selectedИнцидент ? (
+            {selectedIncident ? (
               <div className="entity-detail">
                 <button
                   className="back-list-button"
                   type="button"
-                  onClick={() => setSelectedИнцидентId(null)}
+                  onClick={() => setSelectedIncidentId(null)}
                 >
                   ← Назад к списку
                 </button>
                 <dl className="facts-grid">
                   <div>
-                    <dt>Инцидент ID</dt>
-                    <dd><code>{selectedИнцидент.incident_id}</code></dd>
+                    <dt>ID инцидента</dt>
+                    <dd><code>{selectedIncident.incident_id}</code></dd>
                   </div>
                   <div>
                     <dt>Площадка</dt>
-                    <dd>{selectedИнцидент.site_id}</dd>
+                    <dd>{selectedIncident.site_id}</dd>
                   </div>
                   <div>
                     <dt>Статус</dt>
-                    <dd>{selectedИнцидент.status}</dd>
+                    <dd>{selectedIncident.status}</dd>
                   </div>
                   <div>
                     <dt>Устройство</dt>
-                    <dd>{selectedИнцидент.reported_device_id}</dd>
+                    <dd>{selectedIncident.reported_device_id}</dd>
                   </div>
                   <div className="wide">
                     <dt>Описание</dt>
-                    <dd>{selectedИнцидент.symptom}</dd>
+                    <dd>{selectedIncident.symptom}</dd>
                   </div>
                   <div className="wide">
                     <dt>Обновлён</dt>
-                    <dd>{formatTimestamp(selectedИнцидент.updated_at)}</dd>
+                    <dd>{formatTimestamp(selectedIncident.updated_at)}</dd>
                   </div>
                 </dl>
-                {selectedИнцидент.status === "ESCALATED" ? (
+                {selectedIncident.status === "ESCALATED" ? (
                   <p className="semantic-note">
                     Эскалация означает, что выезд Field Service запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
                   </p>
@@ -558,14 +560,14 @@ export function ЗапускConsole({ runId }: { runId: string }) {
                       <strong>{item.symptom}</strong>
                       <span>{item.site_id}</span>
                     </div>
-                    <СтатусBadge
-                      value={statusLabel(item.status)}
+                    <StatusBadge
+                      value={item.status}
                       tone={item.status === "ESCALATED" ? "warning" : "info"}
                     />
                     <button
                       className="detail-button"
                       type="button"
-                      onClick={() => setSelectedИнцидентId({ runId, id: item.incident_id })}
+                      onClick={() => setSelectedIncidentId({ runId, id: item.incident_id })}
                     >
                       Подробнее
                     </button>
@@ -638,7 +640,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
                 ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Типd safe payload
+                    Безопасный типизированный payload
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
@@ -707,7 +709,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
                     <div className="timeline-rail"><span>{event.seq}</span></div>
                     <div className="timeline-content">
                       <div className="timeline-title">
-                        <strong>{eventОписание(event)}</strong>
+                        <strong>{eventSummary(event)}</strong>
                         <time dateTime={event.occurred_at}>
                           {formatTimestamp(event.occurred_at)}
                         </time>
@@ -735,7 +737,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
                 <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
-                <СтатусBadge
+                <StatusBadge
                   value={latestProposal.status}
                   tone={proposalTone(latestProposal.status)}
                 />
@@ -832,7 +834,7 @@ export function ЗапускConsole({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Зарегистрированный результат</p>
-                <h2>Field Service</h2>
+                <h2>Выезд Field Service</h2>
               </div>
               <span className="panel-count">{state.work_orders.length}</span>
             </div>
@@ -846,24 +848,24 @@ export function ЗапускConsole({ runId }: { runId: string }) {
                   return (
                     <div className="work-order-card" key={order.work_order_id}>
                       <div className="work-order-heading">
-                        <СтатусBadge value="REGISTERED" tone="executed" />
+                        <StatusBadge value="REGISTERED" tone="executed" />
                         <code>{order.work_order_id}</code>
                       </div>
                       <dl className="facts-grid">
                         <div className="wide">
-                          <dt>Действие ID</dt>
+                          <dt>ID действия</dt>
                           <dd><code>{action?.action_id ?? "—"}</code></dd>
                         </div>
                         <div>
-                          <dt>Действие type</dt>
-                          <dd>{action?.action_type ?? "Field Service"}</dd>
+                          <dt>Тип действия</dt>
+                          <dd>{action?.action_type ?? "Field service"}</dd>
                         </div>
                         <div>
                           <dt>Устройство</dt>
                           <dd>{order.device_id}</dd>
                         </div>
                         <div>
-                          <dt>Площадка</dt>
+                          <dt>Site</dt>
                           <dd>{order.site_id}</dd>
                         </div>
                         <div>
