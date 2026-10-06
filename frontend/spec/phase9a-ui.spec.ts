@@ -77,6 +77,9 @@ describe("Phase 9A final public UI", () => {
     expect(cssSource).toContain(":root {");
     expect(cssSource).toContain("color-scheme: dark");
     expect(cssSource).toContain(':root[data-theme="light"]');
+    expect(cssSource).toContain(':root[data-theme="light"] .run-header');
+    expect(cssSource).toContain(':root[data-theme="light"] .home-principles article');
+    expect(cssSource).toContain(':root[data-theme="light"] .facts-grid dd');
     expect(themeToggle).toContain("useSyncExternalStore");
     expect(themeToggle).toContain('=== "light" ? "light" : "dark"');
     expect(themeToggle).toContain("window.localStorage.setItem");
