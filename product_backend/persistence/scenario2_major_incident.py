@@ -274,6 +274,10 @@ class SqlAlchemyMajorIncidentRepository:
 
     async def add(self, item: MajorIncidentRecord) -> None:
         self._session.add(_major_incident_to_row(item))
+        # MajorIncidentExecution has a composite FK to this row and is created
+        # in the same approval transaction. Flush the FK target explicitly
+        # before any later query/autoflush can attempt the execution insert.
+        await self._session.flush()
 
     async def get_for_proposal(
         self,
