@@ -16,6 +16,7 @@ from product_backend.contracts.scenario2_ingestion import (
 )
 from product_backend.contracts.serialization import to_tool_payload
 from product_backend.application.results import ApprovalProcessed
+from product_backend.application.scenario2_results import MajorIncidentDecisionProcessed
 from product_backend.domain.errors import DomainError
 
 
@@ -190,10 +191,68 @@ class OperationalSignalView(BaseModel):
     incident_id: str | None = None
 
 
+class MajorIncidentProposalView(BaseModel):
+    proposal_id: str
+    tenant_id: str
+    run_id: str
+    correlation_key: str
+    service_key: str
+    affected_site_ids: list[str]
+    dependency_id: str
+    dependency_name: str
+    action_type: str
+    evidence_ids: list[str]
+    summary: str
+    rationale: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MajorIncidentApprovalView(BaseModel):
+    approval_id: str
+    tenant_id: str
+    run_id: str
+    proposal_id: str
+    decision: str
+    decided_at: datetime
+    decided_by: str
+
+
+class MajorIncidentExecutionView(BaseModel):
+    execution_id: str
+    tenant_id: str
+    run_id: str
+    proposal_id: str
+    action_type: str
+    major_incident_id: str
+    executed_at: datetime
+
+
+class MajorIncidentView(BaseModel):
+    major_incident_id: str
+    tenant_id: str
+    run_id: str
+    proposal_id: str
+    correlation_key: str
+    service_key: str
+    affected_site_ids: list[str]
+    dependency_id: str
+    dependency_name: str
+    summary: str
+    status: str
+    created_at: datetime
+
+
 class Scenario2IngestionStateResponse(BaseModel):
     run: RunView
     service_incidents: list[ServiceIncidentView]
     operational_signals: list[OperationalSignalView]
+    evidence: list[EvidenceView]
+    major_incident_proposals: list[MajorIncidentProposalView]
+    major_incident_approvals: list[MajorIncidentApprovalView]
+    major_incident_executions: list[MajorIncidentExecutionView]
+    major_incidents: list[MajorIncidentView]
     latest_event_seq: int
 
 
@@ -258,6 +317,15 @@ class ApprovalDecisionResponse(BaseModel):
     agent_resume: AgentResumeView | None = None
 
 
+class Scenario2ApprovalDecisionResponse(BaseModel):
+    approval: MajorIncidentApprovalView
+    proposal: MajorIncidentProposalView
+    execution: MajorIncidentExecutionView | None
+    major_incident: MajorIncidentView | None
+    replayed: bool
+    agent_resume: AgentResumeView | None = None
+
+
 def _payload(value: object) -> dict[str, Any]:
     data = to_tool_payload(value)
     if not isinstance(data, dict):
@@ -296,6 +364,23 @@ def scenario2_state_response(
         operational_signals=[
             OperationalSignalView(**_payload(item))
             for item in snapshot.operational_signals
+        ],
+        evidence=[EvidenceView(**_payload(item)) for item in snapshot.evidence],
+        major_incident_proposals=[
+            MajorIncidentProposalView(**_payload(item))
+            for item in snapshot.major_incident_proposals
+        ],
+        major_incident_approvals=[
+            MajorIncidentApprovalView(**_payload(item))
+            for item in snapshot.major_incident_approvals
+        ],
+        major_incident_executions=[
+            MajorIncidentExecutionView(**_payload(item))
+            for item in snapshot.major_incident_executions
+        ],
+        major_incidents=[
+            MajorIncidentView(**_payload(item))
+            for item in snapshot.major_incidents
         ],
         latest_event_seq=snapshot.latest_event_seq,
     )
@@ -381,6 +466,29 @@ def approval_response(
     )
 
 
+def scenario2_approval_response(
+    result: MajorIncidentDecisionProcessed,
+    *,
+    agent_resume: AgentResumeView | None = None,
+) -> Scenario2ApprovalDecisionResponse:
+    return Scenario2ApprovalDecisionResponse(
+        approval=MajorIncidentApprovalView(**_payload(result.approval)),
+        proposal=MajorIncidentProposalView(**_payload(result.proposal)),
+        execution=(
+            MajorIncidentExecutionView(**_payload(result.execution))
+            if result.execution is not None
+            else None
+        ),
+        major_incident=(
+            MajorIncidentView(**_payload(result.major_incident))
+            if result.major_incident is not None
+            else None
+        ),
+        replayed=result.replayed,
+        agent_resume=agent_resume,
+    )
+
+
 def error_response(error: DomainError) -> ApiErrorResponse:
     return ApiErrorResponse(
         error=ApiErrorBody(
@@ -401,12 +509,14 @@ __all__ = [
     "ApprovalDecisionResponse",
     "HumanDecisionRequest",
     "RunStateResponse",
+    "Scenario2ApprovalDecisionResponse",
     "Scenario2DependencyStatusRequest",
     "Scenario2IngestionStateResponse",
     "Scenario2MatchingMajorIncidentRequest",
     "Scenario2SignalIngestRequest",
     "Scenario2SignalIngestResponse",
     "Scenario2SimulatorStepResponse",
+    "scenario2_approval_response",
     "scenario2_signal_response",
     "scenario2_simulator_response",
     "scenario2_state_response",
