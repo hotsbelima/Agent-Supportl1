@@ -260,6 +260,12 @@ export type HealthResponse = {
   adk_model: string | null;
   sse_wired: boolean;
   automatic_dispatch_wired: boolean;
+  scenario2_checkpoint?: string;
+  scenario2_phase7d_tools_hitl_wired?: boolean;
+  scenario2_ingestion_wired?: boolean;
+  scenario2_dispatch_consumer_wired?: boolean;
+  scenario2_tools_wired?: boolean;
+  scenario2_hitl_wired?: boolean;
   scenario3_phase8c1_provider_reads_wired: boolean;
   scenario3_phase8c2_native_wired: boolean;
 };
