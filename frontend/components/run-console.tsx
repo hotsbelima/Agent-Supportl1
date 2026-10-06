@@ -328,6 +328,12 @@ export function RunConsole({ runId }: { runId: string }) {
     ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
     : null;
   const lastSeq = events.at(-1)?.seq ?? 0;
+  const scenarioLabel =
+    state?.run.scenario_id === "scenario-3"
+      ? "Scenario 3"
+      : state?.run.scenario_id === "scenario-1"
+        ? "Scenario 1"
+        : state?.run.scenario_id ?? "Unknown scenario";
 
   const latestProposal: ProposalView | null = state?.proposals.length
     ? [...state.proposals]
@@ -418,7 +424,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <h1>Operational state could not be loaded</h1>
           <p>{pageError ?? "The product API did not return run state."}</p>
           <Link className="secondary-button" href="/">
-            Back to Scenario 1
+            Back to scenarios
           </Link>
         </div>
       </main>
@@ -434,7 +440,7 @@ export function RunConsole({ runId }: { runId: string }) {
           </Link>
           <div>
             <p className="eyebrow">Autonomous L1 Incident Agent</p>
-            <h1>Scenario 1 operational console</h1>
+            <h1>{scenarioLabel} operational console</h1>
           </div>
         </div>
 
@@ -442,6 +448,10 @@ export function RunConsole({ runId }: { runId: string }) {
           <div>
             <span>Run</span>
             <code>{state.run.run_id}</code>
+          </div>
+          <div>
+            <span>Scenario</span>
+            <strong>{state.run.scenario_id}</strong>
           </div>
           <div>
             <span>Run status</span>
