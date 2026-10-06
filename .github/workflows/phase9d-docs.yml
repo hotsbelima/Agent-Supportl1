@@ -30,8 +30,8 @@ jobs:
           ! grep -Fq "Current scope — Phase 3 PASS" README.md
           grep -Fq "PROJECT DEVELOPMENT COMPLETE" README.md
           grep -Fq "Google ADK" README.md
-          grep -Fq "Scenario 2" README.md
-          grep -Fq "Scenario 3" README.md
+          grep -Fq "Multi-event service incident" README.md
+          grep -Fq "Evidence-driven replanning" README.md
 
       - name: Verify architecture and scenario diagrams
         run: |
