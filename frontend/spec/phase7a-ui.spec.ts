@@ -16,8 +16,8 @@ const cssSource = readFileSync(
 );
 
 describe("Phase 7A operational UI contract", () => {
-  it("keeps Запустить симуляцию as a Product event trigger, not browser ADK orchestration", () => {
-    expect(startSource).toContain("Start simulation");
+  it("keeps the launch button as a Product event trigger, not browser ADK orchestration", () => {
+    expect(startSource).toContain("Запустить симуляцию");
     expect(startSource).toContain("startScenario1()");
     expect(startSource).not.toContain("/agent/invoke");
     expect(startSource).not.toContain("invokeScenario");
