@@ -1,7 +1,7 @@
 """Provider-neutral read ports required by Scenario 2.
 
-Phase 7B defines interfaces only. Deterministic fixture adapters and ADK wrappers
-are wired in later checkpoints.
+These provider-neutral interfaces are implemented by persisted Scenario 2
+sources and consumed by Phase 7D Product read tools and approval revalidation.
 """
 
 from __future__ import annotations
