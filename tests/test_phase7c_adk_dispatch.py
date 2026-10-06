@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from agent_runtime.scenario2_service import _find_scenario2_event_correlation
 from agent_runtime.sessions import create_database_session_service, get_run_session
@@ -154,6 +154,17 @@ async def _scenario2_rows(factory, *, tenant_id: str, run_id: str):
         return result.scalars().all()
 
 
+async def _clear_scenario2_dispatch_rows(factory) -> None:
+    """Keep focused tests isolated from undelivered rows created by other suites."""
+    async with factory() as session:
+        await session.execute(
+            delete(ApplicationOutboxRow).where(
+                ApplicationOutboxRow.topic == SCENARIO2_AGENT_DISPATCH_TOPIC
+            )
+        )
+        await session.commit()
+
+
 def _worker(factory, state, lifecycle, runtime):
     return Scenario2DispatchWorker(
         uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(factory),
@@ -171,6 +182,7 @@ def test_three_product_events_have_three_ordered_invocations_in_one_run():
         tenant_id = f"TENANT-7C-ADK-{uuid4().hex[:10]}"
         engine = create_engine(DatabaseSettings(url=_database_url()))
         factory = create_session_factory(engine)
+        await _clear_scenario2_dispatch_rows(factory)
         start, ingestion, state, lifecycle = _services(factory)
         runtime = _RecordingScenario2Runtime()
         worker = _worker(factory, state, lifecycle, runtime)
@@ -235,6 +247,7 @@ def test_undelivered_first_event_blocks_later_event_and_redelivery_is_one_invoca
         tenant_id = f"TENANT-7C-ORDER-{uuid4().hex[:10]}"
         engine = create_engine(DatabaseSettings(url=_database_url()))
         factory = create_session_factory(engine)
+        await _clear_scenario2_dispatch_rows(factory)
         start, ingestion, state, lifecycle = _services(factory)
         try:
             started = await start.start(tenant_id=tenant_id)
