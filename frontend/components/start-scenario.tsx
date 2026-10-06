@@ -34,22 +34,22 @@ const SCENARIOS: Record<
     eyebrow: "Сценарий 1 · локальный инцидент",
     title: "Терминал потерял сетевое подключение",
     description:
-      "Один локальный сбой: агент собирает Product Evidence, формирует предложение на выезд Field Service и ждёт решения человека.",
-    demonstrates: "Локальная диагностика · Evidence · HITL",
+      "Один локальный сбой: агент собирает наблюдение, формирует предложение на выезд выездной сервис и ждёт решения человека.",
+    demonstrates: "Локальная диагностика · наблюдений · решение человека",
   },
   "scenario-2": {
     eyebrow: "Сценарий 2 · массовый сервисный инцидент",
     title: "Несколько сигналов указывают на общую зависимость",
     description:
-      "Несколько событий коррелируются в сервисный инцидент. Агент проверяет общую зависимость, формирует предложение Major Incident и ждёт решения человека.",
-    demonstrates: "Корреляция · внешняя зависимость · Major Incident",
+      "Несколько событий коррелируются в сервисный инцидент. Агент проверяет общую зависимость, формирует предложение крупный инцидент и ждёт решения человека.",
+    demonstrates: "Корреляция · внешняя зависимость · крупный инцидент",
   },
   "scenario-3": {
     eyebrow: "Сценарий 3 · перепланирование по фактам",
-    title: "Гипотеза о провайдере опровергается Evidence",
+    title: "Гипотеза о провайдере опровергается наблюдений",
     description:
-      "Агент сначала проверяет AcmePay, получает HEALTHY, затем меняет диагностическое направление и переходит к локальной проверке терминала.",
-    demonstrates: "Опровержение гипотезы · replanning · Evidence",
+      "Агент сначала проверяет AcmePay, получает «исправно», затем меняет диагностическое направление и переходит к локальной проверке терминала.",
+    demonstrates: "Опровержение гипотезы · перепланирование · наблюдений",
   },
 };
 
@@ -145,7 +145,7 @@ export function StartScenario() {
   const selected = SCENARIOS[selectedScenario];
   const readinessMessage =
     readiness.kind === "ready" && !scenarioReady
-      ? "Этот сценарий пока не готов на текущем backend deployment."
+      ? "Этот сценарий пока не готов на текущем развёртывании сервера."
       : readiness.message;
 
   async function handleStart() {
@@ -215,7 +215,7 @@ export function StartScenario() {
             {readiness.kind === "ready" && scenarioReady
               ? "Сценарий готов"
               : readiness.kind === "checking"
-                ? "Проверяем backend"
+                ? "Проверяем сервер"
                 : readiness.kind === "ready"
                   ? "Сценарий недоступен"
                   : "Backend недоступен"}
@@ -225,7 +225,7 @@ export function StartScenario() {
       </div>
 
       <div className="launch-meta">
-        <span>Demo tenant</span>
+        <span>Демо-контур</span>
         <code>{DEMO_TENANT_ID}</code>
       </div>
 
