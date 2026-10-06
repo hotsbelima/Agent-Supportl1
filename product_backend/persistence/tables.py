@@ -633,10 +633,10 @@ class ApplicationEventRow(Base):
 class ApplicationOutboxRow(Base):
     """Product-owned durable delivery bridge for agent wake-up work.
 
-    Phase 7A consumes the Scenario 1 topic. Phase 7C also queues Scenario 2
-    operational-signal envelopes on a separate topic whose ADK consumer is
-    intentionally deferred. Generic agent execution/session/tool lifecycle
-    remains ADK-owned.
+    Phase 7A consumes the Scenario 1 topic. Scenario 2 uses its own durable
+    operational-signal topic, consumed by the native ADK bridge established in
+    Phase 7C and extended with tools/HITL in Phase 7D. Generic agent execution,
+    session and tool lifecycle remains ADK-owned.
     """
 
     __tablename__ = "application_outbox"
