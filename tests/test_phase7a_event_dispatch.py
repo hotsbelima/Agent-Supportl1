@@ -481,6 +481,7 @@ class _FakeEvent:
         invocation_id: str,
         text: str | None = None,
         calls: list[SimpleNamespace] | None = None,
+        responses: list[SimpleNamespace] | None = None,
         long_running_tool_ids: list[str] | None = None,
         final: bool = False,
     ) -> None:
@@ -494,6 +495,7 @@ class _FakeEvent:
             else None
         )
         self._calls = calls or []
+        self._responses = responses or []
         self.long_running_tool_ids = long_running_tool_ids or []
         self.actions = None
         self._final = final
@@ -502,7 +504,7 @@ class _FakeEvent:
         return self._calls
 
     def get_function_responses(self):
-        return []
+        return self._responses
 
     def is_final_response(self):
         return self._final
@@ -523,6 +525,22 @@ def test_operational_event_redelivery_recovers_same_native_invocation():
             }
         ),
     )
+    proposal = _FakeEvent(
+        author="autonomous_l1_incident_agent",
+        invocation_id=invocation_id,
+        responses=[
+            SimpleNamespace(
+                name="propose_field_visit",
+                response={
+                    "ok": True,
+                    "proposal": {
+                        "proposal_id": "PROPOSAL-1",
+                        "status": "PENDING_APPROVAL",
+                    },
+                },
+            )
+        ],
+    )
     pause = _FakeEvent(
         author="autonomous_l1_incident_agent",
         invocation_id=invocation_id,
@@ -537,7 +555,7 @@ def test_operational_event_redelivery_recovers_same_native_invocation():
     )
 
     correlation = _find_operational_event_correlation(
-        [user, pause],
+        [user, proposal, pause],
         operational_event_id=event_id,
     )
 
