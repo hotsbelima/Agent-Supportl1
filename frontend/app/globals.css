@@ -456,3 +456,214 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   .timeline-title { display: grid; gap: 5px; }
   .decision-buttons { grid-template-columns: 1fr; }
 }
+
+
+/* Phase 9A — public demo polish.
+   Dark remains the default. Light is an explicit user-selected option. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f7f9;
+  --panel: rgba(255, 255, 255, 0.94);
+  --panel-strong: #ffffff;
+  --line: rgba(36, 55, 70, 0.13);
+  --line-strong: rgba(36, 55, 70, 0.24);
+  --text: #13212b;
+  --muted: #5d7180;
+  --faint: #82929d;
+  --accent: #087f68;
+  --accent-soft: rgba(8, 127, 104, 0.1);
+  --info: #236aa8;
+  --warning: #a46708;
+  --danger: #b82d3b;
+  --stale: #7654b4;
+  --shadow: 0 24px 70px rgba(31, 45, 55, 0.12);
+}
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 7% 0%, rgba(29, 139, 127, 0.09), transparent 30rem),
+    radial-gradient(circle at 96% 6%, rgba(69, 113, 174, 0.09), transparent 32rem),
+    var(--bg);
+}
+
+:root[data-theme="light"] .home-hero {
+  background:
+    linear-gradient(135deg, rgba(8, 127, 104, 0.07), transparent 38%),
+    rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="light"] .launch-card,
+:root[data-theme="light"] .sticky-heading,
+:root[data-theme="light"] .scroll-panel > .panel-heading {
+  background: rgba(255, 255, 255, 0.97);
+}
+
+:root[data-theme="light"] .hero-copy h1 span,
+:root[data-theme="light"] .hero-copy > p:last-child,
+:root[data-theme="light"] .run-header-grid code,
+:root[data-theme="light"] .status-badge,
+:root[data-theme="light"] .facts-list,
+:root[data-theme="light"] .chip-row code,
+:root[data-theme="light"] .payload-block,
+:root[data-theme="light"] .event-details pre {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .payload-block,
+:root[data-theme="light"] .event-details pre {
+  background: #f7fafb;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 100;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+}
+.theme-toggle:hover { border-color: var(--accent); }
+
+.scenario-switcher {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.scenario-demonstrates {
+  margin-top: 18px !important;
+  color: var(--accent) !important;
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0.01em;
+}
+
+.run-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 22px;
+  align-items: center;
+}
+
+.run-header-grid {
+  grid-column: 1 / -1;
+}
+
+.run-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.compact-button {
+  min-height: 38px;
+  padding: 0 13px;
+  white-space: nowrap;
+}
+
+.scroll-panel > .panel-heading {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: rgba(14, 27, 39, 0.97);
+  backdrop-filter: blur(14px);
+}
+
+.scenario-progress {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.scenario-progress p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.scenario-progress .secondary-button {
+  width: 100%;
+}
+
+@media (min-width: 1181px) {
+  .console-grid {
+    height: clamp(560px, calc(100dvh - 255px), 780px);
+    align-items: stretch;
+  }
+
+  .console-column {
+    min-height: 0;
+    height: 100%;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .timeline-column {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .scroll-panel {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .scroll-panel {
+    height: min(56vh, 600px);
+    max-height: min(56vh, 600px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .timeline-panel {
+    height: min(68vh, 720px);
+    max-height: min(68vh, 720px);
+  }
+}
+
+@media (max-width: 760px) {
+  .theme-toggle {
+    top: 9px;
+    right: 10px;
+  }
+
+  .theme-toggle span:last-child {
+    display: none;
+  }
+
+  .scenario-switcher {
+    grid-template-columns: 1fr;
+  }
+
+  .run-header {
+    grid-template-columns: 1fr;
+  }
+
+  .run-header-actions,
+  .run-header-grid {
+    grid-column: 1;
+  }
+
+  .run-header-actions {
+    justify-content: flex-start;
+  }
+
+  .scroll-panel {
+    height: min(68vh, 620px);
+    max-height: min(68vh, 620px);
+    overflow-y: auto;
+  }
+}
