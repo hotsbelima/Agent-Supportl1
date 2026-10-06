@@ -35,7 +35,7 @@ jobs:
 
       - name: Verify architecture and scenario diagrams
         run: |
-          grep -Fq "```mermaid" docs/architecture.md
+          grep -Fq '```mermaid' docs/architecture.md
           grep -Fq "Product owns business truth" docs/architecture.md
           grep -Fq "Scenario 1" docs/scenarios.md
           grep -Fq "Scenario 2" docs/scenarios.md
