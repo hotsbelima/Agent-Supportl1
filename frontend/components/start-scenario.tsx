@@ -63,14 +63,14 @@ function baseReadiness(health: HealthResponse): Readiness {
   ) {
     return {
       kind: "ready",
-      message: `Product API доступен · Gemini настроен · checkpoint ${health.checkpoint}`,
+      message: `Product API доступен · Gemini настроен · контрольная версия ${health.checkpoint}`,
     };
   }
 
   return {
     kind: "unavailable",
     message: health.gemini_configured
-      ? "Product API доступен не полностью: проверьте runtime и базу данных."
+      ? "Product API доступен не полностью: проверьте среду выполнения и базу данных."
       : "Gemini не настроен на Product API.",
   };
 }
@@ -218,7 +218,7 @@ export function StartScenario() {
                 ? "Проверяем сервер"
                 : readiness.kind === "ready"
                   ? "Сценарий недоступен"
-                  : "Backend недоступен"}
+                  : "Сервер недоступен"}
           </strong>
           <span>{readinessMessage}</span>
         </div>
