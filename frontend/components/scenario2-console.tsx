@@ -312,7 +312,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         <div className="fatal-card">
           <p className="eyebrow">Запуск недоступен</p>
           <h1>Не удалось загрузить состояние продукта</h1>
-          <p>{pageError ?? "Product API не вернул состояние Scenario 2."}</p>
+          <p>{pageError ?? "Product API не вернул состояние Сценария 2."}</p>
           <Link className="secondary-button" href="/">
             К выбору сценариев
           </Link>
@@ -485,7 +485,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Безопасные факты Product</p>
+                <p className="panel-kicker">Безопасные факты продукта</p>
                 <h2>Наблюдения</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
