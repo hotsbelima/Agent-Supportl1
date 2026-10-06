@@ -66,6 +66,49 @@ describe("browser API client contract", () => {
     expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
   });
 
+  it("sends configured tenant header when starting Scenario 3", async () => {
+    const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push([input, init]);
+        return new Response(
+          JSON.stringify({
+            run: {
+              run_id: "RUN-S3",
+              tenant_id: "TENANT-8OCT",
+              scenario_id: "scenario-3",
+              status: "ACTIVE",
+              created_at: "2026-10-06T00:00:00Z",
+              updated_at: "2026-10-06T00:00:00Z",
+            },
+            incidents: [],
+            evidence: [],
+            proposals: [],
+            approvals: [],
+            executed_actions: [],
+            work_orders: [],
+            latest_event_seq: 3,
+          }),
+          {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = await loadApi();
+    await api.startScenario3();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = calls[0]!;
+    expect(url).toBe("https://api.example.test/api/v1/scenario-3/runs");
+    expect(init?.method).toBe("POST");
+    const headers = init?.headers as Headers;
+    expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
+  });
+
   it("sends tenant and typed JSON body for Approve", async () => {
     const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
     const fetchMock = vi.fn(
