@@ -109,6 +109,7 @@ from product_backend.persistence.scenario2_state import (
 )
 
 from .dispatch import Scenario1DispatchWorker, Scenario2DispatchWorker
+from .public_demo import PublicDemoSettings, RunStartCooldown, release_sha_from_env
 from .scenario1_fixture import Scenario1FixtureSources
 from .scenario2_simulator import Scenario2SimulatorService
 from .scenario2_sources import PersistedScenario2FixtureSources
@@ -164,6 +165,7 @@ _ERROR_RESPONSES = {
     status.HTTP_400_BAD_REQUEST: {"model": ApiErrorResponse},
     status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
     status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+    status.HTTP_429_TOO_MANY_REQUESTS: {"model": ApiErrorResponse},
     status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ApiErrorResponse},
     status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ApiErrorResponse},
     status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
@@ -379,10 +381,17 @@ def build_container_from_env() -> ProductApiContainer:
 
 
 class ProductApiError(Exception):
-    def __init__(self, *, status_code: int, body: ApiErrorResponse) -> None:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        body: ApiErrorResponse,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(body.error.code)
         self.status_code = status_code
         self.body = body
+        self.headers = headers or {}
 
 
 def _raise_api_error(
@@ -392,9 +401,11 @@ def _raise_api_error(
     message: str,
     retryable: bool = False,
     details: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> None:
     raise ProductApiError(
         status_code=status_code,
+        headers=headers,
         body=ApiErrorResponse(
             error=ApiErrorBody(
                 code=code,
@@ -460,6 +471,7 @@ def _container(request: Request) -> ProductApiContainer:
 
 
 def _require_tenant_id(
+    request: Request,
     x_tenant_id: Annotated[
         str,
         Header(
@@ -467,12 +479,20 @@ def _require_tenant_id(
             min_length=1,
             max_length=128,
             description=(
-                "Trusted demo tenant context. This is not an authentication "
-                "mechanism; production auth must bind identity to tenant."
+                "Demo tenant context. In PUBLIC_DEMO mode the server ignores "
+                "this value and uses its fixed configured demo tenant."
             ),
         ),
     ],
 ) -> str:
+    public_demo: PublicDemoSettings | None = getattr(
+        request.app.state,
+        "public_demo_settings",
+        None,
+    )
+    if public_demo is not None and public_demo.enabled:
+        return public_demo.tenant_id
+
     tenant_id = x_tenant_id.strip()
     if not _TENANT_PATTERN.fullmatch(tenant_id):
         _raise_api_error(
@@ -484,6 +504,36 @@ def _require_tenant_id(
 
 
 TenantId = Annotated[str, Depends(_require_tenant_id)]
+
+
+def _hide_internal_in_public_demo(request: Request) -> None:
+    settings: PublicDemoSettings = request.app.state.public_demo_settings
+    if settings.enabled:
+        _raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="NOT_FOUND",
+            message="Resource was not found.",
+        )
+
+
+async def _reserve_public_demo_run_start(request: Request) -> None:
+    settings: PublicDemoSettings = request.app.state.public_demo_settings
+    if not settings.enabled:
+        return
+
+    limiter: RunStartCooldown = request.app.state.run_start_cooldown
+    retry_after = await limiter.reserve()
+    if retry_after is None:
+        return
+
+    _raise_api_error(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        code="PUBLIC_DEMO_COOLDOWN",
+        message="Public demo run start is temporarily rate limited.",
+        retryable=True,
+        details={"retry_after_seconds": str(retry_after)},
+        headers={"Retry-After": str(retry_after)},
+    )
 
 
 def _agent_decision_payload(result: ApprovalProcessed) -> dict[str, Any]:
@@ -563,8 +613,18 @@ def create_app(
     *,
     sse_settings: SseSettings | None = None,
     frontend_origins: tuple[str, ...] | None = None,
+    public_demo_settings: PublicDemoSettings | None = None,
 ) -> FastAPI:
     resolved_sse_settings = sse_settings or SseSettings.from_env()
+    resolved_public_demo = public_demo_settings or PublicDemoSettings.from_env()
+    if (
+        resolved_public_demo.enabled
+        and frontend_origins is None
+        and not os.environ.get("FRONTEND_ORIGINS", "").strip()
+    ):
+        raise RuntimeError(
+            "FRONTEND_ORIGINS must be explicitly configured in PUBLIC_DEMO mode"
+        )
     resolved_frontend_origins = (
         frontend_origins
         if frontend_origins is not None
@@ -602,15 +662,18 @@ def create_app(
 
     app = FastAPI(
         title="Autonomous L1 Incident Agent Product API",
-        version="0.8.0",
+        version="0.9.0",
         description=(
-            "Scenario 1 retains its native ADK path. Scenario 2 adds Phase 7D "
-            "evidence-backed Product tools and native Major Incident HITL on top "
-            "of the durable Phase 7C event/session lifecycle."
+            "Persistent Product API for the three-scenario portfolio demo with "
+            "native Google ADK, Gemini, Evidence and human approval."
         ),
         lifespan=lifespan,
     )
     app.state.sse_settings = resolved_sse_settings
+    app.state.public_demo_settings = resolved_public_demo
+    app.state.run_start_cooldown = RunStartCooldown(
+        resolved_public_demo.run_start_cooldown_seconds
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -633,6 +696,7 @@ def create_app(
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.body.model_dump(mode="json"),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -701,8 +765,16 @@ def create_app(
                 await connection.execute(text("SELECT 1"))
         return {
             "status": "ok",
-            "phase": 8,
-            "checkpoint": "8D",
+            "phase": 9,
+            "checkpoint": "9B-lite",
+            "release_version": app.version,
+            "release_sha": release_sha_from_env(),
+            "public_demo": resolved_public_demo.enabled,
+            "tenant_policy": (
+                "fixed_server_side"
+                if resolved_public_demo.enabled
+                else "trusted_request_header"
+            ),
             "database_configured": bool(os.environ.get("DATABASE_URL")),
             "database_reachable": True,
             "adk_wired": services.agent_runtime is not None,
@@ -776,6 +848,7 @@ def create_app(
         tenant_id: TenantId,
     ) -> RunStateResponse:
         services = _container(request)
+        await _reserve_public_demo_run_start(request)
         started = await services.start_service.start(
             tenant_id=tenant_id,
             bootstrap=services.fixture.bootstrap(),
@@ -837,6 +910,7 @@ def create_app(
                 retryable=False,
             )
 
+        await _reserve_public_demo_run_start(request)
         started = await services.start_service.start(
             tenant_id=tenant_id,
             bootstrap=services.scenario3_fixture.bootstrap(),
@@ -892,6 +966,7 @@ def create_app(
                 message="Scenario 2 Product ingestion is not configured.",
                 retryable=True,
             )
+        await _reserve_public_demo_run_start(request)
         started = await services.scenario2_start_service.start(
             tenant_id=tenant_id,
         )
@@ -1027,6 +1102,7 @@ def create_app(
         request: Request,
         tenant_id: TenantId,
     ) -> Scenario2IngestionStateResponse:
+        _hide_internal_in_public_demo(request)
         services = _container(request)
         if (
             services.scenario2_fixture_service is None
@@ -1069,6 +1145,7 @@ def create_app(
         request: Request,
         tenant_id: TenantId,
     ) -> Scenario2IngestionStateResponse:
+        _hide_internal_in_public_demo(request)
         services = _container(request)
         if (
             services.scenario2_fixture_service is None
@@ -1110,6 +1187,7 @@ def create_app(
         request: Request,
         tenant_id: TenantId,
     ) -> AgentInvocationResponse:
+        _hide_internal_in_public_demo(request)
         services = _container(request)
         if services.agent_runtime is None:
             _raise_api_error(
@@ -1540,6 +1618,7 @@ def create_app(
         unless explicitly enabled with a server-side token. It changes only the
         process-local authoritative monitoring fixture for one tenant/run.
         """
+        _hide_internal_in_public_demo(request)
         enabled = os.environ.get("PHASE6D_ACCEPTANCE_HOOKS", "").lower() in {
             "1",
             "true",
