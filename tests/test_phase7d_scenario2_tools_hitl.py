@@ -875,6 +875,102 @@ def test_phase7d_approve_goes_stale_when_provider_recovers_in_persisted_world():
     asyncio.run(scenario())
 
 
+def test_phase7d_postgres_reject_records_decision_without_execution():
+    async def scenario() -> None:
+        tenant_id = f"TENANT-7D-REJECT-{uuid4().hex[:10]}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        stack = _build_stack(factory)
+        try:
+            run_id, proposal_id = await _prepare_pending_major_incident(
+                stack,
+                tenant_id,
+            )
+            result = await stack["approval"].decide(
+                ToolCallContext(tenant_id=tenant_id, run_id=run_id),
+                proposal_id=proposal_id,
+                decision=ApprovalDecision.REJECTED,
+                decided_by="phase7d-reject-test",
+            )
+            assert result.ok is True
+            assert result.proposal.status is ProposalStatus.REJECTED
+            assert result.execution is None
+            assert result.major_incident is None
+
+            state = await stack["state"].get(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+            assert state is not None
+            assert state.run.status is RunStatus.ACTIVE
+            assert len(state.major_incident_approvals) == 1
+            assert (
+                state.major_incident_approvals[0].decision
+                is ApprovalDecision.REJECTED
+            )
+            assert len(state.major_incident_executions) == 0
+            assert len(state.major_incidents) == 0
+        finally:
+            await _clear_scenario2_outbox(factory, tenant_id)
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_phase7d_pending_equivalent_is_blocked_tenant_wide_across_runs():
+    async def scenario() -> None:
+        tenant_id = f"TENANT-7D-DUP-{uuid4().hex[:10]}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        stack = _build_stack(factory)
+        try:
+            _, first_proposal_id = await _prepare_pending_major_incident(
+                stack,
+                tenant_id,
+            )
+            second = await stack["start"].start(tenant_id=tenant_id)
+            duplicate = await stack["adapter"].propose_major_incident(
+                ToolCallContext(
+                    tenant_id=tenant_id,
+                    run_id=second.run.run_id,
+                ),
+                ProposeMajorIncidentRequest(
+                    correlation_key=CORRELATION_KEY,
+                    service_key=SERVICE_KEY,
+                    affected_site_ids=(SITE_KZN, SITE_SAM),
+                    dependency_id=ACMEPAY_DEPENDENCY_ID,
+                    evidence_ids=("EV-DUMMY-NOT-REACHED",),
+                    summary="Equivalent pending proposal",
+                    rationale="Must be rejected before evidence resolution.",
+                ),
+            )
+            assert duplicate.ok is False
+            assert (
+                dict(duplicate.error.details)["reason"]
+                == "duplicate_pending_major_incident_proposal"
+            )
+
+            first_state = await stack["state"].get(
+                tenant_id=tenant_id,
+                run_id=(
+                    await stack["state"]._query.get(  # type: ignore[attr-defined]
+                        tenant_id=tenant_id,
+                        run_id=second.run.run_id,
+                    )
+                ).run.run_id
+                if False
+                else second.run.run_id,
+            )
+            assert first_proposal_id
+            assert first_state is not None
+            assert first_state.major_incident_proposals == ()
+        finally:
+            await _clear_scenario2_outbox(factory, tenant_id)
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_phase7d_api_wiring_is_visible_without_changing_phase7c_health_contract(
     monkeypatch,
 ):
