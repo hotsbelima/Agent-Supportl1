@@ -185,7 +185,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
           setConnection("Reconnecting");
           setStreamError(
-            "Live-лента прервалась. Восстанавливаемся из сохранённого Product state.",
+            "Поток событий прервалась. Восстанавливаемся из сохранённого состояние продукта.",
           );
 
           try {
@@ -234,7 +234,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
       setSimulatorComplete(result.complete);
       setProgressNotice(
         result.ingested
-          ? `Сигнал ${result.ingested.signal.source_ref} сохранён. Product state обновлён.`
+          ? `Сигнал ${result.ingested.signal.source_ref} сохранён. состояние продукта обновлён.`
           : result.complete
             ? "Все демонстрационные сигналы уже отправлены."
             : "Следующий шаг симулятора выполнен.",
@@ -265,7 +265,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
       setDecisionNotice(
         result.replayed
           ? "Сохранённое решение воспроизведено без повторного выполнения."
-          : "Решение человека сохранено в Product state.",
+          : "Решение человека сохранено в состояние продукта.",
       );
       await refreshState();
     } catch (error) {
@@ -276,7 +276,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         );
         if (persisted && persisted.status !== "PENDING_APPROVAL") {
           setDecisionNotice(
-            "Ответ прервался, но сохранённое решение восстановлено из Product state.",
+            "Ответ прервался, но сохранённое решение восстановлено из состояние продукта.",
           );
         } else {
           setDecisionError(
@@ -285,7 +285,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         }
       } catch {
         setDecisionError(
-          "Не удалось подтвердить результат решения. После восстановления соединения интерфейс перечитает Product state.",
+          "Не удалось подтвердить результат решения. После восстановления соединения интерфейс перечитает состояние продукта.",
         );
       }
     } finally {
@@ -311,7 +311,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
       <main className="console-shell">
         <div className="fatal-card">
           <p className="eyebrow">Запуск недоступен</p>
-          <h1>Не удалось загрузить Product state</h1>
+          <h1>Не удалось загрузить состояние продукта</h1>
           <p>{pageError ?? "Product API не вернул состояние Scenario 2."}</p>
           <Link className="secondary-button" href="/">
             К выбору сценариев
@@ -346,7 +346,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             8O
           </Link>
           <div>
-            <p className="eyebrow">Автономный L1 Incident Agent</p>
+            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
             <h1>Сценарий 2 · массовый сервисный инцидент</h1>
           </div>
         </div>
@@ -401,7 +401,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Текущее Product state</p>
+                <p className="panel-kicker">Текущее состояние продукта</p>
                 <h2>Инциденты</h2>
               </div>
               {selectedIncident ? (
@@ -510,7 +510,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                     <dd>{formatTimestamp(selectedObservation.captured_at)}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Evidence ID</dt>
+                    <dt>наблюдений ID</dt>
                     <dd><code>{selectedObservation.evidence_id}</code></dd>
                   </div>
                   <div className="wide">
@@ -552,7 +552,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   >
                     <div className="entity-row-main">
                       <strong>{evidence.source_type}</strong>
-                      <span>{evidence.entity_ids[0] ?? "Product Evidence"}</span>
+                      <span>{evidence.entity_ids[0] ?? "наблюдение"}</span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
                       </time>
@@ -576,7 +576,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                Evidence появится после того, как агент начнёт расследование.
+                наблюдений появится после того, как агент начнёт расследование.
               </EmptyPanel>
             )}
           </article>
@@ -586,7 +586,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Сохранённый audit trail</p>
+                <p className="panel-kicker">Сохранённый журнал аудита</p>
                 <h2>Хронология</h2>
               </div>
               <span className="panel-count">{events.length}</span>
@@ -624,7 +624,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Корреляция и решение</p>
-                <h2>Предложение Major Incident</h2>
+                <h2>Предложение крупный инцидент</h2>
               </div>
               {latestProposal ? (
                 <StatusBadge
@@ -639,7 +639,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <span className="subtle-label">Демонстрационный поток</span>
                 <p>
                   Сигналов сохранено: <strong>{state.operational_signals.length}</strong>.
-                  Каждый шаг пишет событие в Product state до agent dispatch.
+                  Каждый шаг пишет событие в состояние продукта до agent dispatch.
                 </p>
               </div>
               <button
@@ -688,7 +688,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 </div>
 
                 <div className="proposal-evidence">
-                  <span className="subtle-label">Evidence IDs</span>
+                  <span className="subtle-label">ID наблюдений</span>
                   <div className="chip-row">
                     {latestProposal.evidence_ids.map((id) => (
                       <code key={id}>{id}</code>
@@ -699,7 +699,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
-                      Для создания Major Incident требуется решение человека.
+                      Для создания крупный инцидент требуется решение человека.
                     </p>
                     <div className="decision-buttons">
                       <button
@@ -751,7 +751,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             ) : (
               <EmptyPanel>
                 Предложения пока нет. Агент создаст его только после достаточного
-                набора сохранённых Evidence.
+                набора сохранённых наблюдений.
               </EmptyPanel>
             )}
           </article>
@@ -759,8 +759,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Результат после HITL</p>
-                <h2>Major Incident</h2>
+                <p className="panel-kicker">Результат после решение человека</p>
+                <h2>крупный инцидент</h2>
               </div>
               <span className="panel-count">{state.major_incidents.length}</span>
             </div>
@@ -794,13 +794,13 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </dl>
                 <p className="semantic-note">
-                  Major Incident зарегистрирован как демонстрационное Product-действие.
+                  крупный инцидент зарегистрирован как демонстрационное Product-действие.
                   Это не изменение реальной клиентской инфраструктуры.
                 </p>
               </div>
             ) : (
               <EmptyPanel>
-                Major Incident ещё не создан. До человеческого решения побочный
+                крупный инцидент ещё не создан. До человеческого решения побочный
                 эффект запрещён.
               </EmptyPanel>
             )}
@@ -809,9 +809,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
       </div>
 
       <footer className="console-footer">
-        <span>Источник истины: PostgreSQL Product state</span>
-        <span>Live transport: persisted SSE</span>
-        <span>AI runtime: native Google ADK + Gemini</span>
+        <span>Источник истины: PostgreSQL состояние продукта</span>
+        <span>Поток событий: persisted SSE</span>
+        <span>Среда AI: Google ADK + Gemini</span>
       </footer>
     </main>
   );
