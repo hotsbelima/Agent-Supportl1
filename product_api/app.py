@@ -109,7 +109,12 @@ from product_backend.persistence.scenario2_state import (
 )
 
 from .dispatch import Scenario1DispatchWorker, Scenario2DispatchWorker
-from .public_demo import PublicDemoSettings, RunStartCooldown, release_sha_from_env
+from .public_demo import (
+    PublicDemoSettings,
+    RunStartCooldown,
+    is_internal_public_demo_path,
+    release_sha_from_env,
+)
 from .scenario1_fixture import Scenario1FixtureSources
 from .scenario2_simulator import Scenario2SimulatorService
 from .scenario2_sources import PersistedScenario2FixtureSources
@@ -694,6 +699,25 @@ def create_app(
             "Last-Event-ID",
         ],
     )
+
+    @app.middleware("http")
+    async def public_demo_internal_route_guard(request: Request, call_next):
+        if (
+            resolved_public_demo.enabled
+            and is_internal_public_demo_path(request.url.path)
+        ):
+            body = ApiErrorResponse(
+                error=ApiErrorBody(
+                    code="NOT_FOUND",
+                    message="Resource was not found.",
+                    retryable=False,
+                )
+            )
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content=body.model_dump(mode="json"),
+            )
+        return await call_next(request)
 
     @app.exception_handler(ProductApiError)
     async def product_api_error_handler(
