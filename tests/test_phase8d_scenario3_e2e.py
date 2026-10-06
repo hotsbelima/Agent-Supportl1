@@ -444,6 +444,16 @@ def _tool_call_trace(session) -> list[str]:
     return names
 
 
+def _tool_call_invocation_ids(session) -> set[str]:
+    invocation_ids: set[str] = set()
+    for event in session.events:
+        get_calls = getattr(event, "get_function_calls", None)
+        calls = get_calls() if callable(get_calls) else []
+        if calls and event.invocation_id:
+            invocation_ids.add(event.invocation_id)
+    return invocation_ids
+
+
 def _decision_payload(result) -> dict[str, Any]:
     executed_action = (
         {
@@ -506,6 +516,17 @@ def test_phase8d_canonical_trace_approve_replay_and_no_product_cot(
             assert session is not None
             assert session.id == run_id
             assert _tool_call_trace(session) == EXPECTED_TOOL_TRACE
+            assert _tool_call_invocation_ids(session) == {paused.invocation_id}
+
+            correlation = await stack["runtime"].find_human_decision_correlation(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                proposal_id=stack["proposal_id"],
+            )
+            assert correlation is not None
+            assert correlation.invocation_id == paused.invocation_id
+            assert correlation.function_call_id == paused.paused_function_call_id
+            assert correlation.proposal_id == stack["proposal_id"]
 
             timeline = await stack["lifecycle"].timeline(
                 ToolCallContext(tenant_id=tenant_id, run_id=run_id),
@@ -550,6 +571,8 @@ def test_phase8d_canonical_trace_approve_replay_and_no_product_cot(
             provider_status = evidence_by_type[
                 EvidenceSourceType.EXTERNAL_DEPENDENCY_STATUS
             ]
+            cmdb = evidence_by_type[EvidenceSourceType.CMDB_SNAPSHOT]
+            site_health = evidence_by_type[EvidenceSourceType.SITE_HEALTH]
             access_link = evidence_by_type[
                 EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC
             ]
@@ -559,6 +582,12 @@ def test_phase8d_canonical_trace_approve_replay_and_no_product_cot(
             assert mapping.payload.dependency_id == ACMEPAY_DEPENDENCY_ID
             assert provider_status.payload.dependency_id == ACMEPAY_DEPENDENCY_ID
             assert provider_status.payload.status is HealthState.HEALTHY
+
+            assert cmdb.payload.device_id == AFFECTED_DEVICE_ID
+            assert cmdb.payload.attachment_id == ATTACHMENT_ID
+            assert site_health.payload.site_network is HealthState.HEALTHY
+            assert site_health.payload.peer_reachable is True
+            assert site_health.payload.affected_device_reachable is False
             assert access_link.payload.operational_state is OperationalState.DOWN
             assert kb_article.payload.approved is True
 
