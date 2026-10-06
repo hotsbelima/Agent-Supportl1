@@ -126,6 +126,7 @@ jobs:
         run: docker build -f Dockerfile.product -t agent-supportl1:phase6b .
 
       - name: Live Gemini acceptance (3 independent runs)
+        if: github.event_name != 'pull_request'
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: python -m scripts.phase6b_live_acceptance --runs 3
