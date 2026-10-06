@@ -1,6 +1,6 @@
 # Phase 7D implementation notes
 
-Status: **implementation checkpoint only — tests intentionally not run yet**.
+Status: **PASS — implementation reviewed, hardened and verified.**
 
 Base:
 - Phase 7C PASS: `e8f4e667e2ba8f3d7223cf25897f72fcc115e699`
@@ -62,10 +62,53 @@ one `MajorIncidentExecution`. Reject creates no execution.
 Proposal/approval/execution transitions append Product application audit events.
 Lock ordering is `Run -> Proposal` for proposal/approval serialization.
 
-## Not done in this checkpoint
+## Verification and hardening
 
-No Phase 7D tests, migrations, regression suite, Docker build or live Gemini
-acceptance have been run yet, by explicit request. This document therefore does
-not claim Phase 7D PASS.
+The review found and fixed concrete implementation issues rather than only
+adding happy-path tests:
 
-The next step is a separate Phase 7D verification/hardening pass before Phase 7E.
+- the Scenario 2 runtime now uses the existing native
+  `ProductRetryableToolPlugin` for Product failures explicitly marked retryable;
+- native `await_human_decision` is accepted only after a successful real
+  `propose_major_incident` response and only for that exact proposal ID;
+- a created proposal without the native wait point is non-recoverable, so the
+  durable outbox cannot be marked delivered for a half-complete HITL flow;
+- delivered human FunctionResponse state clears the pending-wait marker on
+  later history/redelivery inspection;
+- Major Incident persistence explicitly flushes the FK target before inserting
+  the dependent execution row;
+- Phase 7C sparse/historical ADK event shapes remain compatible with the extended
+  Phase 7D correlation logic;
+- the Phase 7C health checkpoint remains stable while Phase 7D is exposed as
+  additive capability flags;
+- the intentional public API contract now includes only the two new Scenario 2
+  Approve/Reject routes.
+
+Focused Phase 7D coverage proves:
+
+- exact native ADK tool surface and hidden trusted context;
+- fail-closed proposal/wait correlation;
+- native ADK pause/resume on the same invocation and redelivery reconciliation;
+- PostgreSQL Evidence creation, proposal persistence, Approve and replay;
+- Reject with no execution;
+- stale-on-provider-recovery;
+- tenant-wide duplicate protection/search across runs;
+- Product API/HITL wiring.
+
+Verified gate on the implementation before this documentation update:
+
+- focused Phase 7D: **9 passed**;
+- Alembic: **`20261006_0006 (head)`**, clean autogenerate check;
+- full Python regression: **195 passed**;
+- retained Node regression: PASS;
+- frontend typecheck/lint/build: PASS;
+- frontend tests: **42 passed**;
+- static public-bundle audit: PASS;
+- Product Docker image build: PASS.
+
+Phase 7D does not require live Gemini acceptance because the roadmap reserves
+managed/live acceptance for Phase 7E. Phase 7D uses a scripted real native ADK
+Runner test to prove the LongRunningFunctionTool pause/resume mechanics without
+making model behavior part of this deterministic gate.
+
+Next: **Phase 7E managed/live acceptance**.
