@@ -1461,10 +1461,22 @@ def create_app(
 
         # Product truth is committed first. Runtime selection is then derived
         # from the persisted Product Run, never from request/model input.
-        snapshot = await services.state_service.get(
-            tenant_id=tenant_id,
-            run_id=run_id,
-        )
+        snapshot = None
+        try:
+            snapshot = await services.state_service.get(
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+        except Exception:
+            # Product decision already committed. Runtime selection is part of
+            # post-commit reconciliation and must not turn durable business
+            # truth into an ambiguous 500 response.
+            logger.warning(
+                "Native ADK runtime selection deferred for run=%s proposal=%s",
+                run_id,
+                proposal_id,
+            )
+
         runtime: DeviceIncidentAgentRuntime | None = None
         if snapshot is not None:
             if snapshot.run.scenario_id == "scenario-1":
