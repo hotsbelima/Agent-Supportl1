@@ -510,7 +510,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                     <dd>{formatTimestamp(selectedObservation.captured_at)}</dd>
                   </div>
                   <div className="wide">
-                    <dt>наблюдений ID</dt>
+                    <dt>ID наблюдения</dt>
                     <dd><code>{selectedObservation.evidence_id}</code></dd>
                   </div>
                   <div className="wide">
@@ -535,7 +535,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 )}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Безопасный типизированный payload
+                    Безопасные типизированные данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
