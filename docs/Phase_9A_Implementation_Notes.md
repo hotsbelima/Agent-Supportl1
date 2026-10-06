@@ -5,8 +5,8 @@
 **Repository:** `hotsbelima/Agent-Supportl1`  
 **Implementation branch:** `phase-9a-ui-polish`  
 **Baseline:** `85696a3b34c56b5149da2d83c8d3af65642a9584` (`phase-9-scope-spec`)  
-**Validated UI code SHA:** `5ffbe539ed000c13c132d3ec2cc80d8e0be354b0`  
-**GitHub Actions:** run `37531722587` — SUCCESS
+**Validated UI code SHA:** `3e3b3e75569eae35bd234515ee94e912733b82e6`  
+**GitHub Actions:** run `37531951443` — SUCCESS
 
 ## Delivered
 
