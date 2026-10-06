@@ -86,6 +86,13 @@ class OperationalSignalRepository(Protocol):
 class MajorIncidentProposalRepository(Protocol):
     async def add(self, proposal: MajorIncidentProposal) -> None: ...
 
+    async def list_for_run(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> tuple[MajorIncidentProposal, ...]: ...
+
     async def get(
         self,
         *,
@@ -109,6 +116,13 @@ class MajorIncidentProposalRepository(Protocol):
 class MajorIncidentApprovalRepository(Protocol):
     async def add(self, approval: MajorIncidentApproval) -> None: ...
 
+    async def list_for_run(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> tuple[MajorIncidentApproval, ...]: ...
+
     async def get_for_proposal(
         self,
         *,
@@ -120,6 +134,13 @@ class MajorIncidentApprovalRepository(Protocol):
 
 class MajorIncidentRepository(Protocol):
     async def add(self, major_incident: MajorIncidentRecord) -> None: ...
+
+    async def list_for_run(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> tuple[MajorIncidentRecord, ...]: ...
 
     async def get_for_proposal(
         self,
@@ -141,6 +162,13 @@ class MajorIncidentRepository(Protocol):
 
 class MajorIncidentExecutionRepository(Protocol):
     async def add(self, execution: MajorIncidentExecution) -> None: ...
+
+    async def list_for_run(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+    ) -> tuple[MajorIncidentExecution, ...]: ...
 
     async def get_for_proposal(
         self,
@@ -186,6 +214,19 @@ class Scenario2FixtureStateUnitOfWork(Protocol):
     async def rollback(self) -> None: ...
 
 
+class Scenario2ToolReadUnitOfWork(Protocol):
+    runs: RunRepository
+    service_incidents: ServiceIncidentRepository
+    signals: OperationalSignalRepository
+    evidence: EvidenceRepository
+    events: ApplicationEventRepository
+
+    async def __aenter__(self) -> "Scenario2ToolReadUnitOfWork": ...
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
 class Scenario2ProposalUnitOfWork(Protocol):
     runs: RunRepository
     service_incidents: ServiceIncidentRepository
@@ -193,6 +234,7 @@ class Scenario2ProposalUnitOfWork(Protocol):
     evidence: EvidenceRepository
     major_incident_proposals: MajorIncidentProposalRepository
     major_incidents: MajorIncidentRepository
+    events: ApplicationEventRepository
 
     async def __aenter__(self) -> "Scenario2ProposalUnitOfWork": ...
     async def __aexit__(self, exc_type, exc, tb) -> None: ...
@@ -209,6 +251,7 @@ class Scenario2ApprovalUnitOfWork(Protocol):
     major_incident_approvals: MajorIncidentApprovalRepository
     major_incidents: MajorIncidentRepository
     major_incident_executions: MajorIncidentExecutionRepository
+    events: ApplicationEventRepository
 
     async def __aenter__(self) -> "Scenario2ApprovalUnitOfWork": ...
     async def __aexit__(self, exc_type, exc, tb) -> None: ...
@@ -229,4 +272,5 @@ __all__ = [
     "Scenario2ProposalUnitOfWork",
     "Scenario2RunStartUnitOfWork",
     "Scenario2SignalIngestionUnitOfWork",
+    "Scenario2ToolReadUnitOfWork",
 ]
