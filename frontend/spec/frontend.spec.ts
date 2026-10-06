@@ -88,7 +88,7 @@ describe("operational presentation", () => {
   });
 
   it("renders stale approval as zero execution rather than a failed repair", () => {
-    expect(STALE_PROPOSAL_NOTE).toContain("Действие Field Service не создавалось");
+    expect(STALE_PROPOSAL_NOTE).toContain("Действие выездного сервиса не создавалось");
     expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("отремонтирован");
     expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("закрыт");
   });
