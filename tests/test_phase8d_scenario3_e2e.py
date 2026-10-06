@@ -68,7 +68,9 @@ from product_backend.contracts.events import ApplicationEventType
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.domain.enums import (
     ApprovalDecision,
+    DiagnosisCode,
     EvidenceSourceType,
+    HealthState,
     OperationalState,
     ProposalStatus,
     RunStatus,
@@ -538,8 +540,34 @@ def test_phase8d_canonical_trace_approve_replay_and_no_product_cot(
                 EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC,
                 EvidenceSourceType.KB_ARTICLE,
             }
+            evidence_by_type = {
+                item.source_type: item
+                for item in snapshot.evidence
+            }
+            mapping = evidence_by_type[
+                EvidenceSourceType.SERVICE_DEPENDENCY_MAPPING
+            ]
+            provider_status = evidence_by_type[
+                EvidenceSourceType.EXTERNAL_DEPENDENCY_STATUS
+            ]
+            access_link = evidence_by_type[
+                EvidenceSourceType.ACCESS_LINK_DIAGNOSTIC
+            ]
+            kb_article = evidence_by_type[EvidenceSourceType.KB_ARTICLE]
+
+            assert mapping.payload.service_key == SERVICE_KEY
+            assert mapping.payload.dependency_id == ACMEPAY_DEPENDENCY_ID
+            assert provider_status.payload.dependency_id == ACMEPAY_DEPENDENCY_ID
+            assert provider_status.payload.status is HealthState.HEALTHY
+            assert access_link.payload.operational_state is OperationalState.DOWN
+            assert kb_article.payload.approved is True
+
             assert len(snapshot.proposals) == 1
             assert snapshot.proposals[0].status is ProposalStatus.PENDING_APPROVAL
+            assert (
+                snapshot.proposals[0].diagnosis
+                is DiagnosisCode.LOCAL_ACCESS_LINK_FAILURE
+            )
             assert tuple(snapshot.proposals[0].evidence_ids) == LOCAL_EVIDENCE_IDS
 
             product_blob = repr(snapshot) + repr(
