@@ -28,7 +28,7 @@ export default function HomePage() {
         <div className="architecture-strip" aria-label="Краткая архитектура">
           <span>Next.js UI</span>
           <i aria-hidden="true">→</i>
-          <span>FastAPI Product API</span>
+          <span>FastAPI API продукта</span>
           <i aria-hidden="true">→</i>
           <span>PostgreSQL</span>
           <b>Сохранённый источник истины</b>
