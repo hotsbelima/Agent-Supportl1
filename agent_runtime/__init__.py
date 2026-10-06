@@ -1,4 +1,4 @@
-"""Google ADK runtime integration boundary for Phase 6."""
+"""Google ADK runtime integration boundary through Scenario 2 Phase 7D."""
 
 from .agent import AGENT_NAME, MODEL, build_scenario1_agent
 from .human_decision import (
