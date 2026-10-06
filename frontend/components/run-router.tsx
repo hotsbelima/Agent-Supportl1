@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { displayApiError, getRunState } from "@/lib/api";
@@ -43,9 +44,9 @@ export function RunRouter({ runId }: { runId: string }) {
           <p className="eyebrow">Запуск недоступен</p>
           <h1>Не удалось определить сценарий</h1>
           <p>{error ?? "Product API не вернул состояние запуска."}</p>
-          <a className="secondary-button" href="/">
+          <Link className="secondary-button" href="/">
             К выбору сценариев
-          </a>
+          </Link>
         </div>
       </main>
     );
