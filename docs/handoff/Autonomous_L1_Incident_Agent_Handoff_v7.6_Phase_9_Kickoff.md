@@ -392,7 +392,4 @@ The **live-validated product SHA remains**
 
 The cleanup does not replace or invalidate the Phase 8E live evidence. It only makes historical CI ownership match the project's current phase structure.
 
-## Next stage
-
-Phase 8 / Scenario 3 is complete and the post-8E historical CI cleanup is validated. Proceed to Phase 9 using the Phase 8D and Phase 8E evidence above; do not infer any new implementation scope from this handoff alone.
 
