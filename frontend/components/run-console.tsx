@@ -205,7 +205,7 @@ export function RunConsole({ runId }: { runId: string }) {
           failureCount = failure.failureCount;
           setConnection(failure.connection);
           setPageError(
-            `${displayApiError(error)} Retrying persisted run state…`,
+            `${displayApiError(error)} Повторно загружаем сохранённое состояние…`,
           );
 
           try {
