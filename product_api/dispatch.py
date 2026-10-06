@@ -19,6 +19,7 @@ from product_backend.contracts.events import (
 )
 from product_backend.contracts.tools import ToolCallContext
 from product_backend.domain.enums import EvidenceSourceType
+from product_backend.domain.scenario2 import OperationalSignalEvidenceSnapshot
 from product_backend.ports.events import ApplicationOutboxRepository
 
 
@@ -392,10 +393,25 @@ class Scenario2DispatchWorker:
             signal is None
             or evidence is None
             or evidence.source_type != EvidenceSourceType.OPERATIONAL_SIGNAL
+            or not isinstance(
+                evidence.payload,
+                OperationalSignalEvidenceSnapshot,
+            )
         ):
             raise RuntimeError("Scenario 2 signal or signal Evidence was not found")
-        if signal.signal_id not in evidence.entity_ids:
-            raise RuntimeError("Scenario 2 Evidence does not belong to dispatch signal")
+        evidence_payload = evidence.payload
+        if (
+            signal.signal_id not in evidence.entity_ids
+            or evidence_payload.signal_id != signal.signal_id
+            or evidence_payload.source is not signal.source
+            or evidence_payload.site_id != signal.site_id
+            or evidence_payload.service_key != signal.service_key
+            or evidence_payload.symptom_key != signal.symptom_key
+            or evidence_payload.source_ref != signal.source_ref
+        ):
+            raise RuntimeError(
+                "Scenario 2 Evidence does not match the persisted dispatch signal"
+            )
         incident = next(
             (
                 item
@@ -406,6 +422,14 @@ class Scenario2DispatchWorker:
         )
         if incident is None:
             raise RuntimeError("Scenario 2 signal ServiceIncident was not found")
+        if (
+            incident.site_id != signal.site_id
+            or incident.service_key != signal.service_key
+            or incident.symptom_key != signal.symptom_key
+        ):
+            raise RuntimeError(
+                "Scenario 2 ServiceIncident does not match the dispatch signal"
+            )
 
         return event_id, {
             "event": {
