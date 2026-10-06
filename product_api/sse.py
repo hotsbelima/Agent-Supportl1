@@ -94,22 +94,14 @@ def _bounded_int_env(
     return value
 
 
-def frontend_origins_from_env() -> tuple[str, ...]:
-    """Return exact browser origins allowed by the Phase 5 CORS boundary.
-
-    Local Next.js development is allowed by default.  Production/preview Vercel
-    origins must be supplied explicitly through FRONTEND_ORIGINS.
-    """
-
-    raw = os.environ.get("FRONTEND_ORIGINS")
-    values = (
-        ["http://localhost:3000"]
-        if raw is None
-        else [item.strip() for item in raw.split(",") if item.strip()]
-    )
+def normalize_frontend_origins(values) -> tuple[str, ...]:
+    """Validate and normalize exact browser origins without allowing wildcards."""
 
     normalized: list[str] = []
-    for value in values:
+    for raw_value in values:
+        value = str(raw_value).strip()
+        if not value:
+            continue
         if "*" in value:
             raise RuntimeError(
                 "FRONTEND_ORIGINS must use exact origins, not wildcards"
@@ -131,6 +123,22 @@ def frontend_origins_from_env() -> tuple[str, ...]:
         if origin not in normalized:
             normalized.append(origin)
     return tuple(normalized)
+
+
+def frontend_origins_from_env() -> tuple[str, ...]:
+    """Return exact browser origins allowed by the Phase 5 CORS boundary.
+
+    Local Next.js development is allowed by default. Production/preview Vercel
+    origins must be supplied explicitly through FRONTEND_ORIGINS.
+    """
+
+    raw = os.environ.get("FRONTEND_ORIGINS")
+    values = (
+        ["http://localhost:3000"]
+        if raw is None
+        else [item.strip() for item in raw.split(",")]
+    )
+    return normalize_frontend_origins(values)
 
 
 def resolve_sse_cursor(
@@ -184,5 +192,6 @@ __all__ = [
     "SseSettings",
     "application_event_sse_frame",
     "frontend_origins_from_env",
+    "normalize_frontend_origins",
     "resolve_sse_cursor",
 ]
