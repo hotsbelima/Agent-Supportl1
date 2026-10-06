@@ -336,6 +336,8 @@ When `PUBLIC_DEMO=true`, anonymous callers must receive safe `404 NOT_FOUND`
 for:
 
 - hidden manual `/agent/invoke`;
+- direct Scenario 2 raw signal-ingestion endpoint `/signals` (the public UI
+  uses the bounded deterministic simulator instead);
 - Scenario 2 dependency-status acceptance control;
 - Scenario 2 matching-major-incident acceptance control;
 - the Phase 6D acceptance hook, even if its old enable/token variables are
@@ -349,8 +351,10 @@ acceptance/regression testing.
 The public deployment uses one server-configured demo tenant.
 
 The browser's `X-Tenant-ID` value is compatibility metadata only in public
-mode; it must not be able to select another tenant. The server uses
-`PUBLIC_DEMO_TENANT_ID` as Product context.
+mode; it must not be able to select another tenant and must be ignored even if
+the browser sends a malformed/oversized value. The server uses an explicitly
+configured `PUBLIC_DEMO_TENANT_ID` as Product context and must fail fast if
+that setting is missing while public-demo mode is enabled.
 
 This is intentionally **not** authentication. Full accounts/RBAC/SSO remain
 out of scope.
@@ -366,14 +370,17 @@ Requirements:
 - no Redis, API gateway or distributed limiter is required;
 - return typed `429 PUBLIC_DEMO_COOLDOWN`;
 - include `Retry-After`;
-- keep Gemini/provider quota errors distinct in the UI.
+- keep Gemini/provider quota errors distinct in the UI;
+- keep the public Scenario 2 simulator finite/deterministic and hide raw signal
+  injection so one run cannot create an unbounded stream of agent dispatches.
 
 ## 9B.5 CORS and frontend secret audit
 
 Reuse the existing exact-origin CORS implementation.
 
-In public-demo mode, `FRONTEND_ORIGINS` must be explicitly configured; do not
-fall back to a wildcard or silently expose all origins.
+In public-demo mode, `FRONTEND_ORIGINS` must resolve to at least one valid
+exact http(s) origin. Do not fall back to a wildcard, accept malformed origins,
+or silently expose all origins.
 
 Retain the frontend static audit proving that database credentials, Gemini
 keys, acceptance tokens and similar server secrets are not shipped in browser
