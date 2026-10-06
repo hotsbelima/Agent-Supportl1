@@ -312,7 +312,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         <div className="fatal-card">
           <p className="eyebrow">Запуск недоступен</p>
           <h1>Не удалось загрузить состояние продукта</h1>
-          <p>{pageError ?? "Product API не вернул состояние Сценария 2."}</p>
+          <p>{pageError ?? "API продукта не вернул состояние Сценария 2."}</p>
           <Link className="secondary-button" href="/">
             К выбору сценариев
           </Link>
