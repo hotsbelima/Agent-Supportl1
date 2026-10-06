@@ -1,4 +1,4 @@
-import { RunConsole } from "@/components/run-console";
+import { RunRouter } from "@/components/run-router";
 
 type RunPageProps = {
   params: Promise<{ runId: string }>;
@@ -6,5 +6,5 @@ type RunPageProps = {
 
 export default async function RunPage({ params }: RunPageProps) {
   const { runId } = await params;
-  return <RunConsole key={runId} runId={runId} />;
+  return <RunRouter key={runId} runId={runId} />;
 }
