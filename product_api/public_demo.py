@@ -102,6 +102,26 @@ class RunStartCooldown:
             return None
 
 
+def is_internal_public_demo_path(path: str) -> bool:
+    return (
+        (
+            path.startswith("/api/v1/runs/")
+            and path.endswith("/agent/invoke")
+        )
+        or (
+            path.startswith("/api/v1/scenario-2/runs/")
+            and (
+                path.endswith("/acceptance/dependency-status")
+                or path.endswith("/acceptance/matching-major-incident")
+            )
+        )
+        or (
+            path.startswith("/__acceptance/phase6d/runs/")
+            and path.endswith("/access-link-state")
+        )
+    )
+
+
 def release_sha_from_env() -> str:
     for name in (
         "RELEASE_SHA",
@@ -118,5 +138,6 @@ def release_sha_from_env() -> str:
 __all__ = [
     "PublicDemoSettings",
     "RunStartCooldown",
+    "is_internal_public_demo_path",
     "release_sha_from_env",
 ]
