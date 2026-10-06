@@ -63,15 +63,15 @@ function baseReadiness(health: HealthResponse): Readiness {
   ) {
     return {
       kind: "ready",
-      message: `Product API доступен · Gemini настроен · контрольная версия ${health.checkpoint}`,
+      message: `API продукта доступен · Gemini настроен · контрольная версия ${health.checkpoint}`,
     };
   }
 
   return {
     kind: "unavailable",
     message: health.gemini_configured
-      ? "Product API доступен не полностью: проверьте среду выполнения и базу данных."
-      : "Gemini не настроен на Product API.",
+      ? "API продукта доступен не полностью: проверьте среду выполнения и базу данных."
+      : "Gemini не настроен на API продукта.",
   };
 }
 
@@ -110,7 +110,7 @@ export function StartScenario() {
     const issue = configurationIssue();
     return issue
       ? { kind: "unavailable", message: issue }
-      : { kind: "checking", message: "Проверяем Product API…" };
+      : { kind: "checking", message: "Проверяем API продукта…" };
   });
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
