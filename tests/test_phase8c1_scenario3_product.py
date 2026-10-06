@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import os
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from product_api.app import build_container_from_env, create_app
+from product_api.dispatch import Scenario1DispatchWorker
 from product_api.scenario3_fixture import (
     ACMEPAY_DEPENDENCY_ID,
     AFFECTED_DEVICE_ID,
@@ -25,7 +27,10 @@ from product_backend.application.scenario3_read_tools import (
     Scenario3EvidenceTtlPolicy,
     Scenario3ProviderReadService,
 )
-from product_backend.contracts.events import AGENT_DISPATCH_TOPIC
+from product_backend.contracts.events import (
+    AGENT_DISPATCH_TOPIC,
+    ApplicationOutboxRecord,
+)
 from product_backend.contracts.scenario2_tools import (
     GetExternalDependencyStatusRequest,
     GetServiceDependenciesRequest,
@@ -273,3 +278,121 @@ def test_phase8c1_scenario1_bootstrap_keeps_historical_signal_shape():
     historical = Scenario1FixtureSources().bootstrap()
     assert historical.service_key is None
     assert historical.symptom_key is None
+
+
+class _GuardTestOutbox:
+    def __init__(self, record: ApplicationOutboxRecord) -> None:
+        self.record = record
+        self.claimed = False
+        self.rescheduled = 0
+        self.delivered = 0
+
+    async def claim_next(self, *, topic: str, lease_seconds: float):
+        assert topic == AGENT_DISPATCH_TOPIC
+        assert lease_seconds > 0
+        if self.claimed:
+            return None
+        self.claimed = True
+        return self.record
+
+    async def reschedule(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        outbox_id: str,
+        delay_seconds: float,
+    ):
+        assert (tenant_id, run_id, outbox_id) == (
+            self.record.tenant_id,
+            self.record.run_id,
+            self.record.outbox_id,
+        )
+        assert delay_seconds >= 0
+        self.rescheduled += 1
+        return self.record
+
+    async def mark_delivered(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        outbox_id: str,
+    ):
+        self.delivered += 1
+        return self.record
+
+
+class _GuardTestUow:
+    def __init__(self, outbox: _GuardTestOutbox) -> None:
+        self.outbox = outbox
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+
+class _WrongScenarioRuntime:
+    gemini_configured = True
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def invoke_operational_event(self, **kwargs):
+        self.calls += 1
+        raise AssertionError("Scenario 1 runtime must not receive Scenario 3")
+
+
+class _Scenario3State:
+    async def get(self, *, tenant_id: str, run_id: str):
+        return SimpleNamespace(
+            run=SimpleNamespace(scenario_id="scenario-3"),
+            incidents=(),
+        )
+
+
+def test_phase8c1_scenario1_worker_defers_scenario3_envelope_until_8c2():
+    now = datetime.now(UTC)
+    record = ApplicationOutboxRecord(
+        outbox_id="OUTBOX-8C1-GUARD",
+        tenant_id="TENANT-8C1-GUARD",
+        run_id="RUN-8C1-GUARD",
+        event_seq=2,
+        topic=AGENT_DISPATCH_TOPIC,
+        payload={
+            "event_id": "EVENT-8C1-GUARD",
+            "signal": {
+                "signal_type": "itsm.incident.created",
+                "details": {
+                    "service_key": SERVICE_KEY,
+                    "symptom_key": SYMPTOM_KEY,
+                },
+            },
+        },
+        created_at=now,
+        available_at=now,
+        delivered_at=None,
+        attempt_count=1,
+    )
+    outbox = _GuardTestOutbox(record)
+    runtime = _WrongScenarioRuntime()
+    worker = Scenario1DispatchWorker(
+        uow_factory=lambda: _GuardTestUow(outbox),
+        state_service=_Scenario3State(),
+        agent_runtime=runtime,
+    )
+
+    processed = asyncio.run(worker.dispatch_once())
+
+    assert processed is True
+    assert runtime.calls == 0
+    assert outbox.rescheduled == 1
+    assert outbox.delivered == 0
