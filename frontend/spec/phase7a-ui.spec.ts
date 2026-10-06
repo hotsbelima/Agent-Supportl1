@@ -16,16 +16,16 @@ const cssSource = readFileSync(
 );
 
 describe("Phase 7A operational UI contract", () => {
-  it("keeps Start simulation as a Product event trigger, not browser ADK orchestration", () => {
-    expect(startSource).toContain("Start simulation");
+  it("keeps the launch button as a Product event trigger, not browser ADK orchestration", () => {
+    expect(startSource).toContain("Запустить симуляцию");
     expect(startSource).toContain("startScenario1()");
     expect(startSource).not.toContain("/agent/invoke");
     expect(startSource).not.toContain("invokeScenario");
   });
 
   it("uses same-panel list to detail navigation for incidents and observations", () => {
-    expect(consoleSource).toContain("<h2>Incidents</h2>");
-    expect(consoleSource).toContain("<h2>Observations</h2>");
+    expect(consoleSource).toContain("<h2>Инциденты</h2>");
+    expect(consoleSource).toContain("<h2>Наблюдения</h2>");
     expect(consoleSource.match(/Подробнее/g)?.length).toBeGreaterThanOrEqual(2);
     expect(consoleSource.match(/← Назад к списку/g)?.length).toBeGreaterThanOrEqual(2);
     expect(consoleSource).toContain("setSelectedIncidentId");

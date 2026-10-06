@@ -9,11 +9,12 @@ import {
   displayApiError,
   getHealth,
   startScenario1,
+  startScenario2,
   startScenario3,
 } from "@/lib/api";
 import type { HealthResponse } from "@/lib/types";
 
-type ScenarioChoice = "scenario-1" | "scenario-3";
+type ScenarioChoice = "scenario-1" | "scenario-2" | "scenario-3";
 
 type Readiness =
   | { kind: "checking"; message: string }
@@ -26,19 +27,29 @@ const SCENARIOS: Record<
     eyebrow: string;
     title: string;
     description: string;
+    demonstrates: string;
   }
 > = {
   "scenario-1": {
-    eyebrow: "Scenario 1 · 8 Щупалец",
-    title: "Local terminal connectivity incident",
+    eyebrow: "Сценарий 1 · локальный инцидент",
+    title: "Терминал потерял сетевое подключение",
     description:
-      "Start the original device-incident flow. The Product backend persists the operational signal, then dispatches the same run to the native ADK agent.",
+      "Один локальный сбой: агент собирает наблюдаемые факты, формирует предложение на выездной сервис и ждёт решения человека.",
+    demonstrates: "Локальная диагностика · наблюдения · решение человека",
+  },
+  "scenario-2": {
+    eyebrow: "Сценарий 2 · массовый сервисный инцидент",
+    title: "Несколько сигналов указывают на общую зависимость",
+    description:
+      "Несколько событий коррелируются в сервисный инцидент. Агент проверяет общую зависимость, формирует предложение о создании крупного инцидента и ждёт решения человека.",
+    demonstrates: "Корреляция · внешняя зависимость · крупный инцидент",
   },
   "scenario-3": {
-    eyebrow: "Scenario 3 · Evidence-driven replanning",
-    title: "Payment timeout with a disproved provider hypothesis",
+    eyebrow: "Сценарий 3 · перепланирование по фактам",
+    title: "Гипотеза о провайдере опровергается наблюдаемыми фактами",
     description:
-      "Start the replanning flow. The agent investigates AcmePay first, then can move into local device diagnostics only after Product evidence disproves the upstream-provider hypothesis.",
+      "Агент сначала проверяет AcmePay, получает «исправно», затем меняет диагностическое направление и переходит к локальной проверке терминала.",
+    demonstrates: "Опровержение гипотезы · перепланирование · наблюдения",
   },
 };
 
@@ -48,22 +59,46 @@ function baseReadiness(health: HealthResponse): Readiness {
     health.database_reachable &&
     health.adk_wired &&
     health.adk_session_persistence_wired &&
-    health.adk_resumability_wired &&
-    health.gemini_configured &&
-    health.automatic_dispatch_wired
+    health.gemini_configured
   ) {
     return {
       kind: "ready",
-      message: `Backend ready · Phase ${health.checkpoint} · automatic ADK dispatch`,
+      message: `API продукта доступен · Gemini настроен · контрольная версия ${health.checkpoint}`,
     };
   }
 
   return {
     kind: "unavailable",
     message: health.gemini_configured
-      ? "Automatic ADK dispatch is not ready."
-      : "Gemini is not configured on the Product backend.",
+      ? "API продукта доступен не полностью: проверьте среду выполнения и базу данных."
+      : "Gemini не настроен на API продукта.",
   };
+}
+
+function isScenarioReady(
+  scenario: ScenarioChoice,
+  health: HealthResponse | null,
+  readiness: Readiness,
+): boolean {
+  if (!health || readiness.kind !== "ready") return false;
+
+  if (scenario === "scenario-1") {
+    return Boolean(health.automatic_dispatch_wired);
+  }
+
+  if (scenario === "scenario-2") {
+    return Boolean(
+      health.scenario2_ingestion_wired &&
+        health.scenario2_dispatch_consumer_wired &&
+        health.scenario2_tools_wired &&
+        health.scenario2_hitl_wired,
+    );
+  }
+
+  return Boolean(
+    health.scenario3_phase8c1_provider_reads_wired &&
+      health.scenario3_phase8c2_native_wired,
+  );
 }
 
 export function StartScenario() {
@@ -75,7 +110,7 @@ export function StartScenario() {
     const issue = configurationIssue();
     return issue
       ? { kind: "unavailable", message: issue }
-      : { kind: "checking", message: "Checking product API…" };
+      : { kind: "checking", message: "Проверяем API продукта…" };
   });
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -102,32 +137,30 @@ export function StartScenario() {
     return () => controller.abort();
   }, []);
 
-  const scenarioReady = useMemo(() => {
-    if (readiness.kind !== "ready") return false;
-    if (selectedScenario === "scenario-1") return true;
-    return Boolean(
-      health?.scenario3_phase8c1_provider_reads_wired &&
-        health?.scenario3_phase8c2_native_wired,
-    );
-  }, [health, readiness.kind, selectedScenario]);
+  const scenarioReady = useMemo(
+    () => isScenarioReady(selectedScenario, health, readiness),
+    [health, readiness, selectedScenario],
+  );
 
   const selected = SCENARIOS[selectedScenario];
   const readinessMessage =
-    selectedScenario === "scenario-3" &&
-    readiness.kind === "ready" &&
-    !scenarioReady
-      ? "Scenario 3 provider reads or native runtime are not fully wired."
+    readiness.kind === "ready" && !scenarioReady
+      ? "Этот сценарий пока не готов на текущем развёртывании сервера."
       : readiness.message;
 
   async function handleStart() {
     if (starting || !scenarioReady) return;
     setStarting(true);
     setStartError(null);
+
     try {
       const state =
-        selectedScenario === "scenario-3"
-          ? await startScenario3()
-          : await startScenario1();
+        selectedScenario === "scenario-2"
+          ? await startScenario2()
+          : selectedScenario === "scenario-3"
+            ? await startScenario3()
+            : await startScenario1();
+
       router.push(`/runs/${encodeURIComponent(state.run.run_id)}`);
     } catch (error) {
       setStartError(displayApiError(error));
@@ -140,39 +173,34 @@ export function StartScenario() {
       <div
         className="scenario-switcher"
         role="group"
-        aria-label="Choose demo scenario"
+        aria-label="Выберите демонстрационный сценарий"
       >
-        <button
-          type="button"
-          data-active={selectedScenario === "scenario-1"}
-          aria-pressed={selectedScenario === "scenario-1"}
-          onClick={() => {
-            setSelectedScenario("scenario-1");
-            setStartError(null);
-          }}
-        >
-          Scenario 1
-        </button>
-        <button
-          type="button"
-          data-active={selectedScenario === "scenario-3"}
-          aria-pressed={selectedScenario === "scenario-3"}
-          onClick={() => {
-            setSelectedScenario("scenario-3");
-            setStartError(null);
-          }}
-        >
-          Scenario 3
-        </button>
+        {(["scenario-1", "scenario-2", "scenario-3"] as const).map(
+          (scenario, index) => (
+            <button
+              key={scenario}
+              type="button"
+              data-active={selectedScenario === scenario}
+              aria-pressed={selectedScenario === scenario}
+              onClick={() => {
+                setSelectedScenario(scenario);
+                setStartError(null);
+              }}
+            >
+              Сценарий {index + 1}
+            </button>
+          ),
+        )}
       </div>
 
       <div className="launch-copy">
         <p className="eyebrow">{selected.eyebrow}</p>
         <h2 id="scenario-title">{selected.title}</h2>
         <p>{selected.description}</p>
+        <p className="scenario-demonstrates">{selected.demonstrates}</p>
       </div>
 
-      <div className="readiness-row">
+      <div className="readiness-row" role="status" aria-live="polite">
         <span
           className="status-dot"
           data-state={
@@ -185,20 +213,19 @@ export function StartScenario() {
         <div>
           <strong>
             {readiness.kind === "ready" && scenarioReady
-              ? "Product API ready"
+              ? "Сценарий готов"
               : readiness.kind === "checking"
-                ? "Checking backend"
-                : selectedScenario === "scenario-3" &&
-                    readiness.kind === "ready"
-                  ? "Scenario 3 unavailable"
-                  : "Backend unavailable"}
+                ? "Проверяем сервер"
+                : readiness.kind === "ready"
+                  ? "Сценарий недоступен"
+                  : "Сервер недоступен"}
           </strong>
           <span>{readinessMessage}</span>
         </div>
       </div>
 
       <div className="launch-meta">
-        <span>Tenant</span>
+        <span>Демо-контур</span>
         <code>{DEMO_TENANT_ID}</code>
       </div>
 
@@ -214,7 +241,7 @@ export function StartScenario() {
         onClick={handleStart}
         disabled={starting || !scenarioReady}
       >
-        {starting ? "Starting simulation…" : "Start simulation"}
+        {starting ? "Запускаем симуляцию…" : "Запустить симуляцию"}
       </button>
     </section>
   );

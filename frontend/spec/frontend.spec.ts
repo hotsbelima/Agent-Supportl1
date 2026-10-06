@@ -34,15 +34,15 @@ function event(
 describe("operational presentation", () => {
   it("uses persisted details without inventing missing fields", () => {
     expect(eventSummary(event("tool.started", { tool_name: "get_device" })))
-      .toBe("Tool started: get_device");
-    expect(eventSummary(event("tool.started"))).toBe("Tool started");
+      .toBe("Запущен инструмент: get_device");
+    expect(eventSummary(event("tool.started"))).toBe("Запущен инструмент");
     expect(eventSummary(event("run.status_changed", { status: "ACTIVE" })))
-      .toBe("Run status changed → ACTIVE");
+      .toBe("Статус запуска → Активен");
     expect(
       eventSummary(
         event("observation.recorded", { source_type: "CMDB_SNAPSHOT" }),
       ),
-    ).toBe("Observation recorded: CMDB_SNAPSHOT");
+    ).toBe("Сохранено наблюдение: CMDB_SNAPSHOT");
   });
 
   it("refreshes authoritative state when a Product observation arrives", () => {
@@ -88,17 +88,17 @@ describe("operational presentation", () => {
   });
 
   it("renders stale approval as zero execution rather than a failed repair", () => {
-    expect(STALE_PROPOSAL_NOTE).toContain("No field-service action was created");
-    expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("resolved");
-    expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("repaired");
+    expect(STALE_PROPOSAL_NOTE).toContain("Действие выездного сервиса не создавалось");
+    expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("отремонтирован");
+    expect(STALE_PROPOSAL_NOTE.toLowerCase()).not.toContain("закрыт");
   });
 
   it("never presents a registered work order as a completed repair", () => {
     expect(FIELD_SERVICE_OUTCOME_NOTE).toBe(
-      "Onsite field-service work order registered. This is not proof of repair.",
+      "Заявка на выездной сервис зарегистрирована. Это ещё не подтверждает ремонт устройства.",
     );
     expect(FIELD_SERVICE_OUTCOME_NOTE.toLowerCase()).not.toContain(
-      "incident resolved",
+      "инцидент закрыт",
     );
   });
 });

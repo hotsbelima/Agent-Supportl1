@@ -461,7 +461,7 @@ describe("decision response recovery", () => {
   });
 
   it("surfaces idempotent replay without claiming duplicate execution", () => {
-    expect(replayNotice(true)).toContain("no duplicate action");
-    expect(replayNotice(false)).toContain("authoritative persisted state");
+    expect(replayNotice(true)).toContain("повторное действие не создавалось");
+    expect(replayNotice(false)).toContain("авторитетном состоянии продукта");
   });
 });

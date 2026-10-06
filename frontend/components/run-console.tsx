@@ -28,12 +28,14 @@ import {
   type TimelineAccumulator,
 } from "@/lib/recovery";
 import {
+  connectionLabel,
   connectionTone,
   eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   observationState,
   proposalTone,
+  statusLabel,
   STALE_PROPOSAL_NOTE,
 } from "@/lib/presentation";
 import { streamRunEvents } from "@/lib/sse";
@@ -55,7 +57,7 @@ function StatusBadge({
 }) {
   return (
     <span className="status-badge" data-tone={tone}>
-      {value}
+      {statusLabel(value)}
     </span>
   );
 }
@@ -70,10 +72,10 @@ function isAbortError(error: unknown): boolean {
 
 function recoveryMessage(error: unknown): string {
   if (error instanceof TimelineGapError) {
-    return "Timeline gap detected; recovering missing persisted events.";
+    return "Обнаружен пропуск в хронологии; восстанавливаем сохранённые события.";
   }
   if (error instanceof Error && error.message === "Live event stream closed.") {
-    return "Live event stream closed; reconnecting from persisted state.";
+    return "Поток событий прервался; переподключаемся из сохранённого состояния.";
   }
   return displayApiError(error);
 }
@@ -203,7 +205,7 @@ export function RunConsole({ runId }: { runId: string }) {
           failureCount = failure.failureCount;
           setConnection(failure.connection);
           setPageError(
-            `${displayApiError(error)} Retrying persisted run state…`,
+            `${displayApiError(error)} Повторно загружаем сохранённое состояние…`,
           );
 
           try {
@@ -330,10 +332,10 @@ export function RunConsole({ runId }: { runId: string }) {
   const lastSeq = events.at(-1)?.seq ?? 0;
   const scenarioLabel =
     state?.run.scenario_id === "scenario-3"
-      ? "Scenario 3"
+      ? "Сценарий 3"
       : state?.run.scenario_id === "scenario-1"
-        ? "Scenario 1"
-        : state?.run.scenario_id ?? "Unknown scenario";
+        ? "Сценарий 1"
+        : state?.run.scenario_id ?? "Неизвестный сценарий";
 
   const latestProposal: ProposalView | null = state?.proposals.length
     ? [...state.proposals]
@@ -364,7 +366,7 @@ export function RunConsole({ runId }: { runId: string }) {
         await refreshState();
       } catch {
         setDecisionError(
-          "Decision was recorded, but the full state refresh is temporarily unavailable. Reconnect will synchronize authoritative state.",
+          "Решение сохранено, но полное состояние временно недоступно. После переподключения интерфейс синхронизируется с состоянием продукта.",
         );
       }
     } catch (error) {
@@ -377,25 +379,25 @@ export function RunConsole({ runId }: { runId: string }) {
 
         if (recovery === "persisted") {
           setDecisionNotice(
-            "Decision response was interrupted; authoritative persisted state was recovered.",
+            "Ответ на решение прервался; сохранённое состояние продукта успешно восстановлено.",
           );
           setDecisionError(null);
         } else if (recovery === "still-pending") {
           setDecisionError(
-            `${displayApiError(error)} Persisted state still shows this proposal as pending; retrying the same decision is safe.`,
+            `${displayApiError(error)} Состояние продукта всё ещё ожидает решения; повтор безопасен.`,
           );
         } else if (recovery === "inconsistent") {
           setDecisionError(
-            "Decision response was interrupted and persisted state is internally inconsistent, so execution is not being presented as confirmed.",
+            "Ответ прервался, а сохранённое состояние выглядит несогласованным; выполнение не показывается как подтверждённое.",
           );
         } else {
           setDecisionError(
-            "Decision response was interrupted and the proposal could not be confirmed in authoritative state.",
+            "Ответ прервался, и предложение не удалось подтвердить по авторитетному состоянию продукта.",
           );
         }
       } catch {
         setDecisionError(
-          "Decision result could not be confirmed. Reconnect will recover authoritative state; retrying the same decision remains idempotent.",
+          "Результат решения не подтверждён. Переподключение восстановит состояние продукта; повтор решения остаётся идемпотентным.",
         );
       }
     } finally {
@@ -406,9 +408,9 @@ export function RunConsole({ runId }: { runId: string }) {
   if (loading) {
     return (
       <main className="console-shell">
-        <div className="console-loading">
+        <div className="console-loading" role="status" aria-live="polite">
           <span className="spinner" aria-hidden="true" />
-          <strong>Loading persisted run</strong>
+          <strong>Загружаем сохранённый запуск</strong>
           <span>{runId}</span>
           {pageError ? <span role="status">{pageError}</span> : null}
         </div>
@@ -420,11 +422,11 @@ export function RunConsole({ runId }: { runId: string }) {
     return (
       <main className="console-shell">
         <div className="fatal-card">
-          <p className="eyebrow">Run unavailable</p>
-          <h1>Operational state could not be loaded</h1>
-          <p>{pageError ?? "The product API did not return run state."}</p>
+          <p className="eyebrow">Запуск недоступен</p>
+          <h1>Не удалось загрузить операционное состояние</h1>
+          <p>{pageError ?? "API продукта не вернул состояние запуска."}</p>
           <Link className="secondary-button" href="/">
-            Back to scenarios
+            К выбору сценариев
           </Link>
         </div>
       </main>
@@ -435,38 +437,46 @@ export function RunConsole({ runId }: { runId: string }) {
     <main className="console-shell">
       <header className="run-header">
         <div className="brand-lockup">
-          <Link href="/" className="brand-mark" aria-label="Back to home">
+          <Link href="/" className="brand-mark" aria-label="На главную">
             8O
           </Link>
           <div>
-            <p className="eyebrow">Autonomous L1 Incident Agent</p>
-            <h1>{scenarioLabel} operational console</h1>
+            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
+            <h1>{scenarioLabel} · операционная консоль</h1>
           </div>
+        </div>
+
+        <div className="run-header-actions">
+          <Link className="secondary-button compact-button" href="/">
+            Новый запуск
+          </Link>
         </div>
 
         <div className="run-header-grid">
           <div>
-            <span>Run</span>
+            <span>Запуск</span>
             <code>{state.run.run_id}</code>
           </div>
           <div>
-            <span>Scenario</span>
+            <span>Сценарий</span>
             <strong>{state.run.scenario_id}</strong>
           </div>
           <div>
-            <span>Run status</span>
+            <span>Статус запуска</span>
             <StatusBadge value={state.run.status} tone="info" />
           </div>
           <div>
-            <span>Incident</span>
+            <span>Инцидент</span>
             <code>{primaryIncident?.incident_id ?? "—"}</code>
           </div>
           <div>
-            <span>Connection</span>
-            <StatusBadge value={connection} tone={connectionTone(connection)} />
+            <span>Соединение</span>
+            <span className="status-badge" data-tone={connectionTone(connection)}>
+              {connectionLabel(connection)}
+            </span>
           </div>
           <div>
-            <span>Last event seq</span>
+            <span>Последнее событие</span>
             <strong>#{lastSeq}</strong>
           </div>
         </div>
@@ -474,7 +484,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       {streamError ? (
         <div className="connection-warning" role="status">
-          Persisted state remains visible while live delivery recovers.{" "}
+          Сохранённое состояние остаётся доступным, пока поток событий восстанавливается.{" "}
           <span>{streamError}</span>
         </div>
       ) : null}
@@ -484,8 +494,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Current state</p>
-                <h2>Incidents</h2>
+                <p className="panel-kicker">Текущее состояние</p>
+                <h2>Инциденты</h2>
               </div>
               {selectedIncident ? (
                 <StatusBadge
@@ -512,34 +522,33 @@ export function RunConsole({ runId }: { runId: string }) {
                 </button>
                 <dl className="facts-grid">
                   <div>
-                    <dt>Incident ID</dt>
+                    <dt>ID инцидента</dt>
                     <dd><code>{selectedIncident.incident_id}</code></dd>
                   </div>
                   <div>
-                    <dt>Site</dt>
+                    <dt>Площадка</dt>
                     <dd>{selectedIncident.site_id}</dd>
                   </div>
                   <div>
-                    <dt>Status</dt>
-                    <dd>{selectedIncident.status}</dd>
+                    <dt>Статус</dt>
+                    <dd>{statusLabel(selectedIncident.status)}</dd>
                   </div>
                   <div>
-                    <dt>Reported device</dt>
+                    <dt>Устройство</dt>
                     <dd>{selectedIncident.reported_device_id}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Summary</dt>
+                    <dt>Описание</dt>
                     <dd>{selectedIncident.symptom}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Updated</dt>
+                    <dt>Обновлён</dt>
                     <dd>{formatTimestamp(selectedIncident.updated_at)}</dd>
                   </div>
                 </dl>
                 {selectedIncident.status === "ESCALATED" ? (
                   <p className="semantic-note">
-                    Escalated means field service has been requested; it does not
-                    mean the device is repaired or the incident is resolved.
+                    Эскалация означает, что выездной сервис запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
                   </p>
                 ) : null}
               </div>
@@ -566,15 +575,15 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </div>
             ) : (
-              <EmptyPanel>No incident is persisted for this run.</EmptyPanel>
+              <EmptyPanel>Для этого запуска пока не сохранено ни одного инцидента.</EmptyPanel>
             )}
           </article>
 
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Safe Product evidence</p>
-                <h2>Observations</h2>
+                <p className="panel-kicker">Безопасные факты продукта</p>
+                <h2>Наблюдения</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
             </div>
@@ -590,19 +599,19 @@ export function RunConsole({ runId }: { runId: string }) {
                 </button>
                 <dl className="facts-grid">
                   <div>
-                    <dt>Type</dt>
+                    <dt>Тип</dt>
                     <dd>{selectedObservation.source_type}</dd>
                   </div>
                   <div>
-                    <dt>Captured</dt>
+                    <dt>Получено</dt>
                     <dd>{formatTimestamp(selectedObservation.captured_at)}</dd>
                   </div>
                   <div className="wide">
-                    <dt>Evidence ID</dt>
+                    <dt>ID наблюдения</dt>
                     <dd><code>{selectedObservation.evidence_id}</code></dd>
                   </div>
                   <div className="wide">
-                    <dt>Source / entity context</dt>
+                    <dt>Связанные сущности</dt>
                     <dd>
                       {selectedObservation.entity_ids.length
                         ? selectedObservation.entity_ids.join(" · ")
@@ -618,12 +627,12 @@ export function RunConsole({ runId }: { runId: string }) {
                   </ul>
                 ) : (
                   <p className="muted-copy observation-copy">
-                    No normalized facts were persisted for this observation.
+                    Для этого наблюдения пока нет нормализованных фактов.
                   </p>
                 )}
                 {selectedObservation.expires_at ? (
                   <p className="expiry observation-copy">
-                    Validity timestamp:{" "}
+                    Действительно до:{" "}
                     <strong>
                       {formatTimestamp(selectedObservation.expires_at)}
                     </strong>
@@ -631,7 +640,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Typed safe payload
+                    Безопасные типизированные данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
@@ -649,14 +658,14 @@ export function RunConsole({ runId }: { runId: string }) {
                     <div className="entity-row-main">
                       <strong>{evidence.source_type}</strong>
                       <span>
-                        {evidence.entity_ids[0] ?? "Product observation"}
+                        {evidence.entity_ids[0] ?? "Наблюдение"}
                       </span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
                       </time>
                       {observationState(evidence) ? (
                         <span className="observation-state">
-                          State: {observationState(evidence)}
+                          Состояние: {statusLabel(observationState(evidence)!)}
                         </span>
                       ) : null}
                     </div>
@@ -677,8 +686,7 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                No observations have been persisted yet. The event-driven agent
-                will add safe typed evidence as it investigates.
+                Наблюдений пока нет. Событийный агент добавит безопасные факты по мере расследования.
               </EmptyPanel>
             )}
           </article>
@@ -688,8 +696,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Persisted audit trail</p>
-                <h2>Timeline</h2>
+                <p className="panel-kicker">Сохранённый журнал аудита</p>
+                <h2>Хронология</h2>
               </div>
               <span className="panel-count">{events.length}</span>
             </div>
@@ -708,7 +716,7 @@ export function RunConsole({ runId }: { runId: string }) {
                       </div>
                       <code className="event-type">{event.event_type}</code>
                       <details className="event-details">
-                        <summary>Safe persisted details</summary>
+                        <summary>Безопасные сохранённые детали</summary>
                         <pre>{JSON.stringify(event.payload, null, 2)}</pre>
                       </details>
                     </div>
@@ -716,7 +724,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>No persisted application events were returned.</EmptyPanel>
+              <EmptyPanel>Сохранённых событий приложения пока нет.</EmptyPanel>
             )}
           </article>
         </section>
@@ -725,8 +733,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Human boundary</p>
-                <h2>Proposal & approval</h2>
+                <p className="panel-kicker">Граница человеческого решения</p>
+                <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
                 <StatusBadge
@@ -740,26 +748,26 @@ export function RunConsole({ runId }: { runId: string }) {
               <div className="proposal-card">
                 <dl className="facts-grid">
                   <div className="wide">
-                    <dt>Proposal ID</dt>
+                    <dt>ID предложения</dt>
                     <dd><code>{latestProposal.proposal_id}</code></dd>
                   </div>
                   <div>
-                    <dt>Diagnosis</dt>
+                    <dt>Диагноз</dt>
                     <dd>{latestProposal.diagnosis}</dd>
                   </div>
                   <div>
-                    <dt>Action</dt>
+                    <dt>Действие</dt>
                     <dd>{latestProposal.action_type}</dd>
                   </div>
                 </dl>
 
                 <div className="proposal-rationale">
-                  <span>Rationale</span>
+                  <span>Обоснование</span>
                   <p>{latestProposal.rationale}</p>
                 </div>
 
                 <div className="proposal-evidence">
-                  <span className="subtle-label">Evidence IDs</span>
+                  <span className="subtle-label">ID наблюдений</span>
                   <div className="chip-row">
                     {latestProposal.evidence_ids.map((id) => (
                       <code key={id}>{id}</code>
@@ -770,8 +778,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
-                      Human confirmation is required before any field-service
-                      action can be registered.
+                      До регистрации действия выездного сервиса требуется решение человека.
                     </p>
                     <div className="decision-buttons">
                       <button
@@ -782,7 +789,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           void handleDecision(latestProposal, "approve")
                         }
                       >
-                        {decision?.verb === "approve" ? "Approving…" : "Approve"}
+                        {decision?.verb === "approve" ? "Одобряем…" : "Одобрить"}
                       </button>
                       <button
                         className="reject-button"
@@ -792,7 +799,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           void handleDecision(latestProposal, "reject")
                         }
                       >
-                        {decision?.verb === "reject" ? "Rejecting…" : "Reject"}
+                        {decision?.verb === "reject" ? "Отклоняем…" : "Отклонить"}
                       </button>
                     </div>
                   </div>
@@ -818,8 +825,7 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                No proposal exists yet. The event-driven agent will create one
-                only after sufficient persisted evidence is collected.
+                Предложения пока нет. Агент создаст его только после достаточного набора сохранённых наблюдений.
               </EmptyPanel>
             )}
           </article>
@@ -827,8 +833,8 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Registered outcome</p>
-                <h2>Field service</h2>
+                <p className="panel-kicker">Зарегистрированный результат</p>
+                <h2>Выездной сервис</h2>
               </div>
               <span className="panel-count">{state.work_orders.length}</span>
             </div>
@@ -847,27 +853,27 @@ export function RunConsole({ runId }: { runId: string }) {
                       </div>
                       <dl className="facts-grid">
                         <div className="wide">
-                          <dt>Action ID</dt>
+                          <dt>ID действия</dt>
                           <dd><code>{action?.action_id ?? "—"}</code></dd>
                         </div>
                         <div>
-                          <dt>Action type</dt>
-                          <dd>{action?.action_type ?? "Field service"}</dd>
+                          <dt>Тип действия</dt>
+                          <dd>{action?.action_type ?? "Выездной сервис"}</dd>
                         </div>
                         <div>
-                          <dt>Device</dt>
+                          <dt>Устройство</dt>
                           <dd>{order.device_id}</dd>
                         </div>
                         <div>
-                          <dt>Site</dt>
+                          <dt>Площадка</dt>
                           <dd>{order.site_id}</dd>
                         </div>
                         <div>
-                          <dt>Switch / port</dt>
+                          <dt>Коммутатор / порт</dt>
                           <dd>{order.switch_id} · {order.port_id}</dd>
                         </div>
                         <div>
-                          <dt>Executed</dt>
+                          <dt>Выполнено</dt>
                           <dd>
                             {action?.executed_at
                               ? formatTimestamp(action.executed_at)
@@ -875,7 +881,7 @@ export function RunConsole({ runId }: { runId: string }) {
                           </dd>
                         </div>
                         <div className="wide">
-                          <dt>Work order created</dt>
+                          <dt>Заявка на выезд создана</dt>
                           <dd>{formatTimestamp(order.created_at)}</dd>
                         </div>
                       </dl>
@@ -887,16 +893,16 @@ export function RunConsole({ runId }: { runId: string }) {
                 })}
               </div>
             ) : (
-              <EmptyPanel>No field-service work order has been registered.</EmptyPanel>
+              <EmptyPanel>Заявка на выезд ещё не зарегистрирована.</EmptyPanel>
             )}
           </article>
         </section>
       </div>
 
       <footer className="console-footer">
-        <span>Persistent state: PostgreSQL</span>
-        <span>Live transport: persisted SSE</span>
-        <span>AI dispatch: persisted event → native ADK</span>
+        <span>Источник истины: состояние продукта в PostgreSQL</span>
+        <span>Поток событий: сохранённый SSE</span>
+        <span>Запуск AI: сохранённое событие → Google ADK</span>
       </footer>
     </main>
   );

@@ -407,6 +407,6 @@ export function decisionRecoveryStatus(
 
 export function replayNotice(replayed: boolean): string {
   return replayed
-    ? "Persisted decision replayed; no duplicate action was created."
-    : "Decision recorded in authoritative persisted state.";
+    ? "Сохранённое решение воспроизведено; повторное действие не создавалось."
+    : "Решение сохранено в авторитетном состоянии продукта.";
 }
