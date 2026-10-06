@@ -819,9 +819,13 @@ def test_phase8d_restart_and_redelivery_preserve_native_invocation(
                     resumed_model,
                 ),
             )
+            restarted_session_service = create_database_session_service(
+                stack["engine"]
+            )
+            await restarted_session_service.prepare_tables()
             runtime2 = Scenario3AgentRuntime(
                 adapter=stack["adapter"],
-                session_service=stack["session_service"],
+                session_service=restarted_session_service,
             )
             stack["runtime"] = runtime2
 
