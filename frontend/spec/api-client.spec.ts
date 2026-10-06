@@ -19,7 +19,7 @@ describe("browser API client contract", () => {
     const api = await import("../lib/api");
 
     expect(api.configurationIssue()).toBe(
-      "Не настроен demo tenant для интерфейса.",
+      "Не настроен демонстрационный контур интерфейса.",
     );
   });
 
