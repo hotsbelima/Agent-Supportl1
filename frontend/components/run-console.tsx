@@ -34,6 +34,7 @@ import {
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   observationState,
+  proposalRationale,
   proposalTone,
   statusLabel,
   STALE_PROPOSAL_NOTE,
@@ -625,11 +626,7 @@ export function RunConsole({ runId }: { runId: string }) {
                       <li key={fact}>{fact}</li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="muted-copy observation-copy">
-                    Для этого наблюдения пока нет нормализованных фактов.
-                  </p>
-                )}
+                ) : null}
                 {selectedObservation.expires_at ? (
                   <p className="expiry observation-copy">
                     Действительно до:{" "}
@@ -763,7 +760,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
                 <div className="proposal-rationale">
                   <span>Обоснование</span>
-                  <p>{latestProposal.rationale}</p>
+                  <p>{proposalRationale(latestProposal)}</p>
                 </div>
 
                 <div className="proposal-evidence">
