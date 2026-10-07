@@ -37,6 +37,8 @@ import {
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
   observationState,
+  playbackIncidentStatus,
+  playbackVisibility,
   proposalRationale,
   proposalTone,
   statusLabel,
@@ -339,6 +341,17 @@ export function RunConsole({ runId }: { runId: string }) {
   const investigationActivities = state
     ? standardInvestigationActivities(visibleEvents, state)
     : [];
+  const playback = playbackVisibility(visibleEvents);
+  const visibleEvidence = state
+    ? state.evidence.filter((item) => playback.evidenceIds.has(item.evidence_id))
+    : [];
+  const visibleProposals = state
+    ? state.proposals.filter((item) => playback.proposalIds.has(item.proposal_id))
+    : [];
+  const visibleWorkOrders =
+    state && playback.actionExecuted ? state.work_orders : [];
+  const visibleExecutedActions =
+    state && playback.actionExecuted ? state.executed_actions : [];
 
   const selectedIncidentKey =
     selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
@@ -348,7 +361,7 @@ export function RunConsole({ runId }: { runId: string }) {
     ? state?.incidents.find((item) => item.incident_id === selectedIncidentKey) ?? null
     : null;
   const selectedObservation = selectedObservationKey
-    ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
+    ? visibleEvidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
     : null;
   const scenarioLabel =
     state?.run.scenario_id === "scenario-3"
@@ -357,10 +370,15 @@ export function RunConsole({ runId }: { runId: string }) {
         ? "Сценарий 1"
         : state?.run.scenario_id ?? "Неизвестный сценарий";
 
-  const latestProposal: ProposalView | null = state?.proposals.length
-    ? [...state.proposals]
+  const latestProposal: ProposalView | null = visibleProposals.length
+    ? [...visibleProposals]
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
+    : null;
+  const latestProposalDisplayStatus = latestProposal
+    ? !playback.approvalDecided && !playback.actionExecuted
+      ? "PENDING_APPROVAL"
+      : latestProposal.status
     : null;
 
   async function handleDecision(
@@ -472,9 +490,15 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
               {selectedIncident ? (
                 <StatusBadge
-                  value={selectedIncident.status}
+                  value={playbackIncidentStatus(
+                    selectedIncident.status,
+                    playback.actionExecuted,
+                  )}
                   tone={
-                    selectedIncident.status === "ESCALATED"
+                    playbackIncidentStatus(
+                      selectedIncident.status,
+                      playback.actionExecuted,
+                    ) === "ESCALATED"
                       ? "warning"
                       : "info"
                   }
@@ -504,7 +528,14 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Статус</dt>
-                    <dd>{statusLabel(selectedIncident.status)}</dd>
+                    <dd>
+                      {statusLabel(
+                        playbackIncidentStatus(
+                          selectedIncident.status,
+                          playback.actionExecuted,
+                        ),
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Устройство</dt>
@@ -519,7 +550,10 @@ export function RunConsole({ runId }: { runId: string }) {
                     <dd>{formatTimestamp(selectedIncident.updated_at)}</dd>
                   </div>
                 </dl>
-                {selectedIncident.status === "ESCALATED" ? (
+                {playbackIncidentStatus(
+                  selectedIncident.status,
+                  playback.actionExecuted,
+                ) === "ESCALATED" ? (
                   <p className="semantic-note">
                     Эскалация означает, что выездной сервис запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
                   </p>
@@ -534,8 +568,18 @@ export function RunConsole({ runId }: { runId: string }) {
                       <span>{item.site_id}</span>
                     </div>
                     <StatusBadge
-                      value={item.status}
-                      tone={item.status === "ESCALATED" ? "warning" : "info"}
+                      value={playbackIncidentStatus(
+                        item.status,
+                        playback.actionExecuted,
+                      )}
+                      tone={
+                        playbackIncidentStatus(
+                          item.status,
+                          playback.actionExecuted,
+                        ) === "ESCALATED"
+                          ? "warning"
+                          : "info"
+                      }
                     />
                     <button
                       className="detail-button"
@@ -558,7 +602,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
-              <span className="panel-count">{state.evidence.length}</span>
+              <span className="panel-count">{visibleEvidence.length}</span>
             </div>
 
             {selectedObservation ? (
@@ -616,9 +660,9 @@ export function RunConsole({ runId }: { runId: string }) {
                   </pre>
                 </div>
               </div>
-            ) : state.evidence.length ? (
+            ) : visibleEvidence.length ? (
               <div className="entity-list" role="list">
-                {state.evidence.map((evidence) => (
+                {visibleEvidence.map((evidence) => (
                   <div
                     className="entity-row observation-row"
                     role="listitem"
@@ -740,15 +784,18 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
               {latestProposal ? (
                 <StatusBadge
-                  value={latestProposal.status}
-                  tone={proposalTone(latestProposal.status)}
+                  value={latestProposalDisplayStatus ?? latestProposal.status}
+                  tone={proposalTone(
+                    latestProposalDisplayStatus ?? latestProposal.status,
+                  )}
                 />
               ) : null}
             </div>
 
             {latestProposal ? (
               <div className="proposal-card">
-                {latestProposal.status === "PENDING_APPROVAL" ? (
+                {latestProposal.status === "PENDING_APPROVAL" &&
+                playback.approvalRequested ? (
                   <div className="decision-area">
                     <p>
                       До регистрации действия выездного сервиса требуется решение человека.
@@ -807,7 +854,8 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                 </div>
 
-                {latestProposal.status === "STALE" ? (
+                {playback.approvalDecided &&
+                latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
                     {STALE_PROPOSAL_NOTE}
                   </p>
@@ -836,15 +884,15 @@ export function RunConsole({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Результат действия</p>
-                <h2>Выездной сервис</h2>
+                <h2>Что сделано</h2>
               </div>
-              <span className="panel-count">{state.work_orders.length}</span>
+              <span className="panel-count">{visibleWorkOrders.length}</span>
             </div>
 
-            {state.work_orders.length ? (
+            {visibleWorkOrders.length ? (
               <div className="work-order-list">
-                {state.work_orders.map((order) => {
-                  const action = state.executed_actions.find(
+                {visibleWorkOrders.map((order) => {
+                  const action = visibleExecutedActions.find(
                     (item) => item.proposal_id === order.proposal_id,
                   );
                   return (
@@ -894,9 +942,7 @@ export function RunConsole({ runId }: { runId: string }) {
                   );
                 })}
               </div>
-            ) : (
-              <EmptyPanel>Заявка на выезд ещё не зарегистрирована.</EmptyPanel>
-            )}
+            ) : null}
           </article>
         </section>
       </div>
