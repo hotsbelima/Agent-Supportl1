@@ -36,17 +36,20 @@ describe("Phase 9C deterministic public-demo release contract", () => {
     expect(scenario2Console).toContain("streamRunEvents");
   });
 
-  it("creates the first Scenario 2 incident immediately, then auto-advances every 20 seconds", () => {
+  it("creates the first Scenario 2 incident immediately, then auto-advances every 20 seconds without simulator chrome", () => {
     expect(scenario2Console).toContain("AUTO_SIGNAL_INTERVAL_MS = 20_000");
     expect(scenario2Console).toContain("signalCount === 0");
     expect(scenario2Console).toContain("? 0");
     expect(scenario2Console).toContain("advanceScenario2Simulator(runId, controller.signal)");
     expect(scenario2Console).toContain("latestSignalAt ?? state?.run.created_at");
     expect(scenario2Console).not.toContain("Добавить следующий сигнал");
+    expect(scenario2Console).not.toContain("Автоматическая симуляция");
+    expect(scenario2Console).not.toContain("Сигналы поступают автоматически");
+    expect(scenario2Console).not.toContain("progressNotice");
   });
 
-  it("paces the visible timeline every 10 seconds and renders newest visible events first", () => {
-    expect(presentation).toContain("TIMELINE_PLAYBACK_INTERVAL_MS = 10_000");
+  it("paces visible events every 5 seconds and renders newest visible events first", () => {
+    expect(presentation).toContain("TIMELINE_PLAYBACK_INTERVAL_MS = 5_000");
     expect(presentation).toContain("Math.floor(elapsedMs / TIMELINE_PLAYBACK_INTERVAL_MS) + 1");
     expect(presentation).toContain("return ordered.slice(0, visibleCount).reverse()");
     expect(runConsole).toContain("visibleTimelineEvents(events, state.run.created_at, playbackNow)");
@@ -61,10 +64,25 @@ describe("Phase 9C deterministic public-demo release contract", () => {
     expect(runConsole).not.toContain("Источник истины: состояние продукта в PostgreSQL");
     expect(scenario2Console).not.toContain("Источник истины: состояние продукта в PostgreSQL");
     expect(runConsole).toContain("Наблюдаемые факты");
-    expect(runConsole).toContain("История событий");
+    expect(runConsole).toContain("Ход расследования");
+    expect(runConsole).toContain("Технический журнал");
+    expect(runConsole).toContain("События системы");
     expect(runConsole).toContain("Подтверждение действий агента");
     expect(runConsole).toContain('className="run-footer-bar"');
     expect(scenario2Console).toContain('className="run-footer-bar"');
+  });
+
+  it("grounds the human investigation feed in persisted facts, evidence and proposals", () => {
+    expect(presentation).toContain('event.event_type === "external.signal"');
+    expect(presentation).toContain('event.event_type === "observation.recorded"');
+    expect(presentation).toContain('event.event_type === "proposal.created"');
+    expect(presentation).toContain("evidenceForEvent(event, state.evidence)");
+    expect(presentation).toContain("Агент выявил корреляцию между событиями");
+    expect(presentation).toContain("Получен сигнал мониторинга:");
+    expect(presentation).toContain("Получена заявка пользователя:");
+    expect(presentation).not.toContain("той же симптоматикой");
+    expect(runConsole).toContain("standardInvestigationActivities(visibleEvents, state)");
+    expect(scenario2Console).toContain("scenario2InvestigationActivities(");
   });
 
   it("localizes action and diagnosis enum values in the presentation layer", () => {
