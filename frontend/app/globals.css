@@ -63,17 +63,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   flex-direction: column;
   justify-content: flex-start;
 }
-.brand-lockup { display: flex; align-items: center; gap: 13px; }
-.brand-mark {
-  width: 42px; height: 42px;
-  border: 1px solid rgba(108, 228, 197, 0.38);
-  border-radius: 12px;
-  display: grid; place-items: center;
-  color: var(--accent); background: var(--accent-soft);
-  font-weight: 800; letter-spacing: -0.06em;
-}
-.hero-brand .brand-mark { width: 48px; height: 48px; }
-.brand-name { color: var(--muted); font-size: 14px; }
 .eyebrow, .panel-kicker, .hero-index, .subtle-label {
   margin: 0;
   color: var(--muted);
@@ -137,11 +126,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 .status-dot[data-state="unavailable"] {
   background: var(--danger); box-shadow: 0 0 0 5px rgba(255, 126, 136, 0.08);
 }
-.launch-meta {
-  margin-top: 24px; display: flex; justify-content: space-between; gap: 20px;
-  color: var(--muted); font-size: 12px;
-}
-.launch-meta code { color: var(--text); }
 .primary-button, .secondary-button, .approve-button, .reject-button {
   border: 0; border-radius: 12px; min-height: 48px; padding: 0 18px;
   font-weight: 760; cursor: pointer;
@@ -549,14 +533,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 
 .scenario-switcher {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.scenario-demonstrates {
-  margin-top: 18px !important;
-  color: var(--accent) !important;
-  font-size: 12px;
-  font-weight: 720;
-  letter-spacing: 0.01em;
 }
 
 .run-header {
