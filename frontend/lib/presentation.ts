@@ -197,9 +197,85 @@ function activity(
 export function activityKindLabel(kind: InvestigationActivityKind): string {
   if (kind === "fact") return "Факт";
   if (kind === "check") return "Результат проверки";
-  if (kind === "agent") return "Вывод агента";
+  if (kind === "agent") return "Действие агента";
   if (kind === "human") return "Решение человека";
   return "Результат";
+}
+
+const EVIDENCE_SOURCE_LABELS: Record<string, string> = {
+  CMDB_SNAPSHOT: "Данные CMDB",
+  DEVICE_SNAPSHOT: "Состояние устройства",
+  SITE_HEALTH: "Состояние площадки",
+  ACCESS_LINK_DIAGNOSTIC: "Диагностика канала доступа",
+  INCIDENT_SEARCH: "Проверка связанных инцидентов",
+  KB_ARTICLE: "Материал базы знаний",
+  SERVICE_DEPENDENCY_MAPPING: "Зависимости сервиса",
+  EXTERNAL_DEPENDENCY_STATUS: "Состояние внешней зависимости",
+  LOCAL_SERVICE_HEALTH: "Состояние локального сервиса",
+  MAJOR_INCIDENT_SEARCH: "Проверка крупных инцидентов",
+  OPERATIONAL_SIGNAL: "Операционный сигнал",
+};
+
+export function evidenceSourceLabel(value: string): string {
+  return EVIDENCE_SOURCE_LABELS[value] ?? "Системное наблюдение";
+}
+
+const INCIDENT_TEXT_LABELS: Record<string, string> = {
+  "Payment terminal is unavailable.": "Платёжный терминал недоступен.",
+  "Payment terminal is unavailable": "Платёжный терминал недоступен.",
+  payment_terminal_unavailable: "Платёжный терминал недоступен.",
+  payment_gateway_timeout: "Таймаут платёжного шлюза.",
+  payment_gateway_timeouts: "Таймауты платёжного шлюза.",
+  payment_attempts_timing_out: "Платёжные операции завершаются по таймауту.",
+};
+
+export function incidentTextLabel(value: string): string {
+  const mapped = INCIDENT_TEXT_LABELS[value];
+  if (mapped) return mapped;
+  return /[А-Яа-яЁё]/.test(value) ? value : "Зафиксирована проблема сервиса.";
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  payment_gateway: "Платёжный шлюз",
+  payment_terminal: "Платёжный терминал",
+  payments: "Платежи",
+};
+
+export function serviceLabel(value: string): string {
+  return SERVICE_LABELS[value] ?? (/^[A-Za-z0-9_.-]+$/.test(value) ? "Сервис" : value);
+}
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  "simulation.started": "Запуск сценария",
+  "external.signal": "Операционный сигнал",
+  "observation.recorded": "Наблюдение сохранено",
+  "tool.started": "Начата системная проверка",
+  "tool.finished": "Системная проверка завершена",
+  "finding.recorded": "Диагностический вывод",
+  "proposal.created": "Предложение действия",
+  "approval.decided": "Решение человека",
+  "action.executed": "Действие выполнено",
+  "run.status_changed": "Изменение состояния",
+};
+
+export function eventTypeLabel(value: string): string {
+  return EVENT_TYPE_LABELS[value] ?? "Системное событие";
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  get_device: "Проверка устройства",
+  get_site_health: "Проверка площадки",
+  diagnose_access_link: "Диагностика канала доступа",
+  search_incidents: "Проверка связанных инцидентов",
+  get_kb_article: "Проверка базы знаний",
+  get_service_dependency: "Проверка зависимостей сервиса",
+  get_external_dependency_status: "Проверка внешней зависимости",
+  get_local_service_health: "Проверка локального сервиса",
+  search_major_incidents: "Проверка крупных инцидентов",
+};
+
+function toolLabel(value: string): string {
+  return TOOL_LABELS[value] ?? "Системная проверка";
 }
 
 export function eventSummary(event: ApplicationEventView): string {
@@ -212,12 +288,12 @@ export function eventSummary(event: ApplicationEventView): string {
     case "observation.recorded": {
       const sourceType = stringValue(payload, "source_type");
       return sourceType
-        ? `Сохранено наблюдение: ${sourceType}`
+        ? `Сохранено наблюдение: ${evidenceSourceLabel(sourceType)}`
         : "Сохранено наблюдение";
     }
     case "tool.started": {
       const tool = stringValue(payload, "tool_name");
-      return tool ? `Запущен инструмент: ${tool}` : "Запущен инструмент";
+      return tool ? `Начата проверка: ${toolLabel(tool)}` : "Начата системная проверка";
     }
     case "tool.finished":
       return "Инструмент завершил работу";
@@ -431,7 +507,7 @@ function standardEvidenceActivity(
         event,
         "check",
         "Агент получил новое подтверждённое наблюдение",
-        `Тип наблюдения: ${evidence.source_type}.`,
+        `Тип наблюдения: ${evidenceSourceLabel(evidence.source_type)}.`,
       );
   }
 }
@@ -821,13 +897,10 @@ export function connectionLabel(state: ConnectionState): string {
 export function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return (
-    new Intl.DateTimeFormat("ru-RU", {
-      dateStyle: "medium",
-      timeStyle: "medium",
-      timeZone: "UTC",
-    }).format(date) + " UTC"
-  );
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(date);
 }
 
 export function proposalTone(
