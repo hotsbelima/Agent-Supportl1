@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import {
   actionTypeLabel,
+  activityKindLabel,
   connectionLabel,
   connectionTone,
   eventSummary,
@@ -23,6 +24,7 @@ import {
   proposalTone,
   statusLabel,
   STALE_PROPOSAL_NOTE,
+  scenario2InvestigationActivities,
   visibleTimelineEvents,
 } from "@/lib/presentation";
 import { abortableDelay } from "@/lib/recovery";
@@ -69,7 +71,6 @@ export function Scenario2Console({ runId }: { runId: string }) {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [progressNotice, setProgressNotice] = useState<string | null>(null);
   const [decision, setDecision] = useState<{
     proposalId: string;
     verb: "approve" | "reject";
@@ -262,23 +263,14 @@ export function Scenario2Console({ runId }: { runId: string }) {
     const timeoutId = window.setTimeout(() => {
       if (controller.signal.aborted || autoAdvanceInFlightRef.current) return;
       autoAdvanceInFlightRef.current = true;
-      setProgressNotice(null);
-
       void advanceScenario2Simulator(runId, controller.signal)
         .then((result) => {
           if (controller.signal.aborted) return;
           setState(result.state);
-          setProgressNotice(
-            result.ingested
-              ? `Сигнал ${result.ingested.signal.source_ref} сохранён. Состояние продукта обновлено.`
-              : result.complete
-                ? "Все демонстрационные сигналы уже сохранены."
-                : "Автоматический шаг симуляции выполнен.",
-          );
         })
         .catch((error) => {
           if (controller.signal.aborted || isAbortError(error)) return;
-          setProgressNotice(displayApiError(error));
+          setStreamError(displayApiError(error));
         })
         .finally(() => {
           autoAdvanceInFlightRef.current = false;
@@ -385,6 +377,10 @@ export function Scenario2Console({ runId }: { runId: string }) {
     events,
     state.run.created_at,
     playbackNow,
+  );
+  const investigationActivities = scenario2InvestigationActivities(
+    visibleEvents,
+    state,
   );
 
   return (
@@ -576,11 +572,44 @@ export function Scenario2Console({ runId }: { runId: string }) {
         </section>
 
         <section className="console-column timeline-column">
+          <article className="panel scroll-panel investigation-panel">
+            <div className="panel-heading sticky-heading">
+              <div>
+                <p className="panel-kicker">
+                  Что происходило и к каким выводам пришёл агент
+                </p>
+                <h2>Ход расследования</h2>
+              </div>
+              <span className="panel-count">{investigationActivities.length}</span>
+            </div>
+
+            {investigationActivities.length ? (
+              <ol className="activity-list">
+                {investigationActivities.map((item) => (
+                  <li className="activity-item" data-kind={item.kind} key={item.id}>
+                    <div className="activity-meta">
+                      <span>{activityKindLabel(item.kind)}</span>
+                      <time dateTime={item.occurred_at}>
+                        {formatTimestamp(item.occurred_at)}
+                      </time>
+                    </div>
+                    <strong>{item.title}</strong>
+                    {item.detail ? <p>{item.detail}</p> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyPanel>
+                Ход расследования появится после первых подтверждённых событий.
+              </EmptyPanel>
+            )}
+          </article>
+
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">История событий</p>
-                <h2>Хронология</h2>
+                <p className="panel-kicker">События системы</p>
+                <h2>Технический журнал</h2>
               </div>
               <span className="panel-count">{visibleEvents.length}</span>
             </div>
@@ -607,7 +636,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>Сохранённых событий пока нет.</EmptyPanel>
+              <EmptyPanel>Событий системы пока нет.</EmptyPanel>
             )}
           </article>
         </section>
@@ -616,7 +645,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel decision-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Корреляция и решение</p>
+                <p className="panel-kicker">Подтверждение действий агента</p>
                 <h2>Предложение крупного инцидента</h2>
               </div>
               {latestProposal ? (
@@ -624,22 +653,6 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   value={latestProposal.status}
                   tone={proposalTone(latestProposal.status)}
                 />
-              ) : null}
-            </div>
-
-            <div className="scenario-progress">
-              <div>
-                <span className="subtle-label">Автоматическая симуляция</span>
-                <p>
-                  Сигналы поступают автоматически каждые 20 секунд. Сохранено:{" "}
-                  <strong>{state.operational_signals.length}</strong> из{" "}
-                  <strong>{CANONICAL_SIGNAL_COUNT}</strong>.
-                </p>
-              </div>
-              {progressNotice ? (
-                <p className="decision-notice" role="status">
-                  {progressNotice}
-                </p>
               ) : null}
             </div>
 
@@ -741,7 +754,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel result-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Результат после решения человека</p>
+                <p className="panel-kicker">Результат действия</p>
                 <h2>Крупный инцидент</h2>
               </div>
               <span className="panel-count">{state.major_incidents.length}</span>
