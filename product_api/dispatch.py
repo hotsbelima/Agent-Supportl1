@@ -57,8 +57,8 @@ class Scenario1DispatchWorker:
         agent_runtime: Scenario1AgentRuntime,
         scenario3_agent_runtime: Scenario3AgentRuntime | None = None,
         poll_interval_seconds: float = 0.5,
-        lease_seconds: float = 180.0,
-        invocation_timeout_seconds: float = 120.0,
+        lease_seconds: float = 240.0,
+        invocation_timeout_seconds: float = 180.0,
     ) -> None:
         if poll_interval_seconds <= 0:
             raise ValueError("poll_interval_seconds must be positive")
@@ -149,6 +149,42 @@ class Scenario1DispatchWorker:
             )
             await uow.commit()
 
+    async def _mark_native_hitl_ready(
+        self,
+        record: ApplicationOutboxRecord,
+        *,
+        proposal_id: str,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            events = getattr(uow, "events", None)
+            if events is None:
+                return
+            existing = await events.list_after(
+                tenant_id=record.tenant_id,
+                run_id=record.run_id,
+                after_seq=0,
+                limit=1000,
+            )
+            if any(
+                event.event_type is ApplicationEventType.RUN_STATUS_CHANGED
+                and event.payload.get("cause") == "native_hitl_paused"
+                and event.payload.get("proposal_id") == proposal_id
+                for event in existing
+            ):
+                return
+            await events.append(
+                tenant_id=record.tenant_id,
+                run_id=record.run_id,
+                event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                payload={
+                    "previous_status": "WAITING_APPROVAL",
+                    "status": "WAITING_APPROVAL",
+                    "cause": "native_hitl_paused",
+                    "proposal_id": proposal_id,
+                },
+            )
+            await uow.commit()
+
     async def dispatch_once(self) -> bool:
         """Process at most one due envelope; useful for deterministic tests."""
         configured_runtimes = [
@@ -212,6 +248,10 @@ class Scenario1DispatchWorker:
                     run_id=record.run_id,
                     operational_event_id=event_id,
                     operational_signal=operational_signal,
+                    force_required_outcome_continuation=(
+                        snapshot.run.scenario_id == "scenario-3"
+                        and record.attempt_count > 1
+                    ),
                 ),
                 timeout=self._invocation_timeout,
             )
@@ -222,6 +262,15 @@ class Scenario1DispatchWorker:
             ):
                 raise RuntimeError(
                     "Scenario 3 invocation ended before proposal/HITL terminal state"
+                )
+            if (
+                result.awaiting_human_decision
+                and result.pending_proposal_id
+                and result.paused_function_call_id
+            ):
+                await self._mark_native_hitl_ready(
+                    record,
+                    proposal_id=result.pending_proposal_id,
                 )
         except asyncio.CancelledError:
             # Release the durable lease immediately on graceful shutdown when
@@ -517,6 +566,42 @@ class Scenario2DispatchWorker:
             },
         }, requires_proposal
 
+    async def _mark_native_hitl_ready(
+        self,
+        record: ApplicationOutboxRecord,
+        *,
+        proposal_id: str,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            events = getattr(uow, "events", None)
+            if events is None:
+                return
+            existing = await events.list_after(
+                tenant_id=record.tenant_id,
+                run_id=record.run_id,
+                after_seq=0,
+                limit=1000,
+            )
+            if any(
+                event.event_type is ApplicationEventType.RUN_STATUS_CHANGED
+                and event.payload.get("cause") == "native_hitl_paused"
+                and event.payload.get("proposal_id") == proposal_id
+                for event in existing
+            ):
+                return
+            await events.append(
+                tenant_id=record.tenant_id,
+                run_id=record.run_id,
+                event_type=ApplicationEventType.RUN_STATUS_CHANGED,
+                payload={
+                    "previous_status": "WAITING_APPROVAL",
+                    "status": "WAITING_APPROVAL",
+                    "cause": "native_hitl_paused",
+                    "proposal_id": proposal_id,
+                },
+            )
+            await uow.commit()
+
     async def dispatch_once(self) -> bool:
         """Process one due Scenario 2 envelope after a recoverable ADK point."""
         if not self._agent_runtime.gemini_configured:
@@ -545,6 +630,15 @@ class Scenario2DispatchWorker:
             ):
                 raise RuntimeError(
                     "Scenario 2 cross-site invocation ended before proposal/HITL terminal state"
+                )
+            if (
+                result.awaiting_human_decision
+                and result.pending_proposal_id
+                and result.paused_function_call_id
+            ):
+                await self._mark_native_hitl_ready(
+                    record,
+                    proposal_id=result.pending_proposal_id,
                 )
         except asyncio.CancelledError:
             try:
