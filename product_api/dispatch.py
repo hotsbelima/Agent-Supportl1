@@ -532,6 +532,7 @@ class Scenario2DispatchWorker:
                     run_id=record.run_id,
                     product_event_id=event_id,
                     operational_fact=fact,
+                    require_proposal_hitl=requires_proposal,
                 ),
                 timeout=self._invocation_timeout,
             )
