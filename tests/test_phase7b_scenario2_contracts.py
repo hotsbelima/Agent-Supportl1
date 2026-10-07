@@ -15,6 +15,7 @@ from product_api.scenario2_fixture import (
     CANONICAL_SIGNAL_SEQUENCE,
     CORRELATION_KEY,
     INCIDENT_KZN,
+    INCIDENT_KZN_ITSM,
     INCIDENT_SAM,
     SERVICE_KEY,
     SIGNAL_1_ID,
@@ -223,7 +224,7 @@ def _proposal(
     )
 
 
-def test_canonical_fixture_sequence_and_incident_reuse_are_exact():
+def test_canonical_fixture_sequence_keeps_source_incidents_separate():
     assert [item.signal_id for item in CANONICAL_SIGNAL_SEQUENCE] == [
         SIGNAL_1_ID,
         SIGNAL_2_ID,
@@ -235,9 +236,9 @@ def test_canonical_fixture_sequence_and_incident_reuse_are_exact():
         SITE_SAM,
     ]
     assert CANONICAL_SIGNAL_SEQUENCE[0].incident_id == INCIDENT_KZN
-    assert CANONICAL_SIGNAL_SEQUENCE[1].incident_id == INCIDENT_KZN
+    assert CANONICAL_SIGNAL_SEQUENCE[1].incident_id == INCIDENT_KZN_ITSM
     assert CANONICAL_SIGNAL_SEQUENCE[2].incident_id == INCIDENT_SAM
-    assert len(CANONICAL_SERVICE_INCIDENTS) == 2
+    assert len(CANONICAL_SERVICE_INCIDENTS) == 3
     assert all(
         "AcmePay" not in str(item.safe_payload)
         for item in CANONICAL_SIGNAL_SEQUENCE
