@@ -27,6 +27,7 @@ from agent_runtime.scenario3_agent import (
     build_scenario3_agent,
 )
 from agent_runtime.scenario3_service import Scenario3AgentRuntime
+from agent_runtime.scenario3_tools import Scenario3AdkTools
 from agent_runtime.service import AgentResumeResult
 from agent_runtime.sessions import get_run_session
 from product_api.app import ProductApiContainer, create_app
@@ -190,6 +191,55 @@ def test_phase8c2_scenario1_and_scenario3_share_authoritative_access_link_truth(
             assert scenario3_view is not None
             assert scenario1_view.operational_state is OperationalState.UP
             assert scenario3_view.operational_state is OperationalState.UP
+
+    asyncio.run(scenario())
+
+
+
+def test_phase8c2_scenario3_read_cache_reuses_only_successful_unexpired_results():
+    class _CacheAdapter:
+        def __init__(self) -> None:
+            self.calls: dict[str, int] = {}
+
+        async def search_kb(self, context, request):
+            del context
+            query = request.query
+            self.calls[query] = self.calls.get(query, 0) + 1
+            if query == "failed":
+                return {"ok": False, "error": {"code": "KB_UNAVAILABLE"}}
+            expires_at = (
+                "2099-01-01T00:00:00+00:00"
+                if query == "fresh"
+                else "2000-01-01T00:00:00+00:00"
+            )
+            return {
+                "ok": True,
+                "query": query,
+                "evidence": [{"expires_at": expires_at}],
+                "articles": [{"article_id": f"KB-{query}"}],
+            }
+
+    async def scenario() -> None:
+        adapter = _CacheAdapter()
+        tools = Scenario3AdkTools(adapter)
+        context = SimpleNamespace(
+            user_id="TENANT-8C2-CACHE",
+            session=SimpleNamespace(id="RUN-8C2-CACHE"),
+        )
+
+        first = await tools.search_kb("fresh", context)
+        first["articles"][0]["article_id"] = "MUTATED"
+        second = await tools.search_kb("fresh", context)
+        assert adapter.calls["fresh"] == 1
+        assert second["articles"][0]["article_id"] == "KB-fresh"
+
+        await tools.search_kb("expired", context)
+        await tools.search_kb("expired", context)
+        assert adapter.calls["expired"] == 2
+
+        await tools.search_kb("failed", context)
+        await tools.search_kb("failed", context)
+        assert adapter.calls["failed"] == 2
 
     asyncio.run(scenario())
 
