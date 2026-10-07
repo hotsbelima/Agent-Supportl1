@@ -95,7 +95,8 @@ export function playbackVisibility(
 
     if (
       event.event_type === "run.status_changed" &&
-      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
     ) {
       approvalRequested = true;
       continue;
@@ -717,7 +718,8 @@ export function standardInvestigationActivities(
 
     if (
       event.event_type === "run.status_changed" &&
-      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
     ) {
       result.push(
         activity(
@@ -936,7 +938,8 @@ export function scenario2InvestigationActivities(
 
     if (
       event.event_type === "run.status_changed" &&
-      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
     ) {
       result.push(
         activity(
