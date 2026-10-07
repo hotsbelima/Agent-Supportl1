@@ -8,7 +8,29 @@ import type {
 } from "./types";
 
 export const FIELD_SERVICE_OUTCOME_NOTE =
-  "Заявка на выездной сервис зарегистрирована. Это ещё не подтверждает ремонт устройства.";
+  "Заявка на выездной сервис зарегистрирована.";
+
+export const TIMELINE_PLAYBACK_INTERVAL_MS = 10_000;
+
+export function visibleTimelineEvents(
+  events: ApplicationEventView[],
+  runStartedAt: string,
+  nowMs: number,
+): ApplicationEventView[] {
+  const ordered = [...events].sort((a, b) => a.seq - b.seq);
+  if (!ordered.length) return [];
+
+  const startedMs = Date.parse(runStartedAt);
+  if (!Number.isFinite(startedMs)) return ordered.reverse();
+
+  const elapsedMs = Math.max(0, nowMs - startedMs);
+  const visibleCount = Math.min(
+    ordered.length,
+    Math.floor(elapsedMs / TIMELINE_PLAYBACK_INTERVAL_MS) + 1,
+  );
+
+  return ordered.slice(0, visibleCount).reverse();
+}
 
 export const STALE_PROPOSAL_NOTE =
   "Решение человека сохранено, но свежие авторитетные данные больше не разрешают выполнение. Действие выездного сервиса не создавалось.";
@@ -101,6 +123,27 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function statusLabel(value: string): string {
   return STATUS_LABELS[value] ?? value;
+}
+
+const DIAGNOSIS_LABELS: Record<string, string> = {
+  LOCAL_ACCESS_LINK_FAILURE: "Сбой локального канала доступа",
+};
+
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  ONSITE_FIELD_VISIT: "Выезд специалиста на площадку",
+  FIELD_SERVICE_VISIT: "Выезд специалиста на площадку",
+  CREATE_MAJOR_INCIDENT: "Создание крупного инцидента",
+  REGISTER_MAJOR_INCIDENT: "Регистрация крупного инцидента",
+  MAJOR_INCIDENT_CREATE: "Создание крупного инцидента",
+  MAJOR_INCIDENT_REGISTRATION: "Регистрация крупного инцидента",
+};
+
+export function diagnosisLabel(value: string): string {
+  return DIAGNOSIS_LABELS[value] ?? "Диагноз сформирован агентом";
+}
+
+export function actionTypeLabel(value: string): string {
+  return ACTION_TYPE_LABELS[value] ?? "Действие агента";
 }
 
 export function proposalRationale(proposal: ProposalView): string {
