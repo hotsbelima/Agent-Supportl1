@@ -28,8 +28,10 @@ import {
   type TimelineAccumulator,
 } from "@/lib/recovery";
 import {
+  actionTypeLabel,
   connectionLabel,
   connectionTone,
+  diagnosisLabel,
   eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
@@ -38,6 +40,7 @@ import {
   proposalTone,
   statusLabel,
   STALE_PROPOSAL_NOTE,
+  visibleTimelineEvents,
 } from "@/lib/presentation";
 import { streamRunEvents } from "@/lib/sse";
 import type {
@@ -84,6 +87,7 @@ function recoveryMessage(error: unknown): string {
 export function RunConsole({ runId }: { runId: string }) {
   const [state, setState] = useState<RunStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
+  const [playbackNow, setPlaybackNow] = useState(() => Date.now());
   const [connection, setConnection] =
     useState<ConnectionState>("Reconnecting");
   const [loading, setLoading] = useState(true);
@@ -319,7 +323,19 @@ export function RunConsole({ runId }: { runId: string }) {
     };
   }, [publishState, refreshState, runId]);
 
-  const primaryIncident = state?.incidents[0] ?? null;
+  useEffect(() => {
+    setPlaybackNow(Date.now());
+    const timerId = window.setInterval(() => {
+      setPlaybackNow(Date.now());
+    }, 1_000);
+
+    return () => window.clearInterval(timerId);
+  }, [runId]);
+
+  const visibleEvents = state
+    ? visibleTimelineEvents(events, state.run.created_at, playbackNow)
+    : [];
+
   const selectedIncidentKey =
     selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
   const selectedObservationKey =
@@ -330,7 +346,6 @@ export function RunConsole({ runId }: { runId: string }) {
   const selectedObservation = selectedObservationKey
     ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
     : null;
-  const lastSeq = events.at(-1)?.seq ?? 0;
   const scenarioLabel =
     state?.run.scenario_id === "scenario-3"
       ? "Сценарий 3"
@@ -436,53 +451,6 @@ export function RunConsole({ runId }: { runId: string }) {
 
   return (
     <main className="console-shell">
-      <header className="run-header">
-        <div className="brand-lockup">
-          <Link href="/" className="brand-mark" aria-label="На главную">
-            8O
-          </Link>
-          <div>
-            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
-            <h1>{scenarioLabel} · операционная консоль</h1>
-          </div>
-        </div>
-
-        <div className="run-header-actions">
-          <Link className="secondary-button compact-button" href="/">
-            Новый запуск
-          </Link>
-        </div>
-
-        <div className="run-header-grid">
-          <div>
-            <span>Запуск</span>
-            <code>{state.run.run_id}</code>
-          </div>
-          <div>
-            <span>Сценарий</span>
-            <strong>{state.run.scenario_id}</strong>
-          </div>
-          <div>
-            <span>Статус запуска</span>
-            <StatusBadge value={state.run.status} tone="info" />
-          </div>
-          <div>
-            <span>Инцидент</span>
-            <code>{primaryIncident?.incident_id ?? "—"}</code>
-          </div>
-          <div>
-            <span>Соединение</span>
-            <span className="status-badge" data-tone={connectionTone(connection)}>
-              {connectionLabel(connection)}
-            </span>
-          </div>
-          <div>
-            <span>Последнее событие</span>
-            <strong>#{lastSeq}</strong>
-          </div>
-        </div>
-      </header>
-
       {streamError ? (
         <div className="connection-warning" role="status">
           Сохранённое состояние остаётся доступным, пока поток событий восстанавливается.{" "}
@@ -583,7 +551,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Безопасные факты продукта</p>
+                <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
@@ -693,15 +661,15 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Сохранённый журнал аудита</p>
+                <p className="panel-kicker">История событий</p>
                 <h2>Хронология</h2>
               </div>
-              <span className="panel-count">{events.length}</span>
+              <span className="panel-count">{visibleEvents.length}</span>
             </div>
 
-            {events.length ? (
+            {visibleEvents.length ? (
               <ol className="timeline-list">
-                {events.map((event) => (
+                {visibleEvents.map((event) => (
                   <li className="timeline-item" key={event.seq}>
                     <div className="timeline-rail"><span>{event.seq}</span></div>
                     <div className="timeline-content">
@@ -730,7 +698,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Граница человеческого решения</p>
+                <p className="panel-kicker">Подтверждение действий агента</p>
                 <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
@@ -743,35 +711,6 @@ export function RunConsole({ runId }: { runId: string }) {
 
             {latestProposal ? (
               <div className="proposal-card">
-                <dl className="facts-grid">
-                  <div className="wide">
-                    <dt>ID предложения</dt>
-                    <dd><code>{latestProposal.proposal_id}</code></dd>
-                  </div>
-                  <div>
-                    <dt>Диагноз</dt>
-                    <dd>{latestProposal.diagnosis}</dd>
-                  </div>
-                  <div>
-                    <dt>Действие</dt>
-                    <dd>{latestProposal.action_type}</dd>
-                  </div>
-                </dl>
-
-                <div className="proposal-rationale">
-                  <span>Обоснование</span>
-                  <p>{proposalRationale(latestProposal)}</p>
-                </div>
-
-                <div className="proposal-evidence">
-                  <span className="subtle-label">ID наблюдений</span>
-                  <div className="chip-row">
-                    {latestProposal.evidence_ids.map((id) => (
-                      <code key={id}>{id}</code>
-                    ))}
-                  </div>
-                </div>
-
                 {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
@@ -801,6 +740,35 @@ export function RunConsole({ runId }: { runId: string }) {
                     </div>
                   </div>
                 ) : null}
+
+                <dl className="facts-grid">
+                  <div className="wide">
+                    <dt>ID предложения</dt>
+                    <dd><code>{latestProposal.proposal_id}</code></dd>
+                  </div>
+                  <div>
+                    <dt>Диагноз</dt>
+                    <dd>{diagnosisLabel(latestProposal.diagnosis)}</dd>
+                  </div>
+                  <div>
+                    <dt>Действие</dt>
+                    <dd>{actionTypeLabel(latestProposal.action_type)}</dd>
+                  </div>
+                </dl>
+
+                <div className="proposal-rationale">
+                  <span>Обоснование</span>
+                  <p>{proposalRationale(latestProposal)}</p>
+                </div>
+
+                <div className="proposal-evidence">
+                  <span className="subtle-label">ID наблюдений</span>
+                  <div className="chip-row">
+                    {latestProposal.evidence_ids.map((id) => (
+                      <code key={id}>{id}</code>
+                    ))}
+                  </div>
+                </div>
 
                 {latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
@@ -855,7 +823,7 @@ export function RunConsole({ runId }: { runId: string }) {
                         </div>
                         <div>
                           <dt>Тип действия</dt>
-                          <dd>{action?.action_type ?? "Выездной сервис"}</dd>
+                          <dd>{action ? actionTypeLabel(action.action_type) : "Выездной сервис"}</dd>
                         </div>
                         <div>
                           <dt>Устройство</dt>
@@ -896,10 +864,16 @@ export function RunConsole({ runId }: { runId: string }) {
         </section>
       </div>
 
-      <footer className="console-footer">
-        <span>Источник истины: состояние продукта в PostgreSQL</span>
-        <span>Поток событий: сохранённый SSE</span>
-        <span>Запуск AI: сохранённое событие → Google ADK</span>
+      <footer className="run-footer-bar">
+        <strong>{scenarioLabel} · операционная консоль</strong>
+        <div className="run-footer-actions">
+          <span className="status-badge" data-tone={connectionTone(connection)}>
+            {connectionLabel(connection)}
+          </span>
+          <Link className="secondary-button compact-button" href="/">
+            Новый запуск
+          </Link>
+        </div>
       </footer>
     </main>
   );
