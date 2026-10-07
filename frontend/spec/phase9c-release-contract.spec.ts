@@ -7,6 +7,7 @@ const runConsole = readFileSync(new URL("../components/run-console.tsx", import.
 const scenario2Console = readFileSync(new URL("../components/scenario2-console.tsx", import.meta.url), "utf8");
 const runRouter = readFileSync(new URL("../components/run-router.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../lib/api.ts", import.meta.url), "utf8");
+const presentation = readFileSync(new URL("../lib/presentation.ts", import.meta.url), "utf8");
 const recovery = readFileSync(new URL("../lib/recovery.ts", import.meta.url), "utf8");
 const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
 
@@ -40,6 +41,38 @@ describe("Phase 9C deterministic public-demo release contract", () => {
     expect(scenario2Console).toContain("advanceScenario2Simulator(runId, controller.signal)");
     expect(scenario2Console).toContain("latestSignalAt ?? state?.run.created_at");
     expect(scenario2Console).not.toContain("Добавить следующий сигнал");
+  });
+
+  it("paces the visible timeline every 10 seconds and renders newest visible events first", () => {
+    expect(presentation).toContain("TIMELINE_PLAYBACK_INTERVAL_MS = 10_000");
+    expect(presentation).toContain("Math.floor(elapsedMs / TIMELINE_PLAYBACK_INTERVAL_MS) + 1");
+    expect(presentation).toContain("return ordered.slice(0, visibleCount).reverse()");
+    expect(runConsole).toContain("visibleTimelineEvents(events, state.run.created_at, playbackNow)");
+    expect(scenario2Console).toContain("visibleTimelineEvents(");
+    expect(scenario2Console).toContain("state.run.created_at");
+  });
+
+  it("keeps the portfolio UI focused on the investigation instead of internal runtime metadata", () => {
+    expect(launcher).not.toContain('className="readiness-row"');
+    expect(runConsole).not.toContain("8O");
+    expect(scenario2Console).not.toContain("8O");
+    expect(runConsole).not.toContain("Источник истины: состояние продукта в PostgreSQL");
+    expect(scenario2Console).not.toContain("Источник истины: состояние продукта в PostgreSQL");
+    expect(runConsole).toContain("Наблюдаемые факты");
+    expect(runConsole).toContain("История событий");
+    expect(runConsole).toContain("Подтверждение действий агента");
+    expect(runConsole).toContain('className="run-footer-bar"');
+    expect(scenario2Console).toContain('className="run-footer-bar"');
+  });
+
+  it("localizes action and diagnosis enum values in the presentation layer", () => {
+    expect(presentation).toContain('LOCAL_ACCESS_LINK_FAILURE: "Сбой локального канала доступа"');
+    expect(presentation).toContain('ONSITE_FIELD_VISIT: "Выезд специалиста на площадку"');
+    expect(runConsole).toContain("diagnosisLabel(latestProposal.diagnosis)");
+    expect(runConsole).toContain("actionTypeLabel(latestProposal.action_type)");
+    expect(scenario2Console).toContain("actionTypeLabel(latestProposal.action_type)");
+    expect(presentation).toContain('"Заявка на выездной сервис зарегистрирована."');
+    expect(presentation).not.toContain("Это ещё не подтверждает ремонт устройства");
   });
 
   it("uses the correct human-decision API family per scenario type", () => {
