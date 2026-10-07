@@ -459,7 +459,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       <div className="console-grid">
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel incident-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Текущее состояние</p>
@@ -547,7 +547,7 @@ export function RunConsole({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel observation-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Наблюдаемые факты</p>
@@ -694,7 +694,7 @@ export function RunConsole({ runId }: { runId: string }) {
         </section>
 
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel decision-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Подтверждение действий агента</p>
@@ -794,7 +794,7 @@ export function RunConsole({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel result-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Зарегистрированный результат</p>
