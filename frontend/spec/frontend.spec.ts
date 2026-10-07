@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   connectionTone,
+  dependencyNameLabel,
   eventSummary,
   evidenceSourceLabel,
   incidentTextLabel,
+  kbTitleLabel,
   FIELD_SERVICE_OUTCOME_NOTE,
   observationState,
   playbackIncidentStatus,
@@ -65,6 +67,13 @@ describe("operational presentation", () => {
     );
     expect(incidentTextLabel("payment_gateway_timeout")).toBe(
       "Таймаут платёжного шлюза.",
+    );
+    expect(
+      incidentTextLabel("Single payment terminal reports payment gateway timeouts."),
+    ).toBe("На одном платёжном терминале зафиксированы таймауты платёжного шлюза.");
+    expect(dependencyNameLabel("AcmePay")).toBe("CloudPayments");
+    expect(kbTitleLabel("Physical access path inspection")).toBe(
+      "Проверка физического пути подключения",
     );
   });
 
@@ -248,7 +257,7 @@ describe("operational presentation", () => {
       "Получена заявка пользователя: платёжные операции завершаются по таймауту на площадке SITE-KZN-017",
       "Получен сигнал мониторинга: повышенный уровень таймаутов платежей на площадке SITE-SAM-024",
     ]);
-    expect(activities[1].detail).toContain("AcmePay");
+    expect(activities[1].detail).toContain("CloudPayments");
     expect(activities[1].detail).toContain("SITE-KZN-017");
     expect(activities[1].detail).toContain("SITE-SAM-024");
   });
