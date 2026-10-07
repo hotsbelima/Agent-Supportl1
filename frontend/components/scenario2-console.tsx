@@ -846,7 +846,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div className="wide">
                     <dt>Описание</dt>
-                    <dd>{latestMajorIncident.summary}</dd>
+                    <dd>{incidentTextLabel(latestMajorIncident.summary)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Создан</dt>
