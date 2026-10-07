@@ -206,7 +206,7 @@ class Scenario1DispatchWorker:
                 ],
             }
 
-            await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 runtime.invoke_operational_event(
                     tenant_id=record.tenant_id,
                     run_id=record.run_id,
@@ -215,6 +215,14 @@ class Scenario1DispatchWorker:
                 ),
                 timeout=self._invocation_timeout,
             )
+            if snapshot.run.scenario_id == "scenario-3" and not (
+                result.awaiting_human_decision
+                and result.pending_proposal_id
+                and result.paused_function_call_id
+            ):
+                raise RuntimeError(
+                    "Scenario 3 invocation ended before proposal/HITL terminal state"
+                )
         except asyncio.CancelledError:
             # Release the durable lease immediately on graceful shutdown when
             # possible. If the DB is unavailable during shutdown, do not turn
@@ -370,8 +378,8 @@ class Scenario2DispatchWorker:
     async def _operational_fact(
         self,
         record: ApplicationOutboxRecord,
-    ) -> tuple[str, dict[str, object]]:
-        """Rehydrate the typed Product event, signal and evidence from PostgreSQL."""
+    ) -> tuple[str, dict[str, object], bool]:
+        """Rehydrate one Product event plus whether this fact requires HITL."""
         payload = record.payload
         event_id = payload.get("event_id")
         event_seq = payload.get("event_seq")
@@ -460,6 +468,17 @@ class Scenario2DispatchWorker:
                 "Scenario 2 ServiceIncident does not match the dispatch signal"
             )
 
+        signal_index = next(
+            index
+            for index, item in enumerate(state.operational_signals)
+            if item.signal_id == signal.signal_id
+        )
+        sites_through_event = {
+            item.site_id
+            for item in state.operational_signals[: signal_index + 1]
+        }
+        requires_proposal = len(sites_through_event) >= 2
+
         return event_id, {
             "event": {
                 "event_id": product_event.event_id,
@@ -496,7 +515,7 @@ class Scenario2DispatchWorker:
                 "symptom_key": incident.symptom_key,
                 "status": incident.status.value,
             },
-        }
+        }, requires_proposal
 
     async def dispatch_once(self) -> bool:
         """Process one due Scenario 2 envelope after a recoverable ADK point."""
@@ -506,7 +525,7 @@ class Scenario2DispatchWorker:
         if record is None:
             return False
         try:
-            event_id, fact = await self._operational_fact(record)
+            event_id, fact, requires_proposal = await self._operational_fact(record)
             result = await asyncio.wait_for(
                 self._agent_runtime.invoke_operational_signal(
                     tenant_id=record.tenant_id,
@@ -518,6 +537,14 @@ class Scenario2DispatchWorker:
             )
             if not result.recoverable:
                 raise RuntimeError("native ADK invocation has no recoverable state")
+            if requires_proposal and not (
+                result.awaiting_human_decision
+                and result.pending_proposal_id
+                and result.paused_function_call_id
+            ):
+                raise RuntimeError(
+                    "Scenario 2 cross-site invocation ended before proposal/HITL terminal state"
+                )
         except asyncio.CancelledError:
             try:
                 await self._reschedule(record)
