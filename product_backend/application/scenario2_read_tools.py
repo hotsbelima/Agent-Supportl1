@@ -85,6 +85,21 @@ def _failure(
     )
 
 
+async def _record_tool_started(
+    uow: Scenario2ToolReadUnitOfWork,
+    *,
+    context: ToolCallContext,
+    tool_name: str,
+) -> None:
+    await append_uow_event(
+        uow,
+        context=context,
+        event_type=ApplicationEventType.TOOL_STARTED,
+        payload={"tool_name": tool_name},
+    )
+    await uow.commit()
+
+
 async def _record_observation(
     uow: Scenario2ToolReadUnitOfWork,
     *,
@@ -198,6 +213,7 @@ class Scenario2ReadToolService:
                         "Site/service pair is not known in the current run.",
                         "unknown_run_site_service",
                     )
+                await _record_tool_started(uow, context=context, tool_name="get_local_service_health")
                 snapshot = await self._local_health.get_local_service_health(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -272,6 +288,7 @@ class Scenario2ReadToolService:
                         "Service is not known in the current run.",
                         "unknown_run_service",
                     )
+                await _record_tool_started(uow, context=context, tool_name="get_service_dependencies")
                 mappings = await self._dependency_mapping.get_service_dependencies(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
