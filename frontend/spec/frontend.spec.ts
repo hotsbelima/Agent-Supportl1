@@ -5,6 +5,8 @@ import {
   eventSummary,
   FIELD_SERVICE_OUTCOME_NOTE,
   observationState,
+  playbackIncidentStatus,
+  playbackVisibility,
   proposalTone,
   scenario2InvestigationActivities,
   STALE_PROPOSAL_NOTE,
@@ -83,6 +85,45 @@ describe("operational presentation", () => {
         payload: { site_id: "SITE-1" },
       }),
     ).toBeNull();
+  });
+
+  it("keeps entity visibility aligned with the playback cursor", () => {
+    const beforeApproval = playbackVisibility([
+      {
+        ...event("external.signal", {
+          details: { site_id: "SITE-MSK-001" },
+        }),
+        seq: 1,
+      },
+      {
+        ...event("observation.recorded", { evidence_id: "E-1" }),
+        seq: 2,
+      },
+      {
+        ...event("proposal.created", { proposal_id: "P-1" }),
+        seq: 3,
+      },
+      {
+        ...event("run.status_changed", { status: "WAITING_APPROVAL" }),
+        seq: 4,
+      },
+    ]);
+
+    expect([...beforeApproval.signalSites]).toEqual(["SITE-MSK-001"]);
+    expect([...beforeApproval.evidenceIds]).toEqual(["E-1"]);
+    expect([...beforeApproval.proposalIds]).toEqual(["P-1"]);
+    expect(beforeApproval.approvalRequested).toBe(true);
+    expect(beforeApproval.approvalDecided).toBe(false);
+    expect(beforeApproval.actionExecuted).toBe(false);
+    expect(playbackIncidentStatus("ESCALATED", false)).toBe("OPEN");
+
+    const afterExecution = playbackVisibility([
+      { ...event("approval.decided", { decision: "APPROVED" }), seq: 5 },
+      { ...event("action.executed", { proposal_id: "P-1" }), seq: 6 },
+    ]);
+    expect(afterExecution.approvalDecided).toBe(true);
+    expect(afterExecution.actionExecuted).toBe(true);
+    expect(playbackIncidentStatus("ESCALATED", true)).toBe("ESCALATED");
   });
 
   it("builds Scenario 2 human activity only from persisted signals, evidence and proposal state", () => {
