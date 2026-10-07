@@ -251,9 +251,12 @@ export function Scenario2Console({ runId }: { runId: string }) {
     }
 
     const anchorMs = Date.parse(autoScheduleAnchor);
-    const delayMs = Number.isFinite(anchorMs)
-      ? Math.max(0, anchorMs + AUTO_SIGNAL_INTERVAL_MS - Date.now())
-      : AUTO_SIGNAL_INTERVAL_MS;
+    const delayMs =
+      signalCount === 0
+        ? 0
+        : Number.isFinite(anchorMs)
+          ? Math.max(0, anchorMs + AUTO_SIGNAL_INTERVAL_MS - Date.now())
+          : AUTO_SIGNAL_INTERVAL_MS;
     const controller = new AbortController();
 
     const timeoutId = window.setTimeout(() => {
@@ -394,7 +397,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
       <div className="console-grid">
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel incident-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Текущее состояние продукта</p>
@@ -476,7 +479,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel observation-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Наблюдаемые факты</p>
@@ -610,7 +613,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         </section>
 
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel decision-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Корреляция и решение</p>
@@ -735,7 +738,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel result-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Результат после решения человека</p>
