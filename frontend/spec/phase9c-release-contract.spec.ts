@@ -29,6 +29,13 @@ describe("Phase 9C deterministic public-demo release contract", () => {
     expect(scenario2Console).toContain("streamRunEvents");
   });
 
+  it("auto-advances Scenario 2 every 20 seconds from persisted progress", () => {
+    expect(scenario2Console).toContain("AUTO_SIGNAL_INTERVAL_MS = 20_000");
+    expect(scenario2Console).toContain("advanceScenario2Simulator(runId, controller.signal)");
+    expect(scenario2Console).toContain("latestSignalAt ?? state?.run.created_at");
+    expect(scenario2Console).not.toContain("Добавить следующий сигнал");
+  });
+
   it("uses the correct human-decision API family per scenario type", () => {
     expect(runConsole).toContain("decideProposal(");
     expect(scenario2Console).toContain("decideScenario2Proposal(");
