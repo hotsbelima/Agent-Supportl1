@@ -255,7 +255,8 @@ const DEPENDENCY_NAME_LABELS: Record<string, string> = {
 };
 
 export function dependencyNameLabel(value: string): string {
-  return DEPENDENCY_NAME_LABELS[value] ?? value;
+  return DEPENDENCY_NAME_LABELS[value] ??
+    (/[А-Яа-яЁё]/.test(value) ? value : "Внешний провайдер");
 }
 
 const KB_TITLE_LABELS: Record<string, string> = {
@@ -263,7 +264,28 @@ const KB_TITLE_LABELS: Record<string, string> = {
 };
 
 export function kbTitleLabel(value: string): string {
-  return KB_TITLE_LABELS[value] ?? value;
+  return KB_TITLE_LABELS[value] ??
+    (/[А-Яа-яЁё]/.test(value) ? value : "Материал базы знаний");
+}
+
+const USER_FACING_TEXT_LABELS: Record<string, string> = {
+  "Physical access path inspection": "Проверка физического пути подключения",
+  "Payment terminal is unavailable.": "Платёжный терминал недоступен.",
+  "Payment gateway timeout": "Таймаут платёжного шлюза.",
+  "Cross-site payment timeouts": "Таймауты платежей на нескольких площадках.",
+  "Cross-site payment timeouts.": "Таймауты платежей на нескольких площадках.",
+  "Single payment terminal reports payment gateway timeouts.":
+    "На одном платёжном терминале зафиксированы таймауты платёжного шлюза.",
+};
+
+export function userFacingTextLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const exact = USER_FACING_TEXT_LABELS[trimmed];
+  if (exact) return exact;
+  const branded = trimmed.replaceAll("AcmePay", "CloudPayments");
+  if (/[А-Яа-яЁё]/.test(branded)) return branded;
+  return "Подтверждённое системное наблюдение. Оригинальное значение доступно в «Деталях».";
 }
 
 export function evidenceEntityLabel(evidence: EvidenceView): string {
@@ -364,7 +386,7 @@ export function eventSummary(event: ApplicationEventView): string {
         : "Изменился статус запуска";
     }
     default:
-      return event.event_type;
+      return "Системное событие";
   }
 }
 
@@ -405,7 +427,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function statusLabel(value: string): string {
-  return STATUS_LABELS[value] ?? value;
+  return STATUS_LABELS[value] ??
+    (/[А-Яа-яЁё]/.test(value) ? value : "Неизвестно");
 }
 
 const DIAGNOSIS_LABELS: Record<string, string> = {
@@ -643,7 +666,7 @@ export function standardInvestigationActivities(
           event,
           "agent",
           "Агент зафиксировал диагностический вывод",
-          summary,
+          summary ? userFacingTextLabel(summary) : null,
         ),
       );
       continue;
