@@ -91,7 +91,7 @@ describe("Phase 9A final public UI", () => {
   });
 
   it("keeps mobile panels compact in the investigation-first order", () => {
-    expect(cssSource).toContain("height: min(23vh, 210px)");
+    expect(cssSource).toContain("height: min(28.75vh, 263px)");
     expect(cssSource).toContain(".incident-panel { order: 1; }");
     expect(cssSource).toContain(".investigation-panel { order: 2; }");
     expect(cssSource).toContain(".decision-panel { order: 3; }");
