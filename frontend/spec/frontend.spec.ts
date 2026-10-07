@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   connectionTone,
   eventSummary,
+  evidenceSourceLabel,
+  incidentTextLabel,
   FIELD_SERVICE_OUTCOME_NOTE,
   observationState,
   playbackIncidentStatus,
@@ -42,15 +44,28 @@ function event(
 describe("operational presentation", () => {
   it("uses persisted details without inventing missing fields", () => {
     expect(eventSummary(event("tool.started", { tool_name: "get_device" })))
-      .toBe("Запущен инструмент: get_device");
-    expect(eventSummary(event("tool.started"))).toBe("Запущен инструмент");
+      .toBe("Начата проверка: Проверка устройства");
+    expect(eventSummary(event("tool.started"))).toBe("Начата системная проверка");
     expect(eventSummary(event("run.status_changed", { status: "ACTIVE" })))
       .toBe("Статус запуска → Активен");
     expect(
       eventSummary(
         event("observation.recorded", { source_type: "CMDB_SNAPSHOT" }),
       ),
-    ).toBe("Сохранено наблюдение: CMDB_SNAPSHOT");
+    ).toBe("Сохранено наблюдение: Данные CMDB");
+  });
+
+  it("uses human-readable Russian labels for technical product values", () => {
+    expect(evidenceSourceLabel("CMDB_SNAPSHOT")).toBe("Данные CMDB");
+    expect(evidenceSourceLabel("ACCESS_LINK_DIAGNOSTIC")).toBe(
+      "Диагностика канала доступа",
+    );
+    expect(incidentTextLabel("Payment terminal is unavailable.")).toBe(
+      "Платёжный терминал недоступен.",
+    );
+    expect(incidentTextLabel("payment_gateway_timeout")).toBe(
+      "Таймаут платёжного шлюза.",
+    );
   });
 
   it("refreshes authoritative state when a Product observation arrives", () => {
