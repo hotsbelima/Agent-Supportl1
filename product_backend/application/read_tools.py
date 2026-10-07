@@ -566,6 +566,7 @@ class Scenario1ReadToolService:
                         "unknown_run_entity",
                     )
 
+                await _record_tool_started(uow, context=context, tool_name="search_incidents")
                 snapshot = await self._itsm.search_incidents(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -632,6 +633,7 @@ class Scenario1ReadToolService:
                 if state_error:
                     return state_error
 
+                await _record_tool_started(uow, context=context, tool_name="search_kb")
                 articles = await self._kb.search(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
