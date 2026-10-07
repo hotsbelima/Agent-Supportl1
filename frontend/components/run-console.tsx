@@ -356,10 +356,9 @@ export function RunConsole({ runId }: { runId: string }) {
   const visibleProposals = state
     ? state.proposals.filter((item) => playback.proposalIds.has(item.proposal_id))
     : [];
-  const visibleWorkOrders =
-    state && playback.actionExecuted ? state.work_orders : [];
-  const visibleExecutedActions =
-    state && playback.actionExecuted ? state.executed_actions : [];
+  const visibleWorkOrders = state?.work_orders ?? [];
+  const visibleExecutedActions = state?.executed_actions ?? [];
+  const actionExecuted = visibleExecutedActions.length > 0;
 
   const selectedIncidentKey =
     selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
@@ -383,19 +382,7 @@ export function RunConsole({ runId }: { runId: string }) {
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
     : null;
-  const latestProposalDisplayStatus = latestProposal
-    ? playback.actionExecuted
-      ? latestProposal.status
-      : !playback.approvalDecided
-        ? "PENDING_APPROVAL"
-        : playback.approvalDecision === "REJECTED"
-          ? "REJECTED"
-          : latestProposal.status === "STALE"
-            ? "STALE"
-            : playback.approvalDecision === "APPROVED"
-              ? "APPROVED"
-              : latestProposal.status
-    : null;
+  const latestProposalDisplayStatus = latestProposal?.status ?? null;
 
   async function handleDecision(
     proposal: ProposalView,
@@ -508,12 +495,12 @@ export function RunConsole({ runId }: { runId: string }) {
                 <StatusBadge
                   value={playbackIncidentStatus(
                     selectedIncident.status,
-                    playback.actionExecuted,
+                    actionExecuted,
                   )}
                   tone={
                     playbackIncidentStatus(
                       selectedIncident.status,
-                      playback.actionExecuted,
+                      actionExecuted,
                     ) === "ESCALATED"
                       ? "warning"
                       : "info"
@@ -546,7 +533,7 @@ export function RunConsole({ runId }: { runId: string }) {
                       {statusLabel(
                         playbackIncidentStatus(
                           selectedIncident.status,
-                          playback.actionExecuted,
+                          actionExecuted,
                         ),
                       )}
                     </dd>
@@ -566,7 +553,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 </dl>
                 {playbackIncidentStatus(
                   selectedIncident.status,
-                  playback.actionExecuted,
+                  actionExecuted,
                 ) === "ESCALATED" ? (
                   <p className="semantic-note">
                     Эскалация означает, что выездной сервис запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
@@ -584,12 +571,12 @@ export function RunConsole({ runId }: { runId: string }) {
                     <StatusBadge
                       value={playbackIncidentStatus(
                         item.status,
-                        playback.actionExecuted,
+                        actionExecuted,
                       )}
                       tone={
                         playbackIncidentStatus(
                           item.status,
-                          playback.actionExecuted,
+                          actionExecuted,
                         ) === "ESCALATED"
                           ? "warning"
                           : "info"
@@ -811,8 +798,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
             {latestProposal ? (
               <div className="proposal-card">
-                {latestProposal.status === "PENDING_APPROVAL" &&
-                playback.approvalRequested ? (
+                {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
                       До регистрации действия выездного сервиса требуется решение человека.
@@ -871,8 +857,7 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                 </div>
 
-                {playback.approvalDecided &&
-                latestProposal.status === "STALE" ? (
+                {latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
                     {STALE_PROPOSAL_NOTE}
                   </p>
