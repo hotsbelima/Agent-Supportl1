@@ -114,13 +114,6 @@ class ServiceIncidentRow(Base):
             ["runs.tenant_id", "runs.run_id"],
             name="fk_service_incidents_run",
         ),
-        UniqueConstraint(
-            "tenant_id",
-            "run_id",
-            "site_id",
-            "service_key",
-            name="uq_service_incidents_run_site_service",
-        ),
         CheckConstraint(
             "status IN ('OPEN', 'ESCALATED', 'RESOLVED')",
             name="ck_service_incidents_status_known",

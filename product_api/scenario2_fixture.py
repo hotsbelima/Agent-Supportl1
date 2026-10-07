@@ -28,6 +28,7 @@ SITE_KZN = "SITE-KZN-017"
 SITE_SAM = "SITE-SAM-024"
 
 INCIDENT_KZN = "INC-S2-KZN-001"
+INCIDENT_KZN_ITSM = "INC-S2-KZN-002"
 INCIDENT_SAM = "INC-S2-SAM-001"
 
 SIGNAL_1_ID = "SIG-S2-001"
@@ -51,6 +52,12 @@ class Scenario2ServiceIncidentTemplate:
 CANONICAL_SERVICE_INCIDENTS = (
     Scenario2ServiceIncidentTemplate(
         incident_id=INCIDENT_KZN,
+        site_id=SITE_KZN,
+        service_key=SERVICE_KEY,
+        symptom_key=CORRELATION_KEY,
+    ),
+    Scenario2ServiceIncidentTemplate(
+        incident_id=INCIDENT_KZN_ITSM,
         site_id=SITE_KZN,
         service_key=SERVICE_KEY,
         symptom_key=CORRELATION_KEY,
@@ -98,7 +105,7 @@ CANONICAL_SIGNAL_SEQUENCE = (
         service_key=SERVICE_KEY,
         symptom_key=CORRELATION_KEY,
         source_ref="TICKET-KZN-5521",
-        incident_id=INCIDENT_KZN,
+        incident_id=INCIDENT_KZN_ITSM,
         safe_payload={
             "kind": "user_ticket",
             "service_key": SERVICE_KEY,
@@ -222,6 +229,7 @@ __all__ = [
     "CANONICAL_SIGNAL_SEQUENCE",
     "CORRELATION_KEY",
     "INCIDENT_KZN",
+    "INCIDENT_KZN_ITSM",
     "INCIDENT_SAM",
     "SCENARIO2_ID",
     "SERVICE_KEY",

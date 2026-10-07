@@ -26,6 +26,7 @@ import {
   incidentTextLabel,
   majorIncidentRationale,
   observationState,
+  nativeHitlReady,
   playbackIncidentStatus,
   playbackVisibility,
   proposalTone,
@@ -408,6 +409,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
         .at(-1) ?? null
     : null;
   const latestProposalDisplayStatus = latestProposal?.status ?? null;
+  const latestProposalHitlReady =
+    latestProposal !== null &&
+    nativeHitlReady(events, latestProposal.proposal_id);
   const latestMajorIncident = visibleMajorIncidents.at(-1) ?? null;
 
   return (
@@ -749,7 +753,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </div>
 
-                {latestProposal.status === "PENDING_APPROVAL" ? (
+                {latestProposal.status === "PENDING_APPROVAL" && latestProposalHitlReady ? (
                   <div className="decision-area">
                     <p>
                       Для создания крупного инцидента требуется решение человека.

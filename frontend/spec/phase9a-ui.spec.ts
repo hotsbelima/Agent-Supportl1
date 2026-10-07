@@ -154,6 +154,23 @@ describe("Phase 9A final public UI", () => {
     );
   });
 
+  it("shows real in-flight tools, waits for native HITL, and uses 3.5 second playback", () => {
+    expect(presentationSource).toContain(
+      "export const TIMELINE_PLAYBACK_INTERVAL_MS = 3_500",
+    );
+    expect(presentationSource).toContain("native_hitl_paused");
+    expect(presentationSource).toContain("Агент выполняет:");
+    expect(presentationSource).toContain("Ожидаем результат проверки.");
+    expect(standardConsole).toContain("nativeHitlReady(events");
+    expect(scenario2Console).toContain("nativeHitlReady(events");
+    expect(standardConsole).toContain(
+      'latestProposal.status === "PENDING_APPROVAL" && latestProposalHitlReady',
+    );
+    expect(scenario2Console).toContain(
+      'latestProposal.status === "PENDING_APPROVAL" && latestProposalHitlReady',
+    );
+  });
+
   it("localizes ordinary user-facing service text while keeping raw payloads in details", () => {
     expect(presentationSource).toContain(
       '"Physical access path inspection": "Проверка физического пути подключения"',

@@ -142,7 +142,11 @@ describe("operational presentation", () => {
         seq: 3,
       },
       {
-        ...event("run.status_changed", { status: "WAITING_APPROVAL" }),
+        ...event("run.status_changed", {
+          status: "WAITING_APPROVAL",
+          cause: "native_hitl_paused",
+          proposal_id: "P-1",
+        }),
         seq: 4,
       },
     ]);
@@ -256,14 +260,18 @@ describe("operational presentation", () => {
           seq: 4,
         },
         {
-          ...event("run.status_changed", { status: "WAITING_APPROVAL" }),
+          ...event("run.status_changed", {
+          status: "WAITING_APPROVAL",
+          cause: "native_hitl_paused",
+          proposal_id: "MIP-1",
+        }),
           seq: 5,
         },
       ],
       state,
     );
 
-    expect(TIMELINE_PLAYBACK_INTERVAL_MS).toBe(5_000);
+    expect(TIMELINE_PLAYBACK_INTERVAL_MS).toBe(3_500);
     expect(activities.map((item) => item.title)).toEqual([
       "Агент запросил подтверждение действия",
       "Агент выявил корреляцию между событиями",

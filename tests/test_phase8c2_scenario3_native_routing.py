@@ -900,3 +900,41 @@ def test_phase8c2_generic_field_decision_routes_resume_by_persisted_scenario_id(
         scenario3_runtime.calls[0]["proposal_id"]
         == result.proposal.proposal_id
     )
+
+
+def test_phase8c2_scenario3_redelivery_forces_required_outcome_continuation():
+    now = datetime.now(UTC)
+    record = ApplicationOutboxRecord(
+        outbox_id="OUTBOX-S3-8C2-REDELIVERY-RECOVERY",
+        tenant_id="TENANT-S3-8C2-REDELIVERY-RECOVERY",
+        run_id="RUN-S3-8C2-REDELIVERY-RECOVERY",
+        event_seq=2,
+        topic=AGENT_DISPATCH_TOPIC,
+        payload={
+            "event_id": "EVENT-S3-8C2-REDELIVERY-RECOVERY",
+            "event_seq": 2,
+            "signal": {"signal_type": "itsm.incident.created", "details": {}},
+        },
+        created_at=now,
+        available_at=now,
+        delivered_at=None,
+        attempt_count=2,
+    )
+    outbox = _FakeOutbox(record)
+    scenario1_runtime = _RecordingDispatchRuntime()
+    scenario3_runtime = _RecordingDispatchRuntime()
+    worker = Scenario1DispatchWorker(
+        uow_factory=lambda: _FakeDispatchUow(outbox),
+        state_service=_FakeStateService("scenario-3"),
+        agent_runtime=scenario1_runtime,
+        scenario3_agent_runtime=scenario3_runtime,
+    )
+
+    processed = asyncio.run(worker.dispatch_once())
+
+    assert processed is True
+    assert len(scenario3_runtime.calls) == 1
+    assert (
+        scenario3_runtime.calls[0]["force_required_outcome_continuation"]
+        is True
+    )

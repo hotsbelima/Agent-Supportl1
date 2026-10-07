@@ -85,6 +85,21 @@ def _failure(
     )
 
 
+async def _record_tool_started(
+    uow: Scenario2ToolReadUnitOfWork,
+    *,
+    context: ToolCallContext,
+    tool_name: str,
+) -> None:
+    await append_uow_event(
+        uow,
+        context=context,
+        event_type=ApplicationEventType.TOOL_STARTED,
+        payload={"tool_name": tool_name},
+    )
+    await uow.commit()
+
+
 async def _record_observation(
     uow: Scenario2ToolReadUnitOfWork,
     *,
@@ -198,6 +213,7 @@ class Scenario2ReadToolService:
                         "Site/service pair is not known in the current run.",
                         "unknown_run_site_service",
                     )
+                await _record_tool_started(uow, context=context, tool_name="get_local_service_health")
                 snapshot = await self._local_health.get_local_service_health(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -272,6 +288,7 @@ class Scenario2ReadToolService:
                         "Service is not known in the current run.",
                         "unknown_run_service",
                     )
+                await _record_tool_started(uow, context=context, tool_name="get_service_dependencies")
                 mappings = await self._dependency_mapping.get_service_dependencies(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -371,6 +388,7 @@ class Scenario2ReadToolService:
                         "Dependency is not established by Product evidence in this run.",
                         "unknown_run_dependency",
                     )
+                await _record_tool_started(uow, context=context, tool_name="get_external_dependency_status")
                 snapshot = (
                     await self._dependency_status.get_external_dependency_status(
                         tenant_id=context.tenant_id,
@@ -464,6 +482,7 @@ class Scenario2ReadToolService:
                         "Major Incident search key is not grounded in current run facts.",
                         "unestablished_major_incident_search_key",
                     )
+                await _record_tool_started(uow, context=context, tool_name="search_major_incidents")
                 snapshot = await self._major_incident_directory.search_major_incidents(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,

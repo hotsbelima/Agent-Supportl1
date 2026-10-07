@@ -12,7 +12,7 @@ import type {
 export const FIELD_SERVICE_OUTCOME_NOTE =
   "Заявка на выездной сервис зарегистрирована.";
 
-export const TIMELINE_PLAYBACK_INTERVAL_MS = 5_000;
+export const TIMELINE_PLAYBACK_INTERVAL_MS = 3_500;
 
 export type InvestigationActivityKind =
   | "fact"
@@ -95,7 +95,8 @@ export function playbackVisibility(
 
     if (
       event.event_type === "run.status_changed" &&
-      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
     ) {
       approvalRequested = true;
       continue;
@@ -121,6 +122,18 @@ export function playbackVisibility(
     approvalDecision,
     actionExecuted,
   };
+}
+
+export function nativeHitlReady(
+  events: ApplicationEventView[],
+  proposalId: string,
+): boolean {
+  return events.some(
+    (event) =>
+      event.event_type === "run.status_changed" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused" &&
+      stringValue(event.payload, "proposal_id") === proposalId,
+  );
 }
 
 export function playbackIncidentStatus(
@@ -335,9 +348,12 @@ export function eventTypeLabel(value: string): string {
 const TOOL_LABELS: Record<string, string> = {
   get_device: "Проверка устройства",
   get_site_health: "Проверка площадки",
+  run_diagnostic: "Диагностика канала доступа",
   diagnose_access_link: "Диагностика канала доступа",
   search_incidents: "Проверка связанных инцидентов",
+  search_kb: "Проверка базы знаний",
   get_kb_article: "Проверка базы знаний",
+  get_service_dependencies: "Проверка зависимостей сервиса",
   get_service_dependency: "Проверка зависимостей сервиса",
   get_external_dependency_status: "Проверка внешней зависимости",
   get_local_service_health: "Проверка локального сервиса",
@@ -635,14 +651,25 @@ export function standardInvestigationActivities(
       continue;
     }
 
-    if (event.event_type === "tool.started" && !investigationStarted) {
-      investigationStarted = true;
+    if (event.event_type === "tool.started") {
+      const tool = stringValue(event.payload, "tool_name");
+      if (!investigationStarted) {
+        investigationStarted = true;
+        result.push(
+          activity(
+            event,
+            "agent",
+            "Агент приступил к расследованию",
+            "Начат сбор и проверка фактов по инциденту.",
+          ),
+        );
+      }
       result.push(
         activity(
           event,
           "agent",
-          "Агент приступил к расследованию",
-          "Начат сбор и проверка фактов по инциденту.",
+          tool ? `Агент выполняет: ${toolLabel(tool)}` : "Агент выполняет системную проверку",
+          "Ожидаем результат проверки.",
         ),
       );
       continue;
@@ -691,7 +718,8 @@ export function standardInvestigationActivities(
 
     if (
       event.event_type === "run.status_changed" &&
-      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
     ) {
       result.push(
         activity(
@@ -856,14 +884,25 @@ export function scenario2InvestigationActivities(
       continue;
     }
 
-    if (event.event_type === "tool.started" && !investigationStarted) {
-      investigationStarted = true;
+    if (event.event_type === "tool.started") {
+      const tool = stringValue(event.payload, "tool_name");
+      if (!investigationStarted) {
+        investigationStarted = true;
+        result.push(
+          activity(
+            event,
+            "agent",
+            "Агент приступил к проверке собранных фактов",
+            "Начата проверка локального состояния и общих зависимостей.",
+          ),
+        );
+      }
       result.push(
         activity(
           event,
           "agent",
-          "Агент приступил к проверке собранных фактов",
-          "Начата проверка локального состояния и общих зависимостей.",
+          tool ? `Агент выполняет: ${toolLabel(tool)}` : "Агент выполняет системную проверку",
+          "Ожидаем результат проверки.",
         ),
       );
       continue;
@@ -899,7 +938,8 @@ export function scenario2InvestigationActivities(
 
     if (
       event.event_type === "run.status_changed" &&
-      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
     ) {
       result.push(
         activity(

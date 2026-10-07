@@ -41,6 +41,7 @@ import {
   formatTimestamp,
   incidentTextLabel,
   observationState,
+  nativeHitlReady,
   playbackIncidentStatus,
   playbackVisibility,
   proposalRationale,
@@ -384,6 +385,9 @@ export function RunConsole({ runId }: { runId: string }) {
         .at(-1) ?? null
     : null;
   const latestProposalDisplayStatus = latestProposal?.status ?? null;
+  const latestProposalHitlReady =
+    latestProposal !== null &&
+    nativeHitlReady(events, latestProposal.proposal_id);
 
   async function handleDecision(
     proposal: ProposalView,
@@ -805,7 +809,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
             {latestProposal ? (
               <div className="proposal-card">
-                {latestProposal.status === "PENDING_APPROVAL" ? (
+                {latestProposal.status === "PENDING_APPROVAL" && latestProposalHitlReady ? (
                   <div className="decision-area">
                     <p>
                       До регистрации действия выездного сервиса требуется решение человека.

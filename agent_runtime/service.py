@@ -121,6 +121,22 @@ def _operational_event_id(event: Any) -> str | None:
     return identity[0] if identity is not None else None
 
 
+MAX_REQUIRED_OUTCOME_CONTINUATIONS = 2
+
+
+def _required_outcome_continuation_count(
+    events: list[Any],
+    *,
+    operational_event_id: str,
+) -> int:
+    return sum(
+        1
+        for event in events
+        if (identity := _operational_event_identity(event)) is not None
+        and identity == (operational_event_id, "required_outcome_continuation")
+    )
+
+
 def _successful_pending_proposal_ids(
     event: Any,
     *,
@@ -464,6 +480,7 @@ class DeviceIncidentAgentRuntime:
         run_id: str,
         operational_event_id: str | None,
         operational_signal: dict[str, Any],
+        force_required_outcome_continuation: bool = False,
     ) -> AgentInvocationResult:
         """Invoke or recover the same native ADK invocation for one Product event.
 
@@ -487,12 +504,22 @@ class DeviceIncidentAgentRuntime:
                 list(session.events),
                 operational_event_id=operational_event_id,
             )
+            continuation_count = _required_outcome_continuation_count(
+                list(session.events),
+                operational_event_id=operational_event_id,
+            )
             continuation_required = bool(
                 self._require_proposal_hitl
                 and correlation is not None
-                and correlation.settled
                 and correlation.pending_proposal_id is None
                 and correlation.paused_function_call_id is None
+                and (
+                    correlation.settled
+                    or (
+                        force_required_outcome_continuation
+                        and continuation_count < MAX_REQUIRED_OUTCOME_CONTINUATIONS
+                    )
+                )
             )
             if correlation is not None and correlation.settled and not continuation_required:
                 return AgentInvocationResult(
