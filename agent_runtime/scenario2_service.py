@@ -67,7 +67,7 @@ def _safe_event_text(event: Any) -> str | None:
     return "\n".join(text_parts) if text_parts else None
 
 
-def _scenario2_product_event_id(event: Any) -> str | None:
+def _scenario2_event_identity(event: Any) -> tuple[str, str] | None:
     if getattr(event, "author", None) != "user":
         return None
     if not getattr(event, "invocation_id", None):
@@ -85,7 +85,15 @@ def _scenario2_product_event_id(event: Any) -> str | None:
     }:
         return None
     event_id = envelope.get("product_event_id")
-    return event_id if isinstance(event_id, str) and event_id else None
+    event_type = envelope.get("type")
+    if not isinstance(event_id, str) or not event_id:
+        return None
+    return event_id, event_type
+
+
+def _scenario2_product_event_id(event: Any) -> str | None:
+    identity = _scenario2_event_identity(event)
+    return identity[0] if identity is not None else None
 
 
 def _pending_major_incident_proposal_id(event: Any) -> str | None:
@@ -118,17 +126,27 @@ def _find_scenario2_event_correlation(
     product_event_id: str,
 ) -> _Scenario2EventCorrelation | None:
     """Find the one native invocation associated with a Product event ID."""
-    invocation_ids = [
-        event.invocation_id
+    matches = [
+        (event.invocation_id, identity[1])
         for event in events
-        if _scenario2_product_event_id(event) == product_event_id
+        if (identity := _scenario2_event_identity(event)) is not None
+        and identity[0] == product_event_id
         and getattr(event, "invocation_id", None)
     ]
-    if not invocation_ids:
+    if not matches:
         return None
-    # A required-outcome continuation is a new native invocation in the same
-    # durable ADK session. The latest correlated invocation owns recovery.
-    invocation_id = invocation_ids[-1]
+    original_invocation_ids = {
+        invocation_id
+        for invocation_id, event_type in matches
+        if event_type == "scenario2_operational_signal"
+    }
+    if len(original_invocation_ids) > 1:
+        raise RuntimeError(
+            "Product event is correlated to multiple native ADK invocations"
+        )
+    # Required-outcome continuations may legitimately create later invocations;
+    # the latest correlated invocation owns recovery.
+    invocation_id = matches[-1][0]
 
     settled = False
     final_answer: str | None = None
