@@ -92,7 +92,7 @@ def _latest_final_answer(
     return final_answer
 
 
-def _operational_event_id(event: Any) -> str | None:
+def _operational_event_identity(event: Any) -> tuple[str, str] | None:
     if getattr(event, "author", None) != "user":
         return None
     if not getattr(event, "invocation_id", None):
@@ -110,7 +110,15 @@ def _operational_event_id(event: Any) -> str | None:
     }:
         return None
     event_id = payload.get("operational_event_id")
-    return event_id if isinstance(event_id, str) and event_id else None
+    event_type = payload.get("type")
+    if not isinstance(event_id, str) or not event_id:
+        return None
+    return event_id, event_type
+
+
+def _operational_event_id(event: Any) -> str | None:
+    identity = _operational_event_identity(event)
+    return identity[0] if identity is not None else None
 
 
 def _successful_pending_proposal_ids(
@@ -160,17 +168,27 @@ def _find_operational_event_correlation(
     *,
     operational_event_id: str,
 ) -> _OperationalEventCorrelation | None:
-    invocation_ids = [
-        event.invocation_id
+    matches = [
+        (event.invocation_id, identity[1])
         for event in events
-        if _operational_event_id(event) == operational_event_id
+        if (identity := _operational_event_identity(event)) is not None
+        and identity[0] == operational_event_id
         and getattr(event, "invocation_id", None)
     ]
-    if not invocation_ids:
+    if not matches:
         return None
-    # Required-outcome continuation uses a fresh native invocation in the same
-    # session. Recovery always follows the latest invocation for this event.
-    invocation_id = invocation_ids[-1]
+    original_invocation_ids = {
+        invocation_id
+        for invocation_id, event_type in matches
+        if event_type == "operational_signal"
+    }
+    if len(original_invocation_ids) > 1:
+        raise RuntimeError(
+            "Product operational event is correlated to multiple native invocations"
+        )
+    # Required-outcome continuations may legitimately create later invocations;
+    # recovery follows the latest correlated invocation.
+    invocation_id = matches[-1][0]
 
     settled = False
     final_answer: str | None = None
