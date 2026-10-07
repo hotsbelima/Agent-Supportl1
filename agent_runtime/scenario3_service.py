@@ -24,6 +24,7 @@ class Scenario3AgentRuntime(DeviceIncidentAgentRuntime):
             session_service=session_service,
             scenario_id="scenario-3",
             agent_builder=build_scenario3_agent,
+            require_proposal_hitl=True,
         )
 
 
