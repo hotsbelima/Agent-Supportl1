@@ -667,9 +667,65 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
     justify-content: space-between;
   }
 
+  .console-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .console-column,
+  .console-column:last-child,
+  .timeline-column {
+    display: contents;
+  }
+
+  .incident-panel { order: 1; }
+  .timeline-panel { order: 2; }
+  .observation-panel { order: 3; }
+  .decision-panel { order: 4; }
+  .result-panel { order: 5; }
+
   .scroll-panel {
-    height: min(68vh, 620px);
-    max-height: min(68vh, 620px);
+    height: min(23vh, 210px);
+    max-height: min(23vh, 210px);
+    min-height: 150px;
     overflow-y: auto;
+  }
+
+  .panel-heading {
+    min-height: 52px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .panel-heading h2 {
+    margin-top: 2px;
+    font-size: 15px;
+  }
+
+  .panel-kicker {
+    font-size: 9px;
+  }
+
+  .entity-row {
+    padding: 10px 12px;
+  }
+
+  .facts-grid {
+    padding: 12px;
+    gap: 11px 10px;
+  }
+
+  .empty-panel {
+    padding: 16px 12px;
+  }
+
+  .timeline-item {
+    grid-template-columns: 38px 1fr;
+    padding: 0 11px;
+  }
+
+  .timeline-content {
+    padding: 12px 0 13px 2px;
   }
 }
