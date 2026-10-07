@@ -4,6 +4,7 @@ import {
   connectionTone,
   dependencyNameLabel,
   eventSummary,
+  evidenceEntityLabel,
   evidenceSourceLabel,
   incidentTextLabel,
   kbTitleLabel,
@@ -75,6 +76,19 @@ describe("operational presentation", () => {
     expect(kbTitleLabel("Physical access path inspection")).toBe(
       "Проверка физического пути подключения",
     );
+    expect(
+      evidenceEntityLabel({
+        evidence_id: "E-DEP",
+        tenant_id: "TENANT-8OCT",
+        run_id: "RUN-1",
+        source_type: "EXTERNAL_DEPENDENCY_STATUS",
+        captured_at: "2026-10-05T00:00:00Z",
+        entity_ids: ["DEP-ACMEPAY-PAYMENTS"],
+        payload: { dependency_name: "AcmePay", status: "HEALTHY" },
+        facts: [],
+        expires_at: null,
+      }),
+    ).toBe("CloudPayments");
   });
 
   it("refreshes authoritative state when a Product observation arrives", () => {
