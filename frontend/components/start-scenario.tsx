@@ -138,10 +138,6 @@ export function StartScenario() {
   );
 
   const selected = SCENARIOS[selectedScenario];
-  const readinessMessage =
-    readiness.kind === "ready" && !scenarioReady
-      ? "Этот сценарий пока не готов на текущем развёртывании сервера."
-      : readiness.message;
 
   async function handleStart() {
     if (starting || !scenarioReady) return;
@@ -192,30 +188,6 @@ export function StartScenario() {
         <p className="eyebrow">{selected.eyebrow}</p>
         <h2 id="scenario-title">{selected.title}</h2>
         <p>{selected.description}</p>
-      </div>
-
-      <div className="readiness-row" role="status" aria-live="polite">
-        <span
-          className="status-dot"
-          data-state={
-            readiness.kind === "ready" && !scenarioReady
-              ? "unavailable"
-              : readiness.kind
-          }
-          aria-hidden="true"
-        />
-        <div>
-          <strong>
-            {readiness.kind === "ready" && scenarioReady
-              ? "Сценарий готов"
-              : readiness.kind === "checking"
-                ? "Проверяем сервер"
-                : readiness.kind === "ready"
-                  ? "Сценарий недоступен"
-                  : "Сервер недоступен"}
-          </strong>
-          <span>{readinessMessage}</span>
-        </div>
       </div>
 
       {startError ? (
