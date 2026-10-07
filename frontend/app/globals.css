@@ -721,9 +721,9 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   .timeline-panel { order: 6; }
 
   .scroll-panel {
-    height: min(23vh, 210px);
-    max-height: min(23vh, 210px);
-    min-height: 150px;
+    height: min(28.75vh, 263px);
+    max-height: min(28.75vh, 263px);
+    min-height: 188px;
     overflow-y: auto;
   }
 
