@@ -242,17 +242,24 @@ class Scenario1DispatchWorker:
                 ],
             }
 
-            result = await asyncio.wait_for(
+            invocation = (
                 runtime.invoke_operational_event(
                     tenant_id=record.tenant_id,
                     run_id=record.run_id,
                     operational_event_id=event_id,
                     operational_signal=operational_signal,
-                    force_required_outcome_continuation=(
-                        snapshot.run.scenario_id == "scenario-3"
-                        and record.attempt_count > 1
-                    ),
-                ),
+                    force_required_outcome_continuation=record.attempt_count > 1,
+                )
+                if snapshot.run.scenario_id == "scenario-3"
+                else runtime.invoke_operational_event(
+                    tenant_id=record.tenant_id,
+                    run_id=record.run_id,
+                    operational_event_id=event_id,
+                    operational_signal=operational_signal,
+                )
+            )
+            result = await asyncio.wait_for(
+                invocation,
                 timeout=self._invocation_timeout,
             )
             if snapshot.run.scenario_id == "scenario-3" and not (
