@@ -17,6 +17,7 @@ import {
   connectionTone,
   eventSummary,
   formatTimestamp,
+  majorIncidentRationale,
   observationState,
   proposalTone,
   statusLabel,
@@ -32,6 +33,8 @@ import type {
 } from "@/lib/types";
 
 const DEMO_OPERATOR = "portfolio-demo-operator";
+const AUTO_SIGNAL_INTERVAL_MS = 20_000;
+const CANONICAL_SIGNAL_COUNT = 3;
 
 function StatusBadge({
   value,
@@ -63,8 +66,6 @@ export function Scenario2Console({ runId }: { runId: string }) {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [progressing, setProgressing] = useState(false);
-  const [simulatorComplete, setSimulatorComplete] = useState(false);
   const [progressNotice, setProgressNotice] = useState<string | null>(null);
   const [decision, setDecision] = useState<{
     proposalId: string;
@@ -79,6 +80,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
     useState<string | null>(null);
 
   const cursorRef = useRef(0);
+  const autoAdvanceInFlightRef = useRef(false);
 
   const refreshState = useCallback(
     async (signal?: AbortSignal) => {
@@ -223,28 +225,58 @@ export function Scenario2Console({ runId }: { runId: string }) {
     };
   }, [refreshState, runId]);
 
-  async function handleNextSignal() {
-    if (progressing || simulatorComplete) return;
+  const signalCount = state?.operational_signals.length ?? 0;
+  const simulatorComplete = signalCount >= CANONICAL_SIGNAL_COUNT;
+  const latestSignalAt = state?.operational_signals.at(-1)?.received_at ?? null;
+  const autoScheduleAnchor = latestSignalAt ?? state?.run.created_at ?? null;
 
-    setProgressing(true);
-    setProgressNotice(null);
-    try {
-      const result = await advanceScenario2Simulator(runId);
-      setState(result.state);
-      setSimulatorComplete(result.complete);
-      setProgressNotice(
-        result.ingested
-          ? `Сигнал ${result.ingested.signal.source_ref} сохранён. состояние продукта обновлён.`
-          : result.complete
-            ? "Все демонстрационные сигналы уже отправлены."
-            : "Следующий шаг симулятора выполнен.",
-      );
-    } catch (error) {
-      setProgressNotice(displayApiError(error));
-    } finally {
-      setProgressing(false);
+  useEffect(() => {
+    if (
+      !state ||
+      simulatorComplete ||
+      !autoScheduleAnchor ||
+      autoAdvanceInFlightRef.current
+    ) {
+      return;
     }
-  }
+
+    const anchorMs = Date.parse(autoScheduleAnchor);
+    const delayMs = Number.isFinite(anchorMs)
+      ? Math.max(0, anchorMs + AUTO_SIGNAL_INTERVAL_MS - Date.now())
+      : AUTO_SIGNAL_INTERVAL_MS;
+    const controller = new AbortController();
+
+    const timeoutId = window.setTimeout(() => {
+      if (controller.signal.aborted || autoAdvanceInFlightRef.current) return;
+      autoAdvanceInFlightRef.current = true;
+      setProgressNotice(null);
+
+      void advanceScenario2Simulator(runId, controller.signal)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          setState(result.state);
+          setProgressNotice(
+            result.ingested
+              ? `Сигнал ${result.ingested.signal.source_ref} сохранён. Состояние продукта обновлено.`
+              : result.complete
+                ? "Все демонстрационные сигналы уже сохранены."
+                : "Автоматический шаг симуляции выполнен.",
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          setProgressNotice(displayApiError(error));
+        })
+        .finally(() => {
+          autoAdvanceInFlightRef.current = false;
+        });
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [autoScheduleAnchor, runId, signalCount, simulatorComplete, state]);
 
   async function handleDecision(
     proposal: MajorIncidentProposalView,
@@ -265,7 +297,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
       setDecisionNotice(
         result.replayed
           ? "Сохранённое решение воспроизведено без повторного выполнения."
-          : "Решение человека сохранено в состояние продукта.",
+          : "Решение человека сохранено в состоянии продукта.",
       );
       await refreshState();
     } catch (error) {
@@ -276,7 +308,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         );
         if (persisted && persisted.status !== "PENDING_APPROVAL") {
           setDecisionNotice(
-            "Ответ прервался, но сохранённое решение восстановлено из состояние продукта.",
+            "Ответ прервался, но сохранённое решение восстановлено из состояния продукта.",
           );
         } else {
           setDecisionError(
@@ -476,9 +508,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 ))}
               </div>
             ) : (
-              <EmptyPanel>
-                Инцидентов пока нет. Добавьте следующий демонстрационный сигнал.
-              </EmptyPanel>
+              <EmptyPanel>Инцидентов ещё нет.</EmptyPanel>
             )}
           </article>
 
@@ -528,11 +558,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                       <li key={fact}>{fact}</li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="muted-copy observation-copy">
-                    Нормализованных фактов пока нет.
-                  </p>
-                )}
+                ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
                     Безопасные типизированные данные
@@ -576,7 +602,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                наблюдений появится после того, как агент начнёт расследование.
+                Наблюдения появятся после того, как агент начнёт расследование.
               </EmptyPanel>
             )}
           </article>
@@ -636,24 +662,13 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
             <div className="scenario-progress">
               <div>
-                <span className="subtle-label">Демонстрационный поток</span>
+                <span className="subtle-label">Автоматическая симуляция</span>
                 <p>
-                  Сигналов сохранено: <strong>{state.operational_signals.length}</strong>.
-                  Каждый шаг сохраняет событие в состоянии продукта до отправки агенту.
+                  Сигналы поступают автоматически каждые 20 секунд. Сохранено:{" "}
+                  <strong>{state.operational_signals.length}</strong> из{" "}
+                  <strong>{CANONICAL_SIGNAL_COUNT}</strong>.
                 </p>
               </div>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => void handleNextSignal()}
-                disabled={progressing || simulatorComplete}
-              >
-                {progressing
-                  ? "Добавляем сигнал…"
-                  : simulatorComplete
-                    ? "Все сигналы отправлены"
-                    : "Добавить следующий сигнал"}
-              </button>
               {progressNotice ? (
                 <p className="decision-notice" role="status">
                   {progressNotice}
@@ -684,7 +699,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
                 <div className="proposal-rationale">
                   <span>Обоснование</span>
-                  <p>{latestProposal.rationale}</p>
+                  <p>{majorIncidentRationale(latestProposal)}</p>
                 </div>
 
                 <div className="proposal-evidence">
