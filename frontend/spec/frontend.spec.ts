@@ -114,6 +114,7 @@ describe("operational presentation", () => {
     expect([...beforeApproval.proposalIds]).toEqual(["P-1"]);
     expect(beforeApproval.approvalRequested).toBe(true);
     expect(beforeApproval.approvalDecided).toBe(false);
+    expect(beforeApproval.approvalDecision).toBeNull();
     expect(beforeApproval.actionExecuted).toBe(false);
     expect(playbackIncidentStatus("ESCALATED", false)).toBe("OPEN");
 
@@ -122,6 +123,7 @@ describe("operational presentation", () => {
       { ...event("action.executed", { proposal_id: "P-1" }), seq: 6 },
     ]);
     expect(afterExecution.approvalDecided).toBe(true);
+    expect(afterExecution.approvalDecision).toBe("APPROVED");
     expect(afterExecution.actionExecuted).toBe(true);
     expect(playbackIncidentStatus("ESCALATED", true)).toBe("ESCALATED");
   });
