@@ -187,7 +187,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
           setConnection("Reconnecting");
           setStreamError(
-            "Поток событий прервалась. Восстанавливаемся из сохранённого состояние продукта.",
+            "Поток событий прервался. Восстанавливаемся из сохранённого состояния продукта.",
           );
 
           try {
@@ -232,7 +232,6 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
   useEffect(() => {
     if (
-      !state ||
       simulatorComplete ||
       !autoScheduleAnchor ||
       autoAdvanceInFlightRef.current
