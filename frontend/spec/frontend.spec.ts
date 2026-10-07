@@ -6,7 +6,9 @@ import {
   FIELD_SERVICE_OUTCOME_NOTE,
   observationState,
   proposalTone,
+  scenario2InvestigationActivities,
   STALE_PROPOSAL_NOTE,
+  TIMELINE_PLAYBACK_INTERVAL_MS,
 } from "../lib/presentation";
 import { isStateRefreshEvent } from "../lib/recovery";
 import {
@@ -14,7 +16,11 @@ import {
   createSseParser,
   type SseFrame,
 } from "../lib/sse";
-import type { ApplicationEventView, EvidenceView } from "../lib/types";
+import type {
+  ApplicationEventView,
+  EvidenceView,
+  Scenario2IngestionStateResponse,
+} from "../lib/types";
 
 function event(
   eventType: string,
@@ -77,6 +83,116 @@ describe("operational presentation", () => {
         payload: { site_id: "SITE-1" },
       }),
     ).toBeNull();
+  });
+
+  it("builds Scenario 2 human activity only from persisted signals, evidence and proposal state", () => {
+    const state: Scenario2IngestionStateResponse = {
+      run: {
+        run_id: "RUN-1",
+        tenant_id: "TENANT-8OCT",
+        scenario_id: "scenario-2",
+        status: "WAITING_APPROVAL",
+        created_at: "2026-10-05T00:00:00Z",
+        updated_at: "2026-10-05T00:00:30Z",
+      },
+      service_incidents: [],
+      operational_signals: [],
+      evidence: [
+        {
+          evidence_id: "E-LOCAL",
+          tenant_id: "TENANT-8OCT",
+          run_id: "RUN-1",
+          source_type: "LOCAL_SERVICE_HEALTH",
+          captured_at: "2026-10-05T00:00:20Z",
+          entity_ids: ["SITE-KZN-017", "payment_gateway"],
+          payload: {
+            site_id: "SITE-KZN-017",
+            service_key: "payment_gateway",
+            network_health: "HEALTHY",
+            local_service_health: "HEALTHY",
+          },
+          facts: [],
+          expires_at: "2026-10-05T00:05:20Z",
+        },
+      ],
+      major_incident_proposals: [
+        {
+          proposal_id: "MIP-1",
+          tenant_id: "TENANT-8OCT",
+          run_id: "RUN-1",
+          correlation_key: "payment_gateway_timeout",
+          service_key: "payment_gateway",
+          affected_site_ids: ["SITE-KZN-017", "SITE-SAM-024"],
+          dependency_id: "DEP-ACMEPAY-PAYMENTS",
+          dependency_name: "AcmePay",
+          action_type: "CREATE_MAJOR_INCIDENT",
+          evidence_ids: ["E-LOCAL"],
+          summary: "Cross-site payment timeouts",
+          rationale: "Persisted evidence supports a shared dependency.",
+          status: "PENDING_APPROVAL",
+          created_at: "2026-10-05T00:00:25Z",
+          updated_at: "2026-10-05T00:00:25Z",
+        },
+      ],
+      major_incident_approvals: [],
+      major_incident_executions: [],
+      major_incidents: [],
+      latest_event_seq: 5,
+    };
+
+    const activities = scenario2InvestigationActivities(
+      [
+        {
+          ...event("external.signal", {
+            source: "MONITORING",
+            site_id: "SITE-SAM-024",
+            service_key: "payment_gateway",
+            safe_payload: { kind: "payment_timeout_rate" },
+          }),
+          seq: 1,
+        },
+        {
+          ...event("external.signal", {
+            source: "ITSM",
+            site_id: "SITE-KZN-017",
+            service_key: "payment_gateway",
+            safe_payload: {
+              kind: "user_ticket",
+              impact: "payment_attempts_timing_out",
+            },
+          }),
+          seq: 2,
+        },
+        {
+          ...event("observation.recorded", {
+            evidence_id: "E-LOCAL",
+            source_type: "LOCAL_SERVICE_HEALTH",
+          }),
+          seq: 3,
+        },
+        {
+          ...event("proposal.created", { proposal_id: "MIP-1" }),
+          seq: 4,
+        },
+        {
+          ...event("run.status_changed", { status: "WAITING_APPROVAL" }),
+          seq: 5,
+        },
+      ],
+      state,
+    );
+
+    expect(TIMELINE_PLAYBACK_INTERVAL_MS).toBe(5_000);
+    expect(activities.map((item) => item.title)).toEqual([
+      "Агент запросил подтверждение действия",
+      "Агент выявил корреляцию между событиями",
+      "Агент проверил локальную инфраструктуру",
+      "Получена заявка пользователя: платёжные операции завершаются по таймауту на площадке SITE-KZN-017",
+      "Получен сигнал мониторинга: повышенный уровень таймаутов платежей на площадке SITE-SAM-024",
+    ]);
+    expect(activities[1].detail).toContain("AcmePay");
+    expect(activities[1].detail).toContain("SITE-KZN-017");
+    expect(activities[1].detail).toContain("SITE-SAM-024");
   });
 
   it("keeps important states visually distinct", () => {
