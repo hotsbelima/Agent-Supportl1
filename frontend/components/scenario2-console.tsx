@@ -17,6 +17,7 @@ import {
   activityKindLabel,
   connectionLabel,
   connectionTone,
+  dependencyNameLabel,
   eventSummary,
   eventTypeLabel,
   evidenceSourceLabel,
@@ -388,9 +389,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
   const visibleProposals = state.major_incident_proposals.filter((item) =>
     playback.proposalIds.has(item.proposal_id),
   );
-  const visibleMajorIncidents = playback.actionExecuted
-    ? state.major_incidents
-    : [];
+  const visibleMajorIncidents = state.major_incidents;
+  const actionExecuted = state.major_incident_executions.length > 0;
 
   const selectedIncident = selectedIncidentId
     ? visibleServiceIncidents.find(
@@ -406,19 +406,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
     : null;
-  const latestProposalDisplayStatus = latestProposal
-    ? playback.actionExecuted
-      ? latestProposal.status
-      : !playback.approvalDecided
-        ? "PENDING_APPROVAL"
-        : playback.approvalDecision === "REJECTED"
-          ? "REJECTED"
-          : latestProposal.status === "STALE"
-            ? "STALE"
-            : playback.approvalDecision === "APPROVED"
-              ? "APPROVED"
-              : latestProposal.status
-    : null;
+  const latestProposalDisplayStatus = latestProposal?.status ?? null;
   const latestMajorIncident = visibleMajorIncidents.at(-1) ?? null;
 
   return (
@@ -441,7 +429,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <StatusBadge
                   value={playbackIncidentStatus(
                     selectedIncident.status,
-                    playback.actionExecuted,
+                    actionExecuted,
                   )}
                   tone="info"
                 />
@@ -472,7 +460,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                       {statusLabel(
                         playbackIncidentStatus(
                           selectedIncident.status,
-                          playback.actionExecuted,
+                          actionExecuted,
                         ),
                       )}
                     </dd>
@@ -506,7 +494,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                     <StatusBadge
                       value={playbackIncidentStatus(
                         item.status,
-                        playback.actionExecuted,
+                        actionExecuted,
                       )}
                       tone="info"
                     />
@@ -728,7 +716,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Зависимость</dt>
-                    <dd>{latestProposal.dependency_name}</dd>
+                    <dd>{dependencyNameLabel(latestProposal.dependency_name)}</dd>
                   </div>
                   <div>
                     <dt>Действие</dt>
@@ -754,8 +742,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </div>
 
-                {latestProposal.status === "PENDING_APPROVAL" &&
-                playback.approvalRequested ? (
+                {latestProposal.status === "PENDING_APPROVAL" ? (
                   <div className="decision-area">
                     <p>
                       Для создания крупного инцидента требуется решение человека.
@@ -789,8 +776,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 ) : null}
 
-                {playback.approvalDecided &&
-                latestProposal.status === "STALE" ? (
+                {latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
                     {STALE_PROPOSAL_NOTE}
                   </p>
@@ -838,7 +824,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Зависимость</dt>
-                    <dd>{latestMajorIncident.dependency_name}</dd>
+                    <dd>{dependencyNameLabel(latestMajorIncident.dependency_name)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Площадки</dt>
