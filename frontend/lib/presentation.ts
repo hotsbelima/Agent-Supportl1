@@ -227,6 +227,8 @@ const INCIDENT_TEXT_LABELS: Record<string, string> = {
   payment_gateway_timeout: "Таймаут платёжного шлюза.",
   payment_gateway_timeouts: "Таймауты платёжного шлюза.",
   payment_attempts_timing_out: "Платёжные операции завершаются по таймауту.",
+  "Cross-site payment timeouts": "Таймауты платежей на нескольких площадках.",
+  "Cross-site payment timeouts.": "Таймауты платежей на нескольких площадках.",
 };
 
 export function incidentTextLabel(value: string): string {
