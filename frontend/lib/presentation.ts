@@ -229,6 +229,8 @@ const INCIDENT_TEXT_LABELS: Record<string, string> = {
   payment_attempts_timing_out: "Платёжные операции завершаются по таймауту.",
   "Cross-site payment timeouts": "Таймауты платежей на нескольких площадках.",
   "Cross-site payment timeouts.": "Таймауты платежей на нескольких площадках.",
+  "Single payment terminal reports payment gateway timeouts.":
+    "На одном платёжном терминале зафиксированы таймауты платёжного шлюза.",
 };
 
 export function incidentTextLabel(value: string): string {
@@ -245,6 +247,23 @@ const SERVICE_LABELS: Record<string, string> = {
 
 export function serviceLabel(value: string): string {
   return SERVICE_LABELS[value] ?? (/^[A-Za-z0-9_.-]+$/.test(value) ? "Сервис" : value);
+}
+
+const DEPENDENCY_NAME_LABELS: Record<string, string> = {
+  AcmePay: "CloudPayments",
+  CloudPayments: "CloudPayments",
+};
+
+export function dependencyNameLabel(value: string): string {
+  return DEPENDENCY_NAME_LABELS[value] ?? value;
+}
+
+const KB_TITLE_LABELS: Record<string, string> = {
+  "Physical access path inspection": "Проверка физического пути подключения",
+};
+
+export function kbTitleLabel(value: string): string {
+  return KB_TITLE_LABELS[value] ?? value;
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -455,7 +474,7 @@ function standardEvidenceActivity(
         approved
           ? "Агент нашёл утверждённую инструкцию"
           : "Агент проверил базу знаний",
-        title ? `Материал: «${title}».` : null,
+        title ? `Материал: «${kbTitleLabel(title)}».` : null,
       );
     }
     case "SERVICE_DEPENDENCY_MAPPING": {
@@ -466,7 +485,7 @@ function standardEvidenceActivity(
         "check",
         "Агент определил внешнюю зависимость сервиса",
         dependency
-          ? `Сервис ${service ?? "в текущем инциденте"} зависит от ${dependency}.`
+          ? `Сервис ${service ? serviceLabel(service) : "в текущем инциденте"} зависит от ${dependencyNameLabel(dependency)}.`
           : null,
       );
     }
@@ -476,7 +495,7 @@ function standardEvidenceActivity(
       return activity(
         event,
         "check",
-        `Агент проверил состояние ${dependency ?? "внешней зависимости"}`,
+        `Агент проверил состояние ${dependency ? dependencyNameLabel(dependency) : "внешней зависимости"}`,
         status ? `Состояние: ${statusLabel(status)}.` : null,
       );
     }
@@ -498,10 +517,10 @@ function standardEvidenceActivity(
       return activity(
         event,
         "check",
-        "Агент проверил существующие крупные инциденты",
+        "Агент проверил, зарегистрирован ли уже крупный инцидент по этой проблеме",
         openIds.length
           ? `Найдены совпадающие крупные инциденты: ${openIds.join(", ")}.`
-          : "Совпадающий открытый крупный инцидент не найден.",
+          : "Активного крупного инцидента по этой зависимости пока нет.",
       );
     }
     default:
@@ -739,7 +758,7 @@ function scenario2EvidenceActivity(
         "check",
         "Агент определил общую внешнюю зависимость",
         dependency
-          ? `Сервис ${service ?? "платежей"} зависит от ${dependency}.`
+          ? `Сервис ${service ? serviceLabel(service) : "платежей"} зависит от ${dependencyNameLabel(dependency)}.`
           : null,
       );
     }
@@ -750,8 +769,8 @@ function scenario2EvidenceActivity(
         event,
         "check",
         status === "DEGRADED"
-          ? `Обнаружена деградация ${dependency ?? "внешней зависимости"}`
-          : `Агент проверил состояние ${dependency ?? "внешней зависимости"}`,
+          ? `Обнаружена деградация ${dependency ? dependencyNameLabel(dependency) : "внешней зависимости"}`
+          : `Агент проверил состояние ${dependency ? dependencyNameLabel(dependency) : "внешней зависимости"}`,
         status ? `Состояние: ${statusLabel(status)}.` : null,
       );
     }
@@ -760,10 +779,10 @@ function scenario2EvidenceActivity(
       return activity(
         event,
         "check",
-        "Агент проверил существующие крупные инциденты",
+        "Агент проверил, зарегистрирован ли уже крупный инцидент по этой проблеме",
         openIds.length
           ? `Найдены совпадающие открытые инциденты: ${openIds.join(", ")}.`
-          : "Совпадающий открытый крупный инцидент не найден.",
+          : "Активного крупного инцидента по этой зависимости пока нет.",
       );
     }
     case "OPERATIONAL_SIGNAL":
@@ -821,7 +840,7 @@ export function scenario2InvestigationActivities(
           "agent",
           "Агент выявил корреляцию между событиями",
           proposal
-            ? `Сбои на площадках ${proposal.affected_site_ids.join(", ")} связаны с общей деградацией зависимости ${proposal.dependency_name}. Агент предлагает зарегистрировать крупный инцидент.`
+            ? `Сбои на площадках ${proposal.affected_site_ids.join(", ")} связаны с общей деградацией зависимости ${dependencyNameLabel(proposal.dependency_name)}. Агент предлагает зарегистрировать крупный инцидент.`
             : "Корреляция подтверждена сохранённым предложением крупного инцидента.",
         ),
       );
@@ -887,7 +906,7 @@ export function majorIncidentRationale(
   proposal: MajorIncidentProposalView,
 ): string {
   const sites = proposal.affected_site_ids.join(", ");
-  return `Сигналы на площадках ${sites} указывают на общую деградацию зависимости ${proposal.dependency_name}. Предлагается зарегистрировать крупный инцидент после подтверждения человеком.`;
+  return `Сигналы на площадках ${sites} указывают на общую деградацию зависимости ${dependencyNameLabel(proposal.dependency_name)}. Предлагается зарегистрировать крупный инцидент после подтверждения человеком.`;
 }
 
 export function connectionLabel(state: ConnectionState): string {
