@@ -3,6 +3,7 @@ import type {
   ConnectionState,
   EvidenceView,
   JsonValue,
+  MajorIncidentProposalView,
   ProposalView,
 } from "./types";
 
@@ -100,6 +101,20 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function statusLabel(value: string): string {
   return STATUS_LABELS[value] ?? value;
+}
+
+export function proposalRationale(proposal: ProposalView): string {
+  if (proposal.diagnosis === "LOCAL_ACCESS_LINK_FAILURE") {
+    return `Терминал ${proposal.device_id} недоступен из-за локального сбоя канала доступа. Наблюдения подтверждают необходимость выездной диагностики; действие требует решения человека.`;
+  }
+  return proposal.rationale;
+}
+
+export function majorIncidentRationale(
+  proposal: MajorIncidentProposalView,
+): string {
+  const sites = proposal.affected_site_ids.join(", ");
+  return `Сигналы на площадках ${sites} указывают на общую деградацию зависимости ${proposal.dependency_name}. Предлагается зарегистрировать крупный инцидент после подтверждения человеком.`;
 }
 
 export function connectionLabel(state: ConnectionState): string {
