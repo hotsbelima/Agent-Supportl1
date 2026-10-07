@@ -29,6 +29,7 @@ import {
 } from "@/lib/recovery";
 import {
   actionTypeLabel,
+  activityKindLabel,
   connectionLabel,
   connectionTone,
   diagnosisLabel,
@@ -40,6 +41,7 @@ import {
   proposalTone,
   statusLabel,
   STALE_PROPOSAL_NOTE,
+  standardInvestigationActivities,
   visibleTimelineEvents,
 } from "@/lib/presentation";
 import { streamRunEvents } from "@/lib/sse";
@@ -333,6 +335,9 @@ export function RunConsole({ runId }: { runId: string }) {
 
   const visibleEvents = state
     ? visibleTimelineEvents(events, state.run.created_at, playbackNow)
+    : [];
+  const investigationActivities = state
+    ? standardInvestigationActivities(visibleEvents, state)
     : [];
 
   const selectedIncidentKey =
@@ -657,11 +662,44 @@ export function RunConsole({ runId }: { runId: string }) {
         </section>
 
         <section className="console-column timeline-column">
+          <article className="panel scroll-panel investigation-panel">
+            <div className="panel-heading sticky-heading">
+              <div>
+                <p className="panel-kicker">
+                  Что происходило и к каким выводам пришёл агент
+                </p>
+                <h2>Ход расследования</h2>
+              </div>
+              <span className="panel-count">{investigationActivities.length}</span>
+            </div>
+
+            {investigationActivities.length ? (
+              <ol className="activity-list">
+                {investigationActivities.map((item) => (
+                  <li className="activity-item" data-kind={item.kind} key={item.id}>
+                    <div className="activity-meta">
+                      <span>{activityKindLabel(item.kind)}</span>
+                      <time dateTime={item.occurred_at}>
+                        {formatTimestamp(item.occurred_at)}
+                      </time>
+                    </div>
+                    <strong>{item.title}</strong>
+                    {item.detail ? <p>{item.detail}</p> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyPanel>
+                Ход расследования появится после первых подтверждённых событий.
+              </EmptyPanel>
+            )}
+          </article>
+
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">История событий</p>
-                <h2>Хронология</h2>
+                <p className="panel-kicker">События системы</p>
+                <h2>Технический журнал</h2>
               </div>
               <span className="panel-count">{visibleEvents.length}</span>
             </div>
@@ -688,7 +726,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>Сохранённых событий приложения пока нет.</EmptyPanel>
+              <EmptyPanel>Событий системы пока нет.</EmptyPanel>
             )}
           </article>
         </section>
@@ -797,7 +835,7 @@ export function RunConsole({ runId }: { runId: string }) {
           <article className="panel scroll-panel result-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Зарегистрированный результат</p>
+                <p className="panel-kicker">Результат действия</p>
                 <h2>Выездной сервис</h2>
               </div>
               <span className="panel-count">{state.work_orders.length}</span>
