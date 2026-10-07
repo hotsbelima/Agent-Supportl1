@@ -34,8 +34,11 @@ import {
   connectionTone,
   diagnosisLabel,
   eventSummary,
+  eventTypeLabel,
+  evidenceSourceLabel,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
+  incidentTextLabel,
   observationState,
   playbackIncidentStatus,
   playbackVisibility,
@@ -103,6 +106,7 @@ export function RunConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [journalVisible, setJournalVisible] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<{
     runId: string;
     id: string;
@@ -328,6 +332,10 @@ export function RunConsole({ runId }: { runId: string }) {
   }, [publishState, refreshState, runId]);
 
   useEffect(() => {
+    setJournalVisible(false);
+  }, [runId]);
+
+  useEffect(() => {
     const timerId = window.setInterval(() => {
       setPlaybackNow(Date.now());
     }, 1_000);
@@ -511,9 +519,7 @@ export function RunConsole({ runId }: { runId: string }) {
                       : "info"
                   }
                 />
-              ) : (
-                <span className="panel-count">{state.incidents.length}</span>
-              )}
+              ) : null}
             </div>
 
             {selectedIncident ? (
@@ -551,7 +557,7 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                   <div className="wide">
                     <dt>Описание</dt>
-                    <dd>{selectedIncident.symptom}</dd>
+                    <dd>{incidentTextLabel(selectedIncident.symptom)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Обновлён</dt>
@@ -572,7 +578,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 {state.incidents.map((item) => (
                   <div className="entity-row" role="listitem" key={item.incident_id}>
                     <div className="entity-row-main">
-                      <strong>{item.symptom}</strong>
+                      <strong>{incidentTextLabel(item.symptom)}</strong>
                       <span>{item.site_id}</span>
                     </div>
                     <StatusBadge
@@ -610,7 +616,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
-              <span className="panel-count">{visibleEvidence.length}</span>
+              
             </div>
 
             {selectedObservation ? (
@@ -625,7 +631,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 <dl className="facts-grid">
                   <div>
                     <dt>Тип</dt>
-                    <dd>{selectedObservation.source_type}</dd>
+                    <dd>{evidenceSourceLabel(selectedObservation.source_type)}</dd>
                   </div>
                   <div>
                     <dt>Получено</dt>
@@ -651,17 +657,9 @@ export function RunConsole({ runId }: { runId: string }) {
                     ))}
                   </ul>
                 ) : null}
-                {selectedObservation.expires_at ? (
-                  <p className="expiry observation-copy">
-                    Действительно до:{" "}
-                    <strong>
-                      {formatTimestamp(selectedObservation.expires_at)}
-                    </strong>
-                  </p>
-                ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Безопасные типизированные данные
+                    Данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
@@ -677,7 +675,7 @@ export function RunConsole({ runId }: { runId: string }) {
                     key={evidence.evidence_id}
                   >
                     <div className="entity-row-main">
-                      <strong>{evidence.source_type}</strong>
+                      <strong>{evidenceSourceLabel(evidence.source_type)}</strong>
                       <span>
                         {evidence.entity_ids[0] ?? "Наблюдение"}
                       </span>
@@ -722,7 +720,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 </p>
                 <h2>Ход расследования</h2>
               </div>
-              <span className="panel-count">{investigationActivities.length}</span>
+              
             </div>
 
             {investigationActivities.length ? (
@@ -753,10 +751,21 @@ export function RunConsole({ runId }: { runId: string }) {
                 <p className="panel-kicker">События системы</p>
                 <h2>Технический журнал</h2>
               </div>
-              <span className="panel-count">{visibleEvents.length}</span>
+              <button
+                className="journal-toggle"
+                type="button"
+                onClick={() => setJournalVisible((visible) => !visible)}
+                aria-expanded={journalVisible}
+              >
+                {journalVisible ? "Скрыть журнал" : "Показать журнал"}
+              </button>
             </div>
 
-            {visibleEvents.length ? (
+            {!journalVisible ? (
+              <div className="journal-hidden-copy">
+                Содержимое журнала скрыто, чтобы не перегружать интерфейс технической информацией.
+              </div>
+            ) : visibleEvents.length ? (
               <ol className="timeline-list">
                 {visibleEvents.map((event) => (
                   <li className="timeline-item" key={event.seq}>
@@ -768,9 +777,9 @@ export function RunConsole({ runId }: { runId: string }) {
                           {formatTimestamp(event.occurred_at)}
                         </time>
                       </div>
-                      <code className="event-type">{event.event_type}</code>
+                      <span className="event-type">{eventTypeLabel(event.event_type)}</span>
                       <details className="event-details">
-                        <summary>Безопасные сохранённые детали</summary>
+                        <summary>Детали</summary>
                         <pre>{JSON.stringify(event.payload, null, 2)}</pre>
                       </details>
                     </div>
@@ -894,7 +903,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 <p className="panel-kicker">Результат действия</p>
                 <h2>Что сделано</h2>
               </div>
-              <span className="panel-count">{visibleWorkOrders.length}</span>
+              
             </div>
 
             {visibleWorkOrders.length ? (
