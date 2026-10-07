@@ -364,6 +364,25 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 .event-type { display: inline-block; margin-top: 7px; color: var(--info); font-size: 9px; }
 .event-details { margin-top: 11px; }
 .event-details summary { width: fit-content; color: var(--muted); font-size: 10px; }
+.journal-toggle {
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #041411;
+  background: var(--accent);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 780;
+  white-space: nowrap;
+}
+.journal-toggle:hover { filter: brightness(1.05); }
+.journal-hidden-copy {
+  padding: 24px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
 .proposal-card { padding: 0 0 18px; }
 .proposal-rationale {
   margin: 0 18px 18px; padding-top: 16px; border-top: 1px solid var(--line);
@@ -566,6 +585,11 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 
 :root[data-theme="light"] .decision-notice {
   color: #176a59;
+}
+
+:root[data-theme="light"] .journal-toggle {
+  color: #ffffff;
+  background: #111820;
 }
 
 
