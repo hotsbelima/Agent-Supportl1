@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+const homeSource = readFileSync(
+  new URL("../app/page.tsx", import.meta.url),
+  "utf8",
+);
 const startSource = readFileSync(
   new URL("../components/start-scenario.tsx", import.meta.url),
   "utf8",
@@ -36,6 +40,14 @@ const apiSource = readFileSync(
 );
 
 describe("Phase 9A final public UI", () => {
+  it("keeps the landing page focused on the product rather than implementation trivia", () => {
+    expect(homeSource).toContain("Автономный L1 Support Agent");
+    expect(homeSource).toContain("Расследует инциденты");
+    expect(homeSource).not.toContain("Next.js UI");
+    expect(homeSource).not.toContain("Сохранённый источник истины");
+    expect(homeSource).not.toContain("home-principles");
+  });
+
   it("exposes all three persisted Product scenarios without browser agent orchestration", () => {
     expect(startSource).toContain('"scenario-1", "scenario-2", "scenario-3"');
     expect(startSource).toContain("startScenario1()");
