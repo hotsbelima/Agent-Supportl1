@@ -90,6 +90,17 @@ describe("Phase 9A final public UI", () => {
     expect(scenario2Console).not.toContain("onWheel");
   });
 
+  it("keeps mobile console panels compact with timeline second", () => {
+    expect(cssSource).toContain("height: min(23vh, 210px)");
+    expect(cssSource).toContain(".incident-panel { order: 1; }");
+    expect(cssSource).toContain(".timeline-panel { order: 2; }");
+    expect(cssSource).toContain(".observation-panel { order: 3; }");
+    expect(standardConsole).toContain("incident-panel");
+    expect(standardConsole).toContain("observation-panel");
+    expect(scenario2Console).toContain("incident-panel");
+    expect(scenario2Console).toContain("observation-panel");
+  });
+
   it("keeps dark as default and light as an explicit persistent option", () => {
     expect(cssSource).toContain(":root {");
     expect(cssSource).toContain("color-scheme: dark");
