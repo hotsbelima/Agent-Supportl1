@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  DEMO_TENANT_ID,
   configurationIssue,
   displayApiError,
   getHealth,
@@ -27,7 +26,6 @@ const SCENARIOS: Record<
     eyebrow: string;
     title: string;
     description: string;
-    demonstrates: string;
   }
 > = {
   "scenario-1": {
@@ -35,21 +33,18 @@ const SCENARIOS: Record<
     title: "Терминал потерял сетевое подключение",
     description:
       "Один локальный сбой: агент собирает наблюдаемые факты, формирует предложение на выездной сервис и ждёт решения человека.",
-    demonstrates: "Локальная диагностика · наблюдения · решение человека",
   },
   "scenario-2": {
     eyebrow: "Сценарий 2 · массовый сервисный инцидент",
     title: "Несколько сигналов указывают на общую зависимость",
     description:
       "Несколько событий коррелируются в сервисный инцидент. Агент проверяет общую зависимость, формирует предложение о создании крупного инцидента и ждёт решения человека.",
-    demonstrates: "Корреляция · внешняя зависимость · крупный инцидент",
   },
   "scenario-3": {
     eyebrow: "Сценарий 3 · перепланирование по фактам",
     title: "Гипотеза о провайдере опровергается наблюдаемыми фактами",
     description:
       "Агент сначала проверяет AcmePay, получает «исправно», затем меняет диагностическое направление и переходит к локальной проверке терминала.",
-    demonstrates: "Опровержение гипотезы · перепланирование · наблюдения",
   },
 };
 
@@ -197,7 +192,6 @@ export function StartScenario() {
         <p className="eyebrow">{selected.eyebrow}</p>
         <h2 id="scenario-title">{selected.title}</h2>
         <p>{selected.description}</p>
-        <p className="scenario-demonstrates">{selected.demonstrates}</p>
       </div>
 
       <div className="readiness-row" role="status" aria-live="polite">
@@ -222,11 +216,6 @@ export function StartScenario() {
           </strong>
           <span>{readinessMessage}</span>
         </div>
-      </div>
-
-      <div className="launch-meta">
-        <span>Демо-контур</span>
-        <code>{DEMO_TENANT_ID}</code>
       </div>
 
       {startError ? (
