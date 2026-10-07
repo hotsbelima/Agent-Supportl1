@@ -50,6 +50,82 @@ export function visibleTimelineEvents(
   return ordered.slice(0, visibleCount).reverse();
 }
 
+export type PlaybackVisibility = {
+  evidenceIds: Set<string>;
+  proposalIds: Set<string>;
+  signalSites: Set<string>;
+  approvalRequested: boolean;
+  approvalDecided: boolean;
+  actionExecuted: boolean;
+};
+
+export function playbackVisibility(
+  visibleEvents: ApplicationEventView[],
+): PlaybackVisibility {
+  const evidenceIds = new Set<string>();
+  const proposalIds = new Set<string>();
+  const signalSites = new Set<string>();
+  let approvalRequested = false;
+  let approvalDecided = false;
+  let actionExecuted = false;
+
+  for (const event of visibleEvents) {
+    if (event.event_type === "observation.recorded") {
+      const evidenceId = stringValue(event.payload, "evidence_id");
+      if (evidenceId) evidenceIds.add(evidenceId);
+      continue;
+    }
+
+    if (event.event_type === "proposal.created") {
+      const proposalId = stringValue(event.payload, "proposal_id");
+      if (proposalId) proposalIds.add(proposalId);
+      continue;
+    }
+
+    if (event.event_type === "external.signal") {
+      const details = objectValue(event.payload, "details");
+      const site =
+        stringValue(event.payload, "site_id") ??
+        (details ? stringValue(details, "site_id") : null);
+      if (site) signalSites.add(site);
+      continue;
+    }
+
+    if (
+      event.event_type === "run.status_changed" &&
+      stringValue(event.payload, "status") === "WAITING_APPROVAL"
+    ) {
+      approvalRequested = true;
+      continue;
+    }
+
+    if (event.event_type === "approval.decided") {
+      approvalDecided = true;
+      continue;
+    }
+
+    if (event.event_type === "action.executed") {
+      actionExecuted = true;
+    }
+  }
+
+  return {
+    evidenceIds,
+    proposalIds,
+    signalSites,
+    approvalRequested,
+    approvalDecided,
+    actionExecuted,
+  };
+}
+
+export function playbackIncidentStatus(
+  status: string,
+  actionExecuted: boolean,
+): string {
+  return !actionExecuted && status === "ESCALATED" ? "OPEN" : status;
+}
+
 export const STALE_PROPOSAL_NOTE =
   "Решение человека сохранено, но свежие авторитетные данные больше не разрешают выполнение. Действие выездного сервиса не создавалось.";
 
