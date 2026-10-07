@@ -18,12 +18,16 @@ import {
   connectionLabel,
   connectionTone,
   eventSummary,
+  eventTypeLabel,
+  evidenceSourceLabel,
   formatTimestamp,
+  incidentTextLabel,
   majorIncidentRationale,
   observationState,
   playbackIncidentStatus,
   playbackVisibility,
   proposalTone,
+  serviceLabel,
   statusLabel,
   STALE_PROPOSAL_NOTE,
   scenario2InvestigationActivities,
@@ -78,6 +82,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
     verb: "approve" | "reject";
   } | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [journalVisible, setJournalVisible] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
     null,
@@ -230,6 +235,10 @@ export function Scenario2Console({ runId }: { runId: string }) {
       controller.abort();
     };
   }, [refreshState, runId]);
+
+  useEffect(() => {
+    setJournalVisible(false);
+  }, [runId]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -436,11 +445,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   )}
                   tone="info"
                 />
-              ) : (
-                <span className="panel-count">
-                  {visibleServiceIncidents.length}
-                </span>
-              )}
+              ) : null}
             </div>
 
             {selectedIncident ? (
@@ -474,11 +479,11 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Сервис</dt>
-                    <dd>{selectedIncident.service_key}</dd>
+                    <dd>{serviceLabel(selectedIncident.service_key)}</dd>
                   </div>
                   <div>
                     <dt>Симптом</dt>
-                    <dd>{selectedIncident.symptom_key}</dd>
+                    <dd>{incidentTextLabel(selectedIncident.symptom_key)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Обновлён</dt>
@@ -495,8 +500,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
                     key={item.incident_id}
                   >
                     <div className="entity-row-main">
-                      <strong>{item.symptom_key}</strong>
-                      <span>{item.site_id} · {item.service_key}</span>
+                      <strong>{incidentTextLabel(item.symptom_key)}</strong>
+                      <span>{item.site_id} · {serviceLabel(item.service_key)}</span>
                     </div>
                     <StatusBadge
                       value={playbackIncidentStatus(
@@ -526,7 +531,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
-              <span className="panel-count">{visibleEvidence.length}</span>
+              
             </div>
 
             {selectedObservation ? (
@@ -541,7 +546,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <dl className="facts-grid">
                   <div>
                     <dt>Тип</dt>
-                    <dd>{selectedObservation.source_type}</dd>
+                    <dd>{evidenceSourceLabel(selectedObservation.source_type)}</dd>
                   </div>
                   <div>
                     <dt>Получено</dt>
@@ -569,7 +574,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Безопасные типизированные данные
+                    Данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
@@ -585,7 +590,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                     key={evidence.evidence_id}
                   >
                     <div className="entity-row-main">
-                      <strong>{evidence.source_type}</strong>
+                      <strong>{evidenceSourceLabel(evidence.source_type)}</strong>
                       <span>{evidence.entity_ids[0] ?? "наблюдение"}</span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
@@ -625,7 +630,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 </p>
                 <h2>Ход расследования</h2>
               </div>
-              <span className="panel-count">{investigationActivities.length}</span>
+              
             </div>
 
             {investigationActivities.length ? (
@@ -656,10 +661,21 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <p className="panel-kicker">События системы</p>
                 <h2>Технический журнал</h2>
               </div>
-              <span className="panel-count">{visibleEvents.length}</span>
+              <button
+                className="journal-toggle"
+                type="button"
+                onClick={() => setJournalVisible((visible) => !visible)}
+                aria-expanded={journalVisible}
+              >
+                {journalVisible ? "Скрыть журнал" : "Показать журнал"}
+              </button>
             </div>
 
-            {visibleEvents.length ? (
+            {!journalVisible ? (
+              <div className="journal-hidden-copy">
+                Содержимое журнала скрыто, чтобы не перегружать интерфейс технической информацией.
+              </div>
+            ) : visibleEvents.length ? (
               <ol className="timeline-list">
                 {visibleEvents.map((event) => (
                   <li className="timeline-item" key={event.seq}>
@@ -671,9 +687,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
                           {formatTimestamp(event.occurred_at)}
                         </time>
                       </div>
-                      <code className="event-type">{event.event_type}</code>
+                      <span className="event-type">{eventTypeLabel(event.event_type)}</span>
                       <details className="event-details">
-                        <summary>Безопасные сохранённые детали</summary>
+                        <summary>Детали</summary>
                         <pre>{JSON.stringify(event.payload, null, 2)}</pre>
                       </details>
                     </div>
@@ -691,7 +707,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Подтверждение действий агента</p>
-                <h2>Предложение крупного инцидента</h2>
+                <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
                 <StatusBadge
@@ -806,7 +822,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <p className="panel-kicker">Результат действия</p>
                 <h2>Что сделано</h2>
               </div>
-              <span className="panel-count">{visibleMajorIncidents.length}</span>
+              
             </div>
 
             {latestMajorIncident ? (
@@ -818,7 +834,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <dl className="facts-grid">
                   <div>
                     <dt>Сервис</dt>
-                    <dd>{latestMajorIncident.service_key}</dd>
+                    <dd>{serviceLabel(latestMajorIncident.service_key)}</dd>
                   </div>
                   <div>
                     <dt>Зависимость</dt>
