@@ -60,7 +60,7 @@ describe("browser API client contract", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = calls[0]!;
-    expect(url).toBe("https://api.example.test/api/v1/scenario-1/runs");
+    expect(url).toBe("/product-api/api/v1/scenario-1/runs");
     expect(init?.method).toBe("POST");
     const headers = init?.headers as Headers;
     expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
@@ -110,13 +110,13 @@ describe("browser API client contract", () => {
     );
 
     expect(calls[0]?.[0]).toBe(
-      "https://api.example.test/api/v1/scenario-2/runs",
+      "/product-api/api/v1/scenario-2/runs",
     );
     expect(calls[1]?.[0]).toBe(
-      "https://api.example.test/api/v1/scenario-2/runs/RUN-S2/simulator/next",
+      "/product-api/api/v1/scenario-2/runs/RUN-S2/simulator/next",
     );
     expect(calls[2]?.[0]).toBe(
-      "https://api.example.test/api/v1/scenario-2/runs/RUN-S2/proposals/MI-PROP-1/approve",
+      "/product-api/api/v1/scenario-2/runs/RUN-S2/proposals/MI-PROP-1/approve",
     );
     for (const [, init] of calls) {
       const headers = init?.headers as Headers;
@@ -161,7 +161,7 @@ describe("browser API client contract", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = calls[0]!;
-    expect(url).toBe("https://api.example.test/api/v1/scenario-3/runs");
+    expect(url).toBe("/product-api/api/v1/scenario-3/runs");
     expect(init?.method).toBe("POST");
     const headers = init?.headers as Headers;
     expect(headers.get("X-Tenant-ID")).toBe("TENANT-8OCT");
@@ -231,7 +231,7 @@ describe("browser API client contract", () => {
 
     const [url, init] = calls[0]!;
     expect(url).toBe(
-      "https://api.example.test/api/v1/runs/RUN-1/proposals/PROP-1/approve",
+      "/product-api/api/v1/runs/RUN-1/proposals/PROP-1/approve",
     );
     expect(init?.method).toBe("POST");
     const headers = init?.headers as Headers;
@@ -273,7 +273,7 @@ describe("browser API client contract", () => {
     expect(onOpen).toHaveBeenCalledOnce();
     const [url, init] = calls[0]!;
     expect(url).toBe(
-      "https://api.example.test/api/v1/runs/RUN-1/events/stream?after_seq=17",
+      "/product-api/api/v1/runs/RUN-1/events/stream?after_seq=17",
     );
     expect(init?.method).toBe("GET");
     const headers = init?.headers as Headers;
