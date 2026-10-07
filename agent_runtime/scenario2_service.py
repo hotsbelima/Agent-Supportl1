@@ -96,6 +96,65 @@ def _scenario2_product_event_id(event: Any) -> str | None:
     return identity[0] if identity is not None else None
 
 
+SCENARIO2_READ_TOOLS = frozenset(
+    {
+        "get_local_service_health",
+        "get_service_dependencies",
+        "get_external_dependency_status",
+        "search_major_incidents",
+    }
+)
+MAX_IDENTICAL_READ_CALLS_PER_INVOCATION = 1
+MAX_REQUIRED_OUTCOME_CONTINUATIONS = 2
+
+
+def _read_call_fingerprint(call: Any) -> str | None:
+    if getattr(call, "name", None) not in SCENARIO2_READ_TOOLS:
+        return None
+    return json.dumps(
+        {
+            "name": call.name,
+            "args": dict(getattr(call, "args", None) or {}),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _scenario2_read_call_counts(
+    events: list[Any],
+    *,
+    invocation_id: str | None,
+) -> dict[str, int]:
+    if not invocation_id:
+        return {}
+    counts: dict[str, int] = {}
+    for event in events:
+        if getattr(event, "invocation_id", None) != invocation_id:
+            continue
+        get_calls = getattr(event, "get_function_calls", None)
+        for call in (get_calls() if callable(get_calls) else []):
+            fingerprint = _read_call_fingerprint(call)
+            if fingerprint is None:
+                continue
+            counts[fingerprint] = counts.get(fingerprint, 0) + 1
+    return counts
+
+
+def _required_outcome_continuation_count(
+    events: list[Any],
+    *,
+    product_event_id: str,
+) -> int:
+    return sum(
+        1
+        for event in events
+        if (identity := _scenario2_event_identity(event)) is not None
+        and identity == (product_event_id, "scenario2_required_outcome_continuation")
+    )
+
+
 def _pending_major_incident_proposal_id(event: Any) -> str | None:
     """Extract only a successful PENDING_APPROVAL proposal tool response."""
     get_responses = getattr(event, "get_function_responses", None)
@@ -285,6 +344,7 @@ class Scenario2AgentRuntime:
         product_event_id: str,
         operational_fact: dict[str, Any],
         require_proposal_hitl: bool = False,
+        force_required_outcome_continuation: bool = False,
     ) -> Scenario2AgentInvocationResult:
         """Deliver one Product event to one recoverable native ADK invocation."""
         session = await ensure_run_session(
@@ -296,12 +356,22 @@ class Scenario2AgentRuntime:
             list(session.events),
             product_event_id=product_event_id,
         )
+        continuation_count = _required_outcome_continuation_count(
+            list(session.events),
+            product_event_id=product_event_id,
+        )
         continuation_required = bool(
             require_proposal_hitl
             and correlation is not None
-            and correlation.settled
             and correlation.pending_proposal_id is None
             and correlation.paused_function_call_id is None
+            and (
+                correlation.settled
+                or (
+                    force_required_outcome_continuation
+                    and continuation_count < MAX_REQUIRED_OUTCOME_CONTINUATIONS
+                )
+            )
         )
         if correlation is not None and correlation.settled and not continuation_required:
             return Scenario2AgentInvocationResult(
@@ -326,6 +396,10 @@ class Scenario2AgentRuntime:
         pending_proposal_id: str | None = None
         paused_function_call_id: str | None = None
         proposal_created_without_wait = False
+        read_call_counts = _scenario2_read_call_counts(
+            list(session.events),
+            invocation_id=invocation_id,
+        )
 
         if correlation is None or continuation_required:
             envelope = (
@@ -375,6 +449,17 @@ class Scenario2AgentRuntime:
         async for event in stream:
             if invocation_id is None and event.invocation_id:
                 invocation_id = event.invocation_id
+
+            get_calls = getattr(event, "get_function_calls", None)
+            for call in (get_calls() if callable(get_calls) else []):
+                fingerprint = _read_call_fingerprint(call)
+                if fingerprint is None:
+                    continue
+                read_call_counts[fingerprint] = read_call_counts.get(fingerprint, 0) + 1
+                if read_call_counts[fingerprint] > MAX_IDENTICAL_READ_CALLS_PER_INVOCATION:
+                    raise RuntimeError(
+                        "Scenario 2 repeated identical read-tool loop detected"
+                    )
 
             created_proposal_id = _pending_major_incident_proposal_id(event)
             if created_proposal_id is not None:

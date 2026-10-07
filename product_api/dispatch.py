@@ -41,6 +41,36 @@ def _retry_delay_seconds(attempt_count: int) -> float:
     return float(min(30, 2**exponent))
 
 
+def _provider_rate_limited(error: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        status_code = getattr(current, "status_code", None)
+        if status_code == 429:
+            return True
+        code = getattr(current, "code", None)
+        code_value = code() if callable(code) else code
+        code_text = str(getattr(code_value, "name", code_value)).upper()
+        text = str(current).upper()
+        if (
+            "RESOURCE_EXHAUSTED" in code_text
+            or "RESOURCE_EXHAUSTED" in text
+            or "429" in text
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _provider_rate_limit_delay_seconds(attempt_count: int) -> float:
+    # Gemini free-tier limits are minute-windowed. A deferred outbox row keeps
+    # this failure durable without immediately reclaiming the same hot item and
+    # starving later Scenario 1/3 work.
+    exponent = max(0, min(attempt_count - 1, 2))
+    return float(min(300, 65 * (2**exponent)))
+
+
 class Scenario1DispatchWorker:
     """Consume durable Product dispatch envelopes without becoming an agent loop.
 
@@ -421,13 +451,22 @@ class Scenario2DispatchWorker:
             )
             await uow.commit()
 
-    async def _reschedule(self, record: ApplicationOutboxRecord) -> None:
+    async def _reschedule(
+        self,
+        record: ApplicationOutboxRecord,
+        *,
+        delay_seconds: float | None = None,
+    ) -> None:
         async with self._uow_factory() as uow:
             await uow.outbox.reschedule(
                 tenant_id=record.tenant_id,
                 run_id=record.run_id,
                 outbox_id=record.outbox_id,
-                delay_seconds=_retry_delay_seconds(record.attempt_count),
+                delay_seconds=(
+                    _retry_delay_seconds(record.attempt_count)
+                    if delay_seconds is None
+                    else delay_seconds
+                ),
             )
             await uow.commit()
 
@@ -625,6 +664,7 @@ class Scenario2DispatchWorker:
                     product_event_id=event_id,
                     operational_fact=fact,
                     require_proposal_hitl=requires_proposal,
+                    force_required_outcome_continuation=record.attempt_count > 1,
                 ),
                 timeout=self._invocation_timeout,
             )
@@ -653,8 +693,15 @@ class Scenario2DispatchWorker:
             except Exception:
                 pass
             raise
-        except Exception:
-            await self._reschedule(record)
+        except Exception as error:
+            await self._reschedule(
+                record,
+                delay_seconds=(
+                    _provider_rate_limit_delay_seconds(record.attempt_count)
+                    if _provider_rate_limited(error)
+                    else None
+                ),
+            )
             return True
 
         await self._mark_delivered(record)

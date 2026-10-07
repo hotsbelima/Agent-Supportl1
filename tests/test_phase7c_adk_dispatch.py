@@ -62,6 +62,7 @@ def _database_url() -> str:
 @dataclass
 class _RecordingScenario2Runtime:
     fail_once_event_id: str | None = None
+    rate_limit_once_event_id: str | None = None
     omit_terminal_event_id: str | None = None
 
     gemini_configured = True
@@ -79,6 +80,7 @@ class _RecordingScenario2Runtime:
         product_event_id: str,
         operational_fact: dict[str, object],
         require_proposal_hitl: bool = False,
+        force_required_outcome_continuation: bool = False,
     ) -> SimpleNamespace:
         self.calls.append(
             {
@@ -87,8 +89,19 @@ class _RecordingScenario2Runtime:
                 "product_event_id": product_event_id,
                 "operational_fact": operational_fact,
                 "require_proposal_hitl": require_proposal_hitl,
+                "force_required_outcome_continuation": (
+                    force_required_outcome_continuation
+                ),
             }
         )
+        if (
+            product_event_id == self.rate_limit_once_event_id
+            and not self._failed
+        ):
+            self._failed = True
+            error = RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+            error.status_code = 429  # type: ignore[attr-defined]
+            raise error
         if (
             product_event_id == self.fail_once_event_id
             and not self._failed
@@ -298,6 +311,60 @@ def test_cross_site_text_only_final_without_required_hitl_is_rescheduled():
             ]
             assert rows[2].delivered_at is None
             assert rows[2].attempt_count >= 1
+        finally:
+            await _clear_scenario2_dispatch_rows(factory)
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_scenario2_resource_exhausted_is_deferred_and_worker_stays_usable():
+    async def scenario() -> None:
+        tenant_id = f"TENANT-7C-429-{uuid4().hex[:10]}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        await _clear_scenario2_dispatch_rows(factory)
+        start, ingestion, state, lifecycle = _services(factory)
+        try:
+            started = await start.start(tenant_id=tenant_id)
+            assert not isinstance(started, OperationFailure)
+            event_ids = await _enqueue_three(
+                ingestion,
+                tenant_id=tenant_id,
+                run_id=started.run.run_id,
+            )
+            runtime = _RecordingScenario2Runtime(
+                rate_limit_once_event_id=event_ids[0],
+            )
+            worker = _worker(factory, state, lifecycle, runtime)
+
+            assert await worker.dispatch_once() is True
+
+            rows = await _scenario2_rows(
+                factory,
+                tenant_id=tenant_id,
+                run_id=started.run.run_id,
+            )
+            assert rows[0].delivered_at is None
+            assert rows[0].attempt_count == 1
+            assert (
+                rows[0].available_at - datetime.now(UTC)
+            ) >= timedelta(seconds=55)
+
+            # The provider failure is durable/deferred, not fatal to the
+            # consumer object; once made due, redelivery requests a clean
+            # required-outcome continuation instead of blindly resuming the
+            # failed turn.
+            async with factory() as session:
+                await session.execute(
+                    update(ApplicationOutboxRow)
+                    .where(ApplicationOutboxRow.outbox_id == rows[0].outbox_id)
+                    .values(available_at=datetime.now(UTC) - timedelta(seconds=1))
+                )
+                await session.commit()
+
+            assert await worker.dispatch_once() is True
+            assert runtime.calls[-1]["force_required_outcome_continuation"] is True
         finally:
             await _clear_scenario2_dispatch_rows(factory)
             await engine.dispose()

@@ -34,6 +34,7 @@ from agent_runtime.scenario2_service import (
     Scenario2AgentRuntime,
     _find_scenario2_event_correlation,
 )
+from agent_runtime.scenario2_tools import Scenario2AdkTools
 from product_api.app import create_app
 from product_api.scenario2_fixture import (
     ACMEPAY_DEPENDENCY_ID,
@@ -213,6 +214,54 @@ def _decision_response(call_id: str = "CALL-WAIT"):
             "decision": "APPROVED",
         },
     )
+
+
+def test_phase7d_scenario2_read_cache_reuses_successful_identical_search():
+    class _Adapter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def search_major_incidents(self, context, request):
+            self.calls += 1
+            return {
+                "ok": True,
+                "snapshot": {
+                    "service_key": request.service_key,
+                    "correlation_key": request.correlation_key,
+                    "dependency_id": request.dependency_id,
+                    "open_major_incident_ids": [],
+                },
+                "evidence": {
+                    "evidence_id": "E-MI-SEARCH",
+                    "expires_at": "2099-01-01T00:00:00+00:00",
+                },
+            }
+
+    async def scenario() -> None:
+        adapter = _Adapter()
+        tools = Scenario2AdkTools(adapter)  # type: ignore[arg-type]
+        context = SimpleNamespace(
+            user_id="TENANT-CACHE",
+            session=SimpleNamespace(id="RUN-CACHE"),
+        )
+        first = await tools.search_major_incidents(
+            service_key="payment_gateway",
+            correlation_key="payment_gateway_timeout",
+            dependency_id="DEP-ACMEPAY-PAYMENTS",
+            tool_context=context,  # type: ignore[arg-type]
+        )
+        first["snapshot"]["open_major_incident_ids"].append("MUTATED")
+        second = await tools.search_major_incidents(
+            service_key="payment_gateway",
+            correlation_key="payment_gateway_timeout",
+            dependency_id="DEP-ACMEPAY-PAYMENTS",
+            tool_context=context,  # type: ignore[arg-type]
+        )
+
+        assert adapter.calls == 1
+        assert second["snapshot"]["open_major_incident_ids"] == []
+
+    asyncio.run(scenario())
 
 
 def test_phase7d_agent_exposes_exact_product_tools_plus_native_wait():
@@ -428,6 +477,77 @@ class _Scenario2ScriptedModel(BaseLlm):
             )
             return
         raise TypeError(f"Unsupported scripted model step: {type(step)!r}")
+
+
+def _scripted_duplicate_search_call() -> types.Part:
+    return types.Part.from_function_call(
+        name="search_major_incidents",
+        args={
+            "service_key": "payment_gateway",
+            "correlation_key": "payment_gateway_timeout",
+            "dependency_id": "DEP-ACMEPAY-PAYMENTS",
+        },
+    )
+
+
+def _build_duplicate_search_agent(model: BaseLlm) -> LlmAgent:
+    async def search_major_incidents(
+        service_key: str,
+        correlation_key: str,
+        dependency_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "service_key": service_key,
+            "correlation_key": correlation_key,
+            "dependency_id": dependency_id,
+            "open_major_incident_ids": [],
+        }
+
+    return LlmAgent(
+        name="phase9g_duplicate_search_agent",
+        model=model,
+        instruction="Search once and stop.",
+        tools=[FunctionTool(search_major_incidents)],
+    )
+
+
+def test_phase9g_repeated_identical_read_loop_is_stopped_before_unbounded_model_turns(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        model = _Scenario2ScriptedModel(
+            steps=[
+                _scripted_duplicate_search_call(),
+                _scripted_duplicate_search_call(),
+                "must not reach a third Gemini turn",
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_duplicate_search_agent(model),
+        )
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=InMemorySessionService(),
+        )
+        try:
+            with pytest.raises(
+                RuntimeError,
+                match="repeated identical read-tool loop",
+            ):
+                await runtime.invoke_operational_signal(
+                    tenant_id="TENANT-9G-LOOP",
+                    run_id="RUN-9G-LOOP",
+                    product_event_id="EVENT-9G-LOOP",
+                    operational_fact={"signal": {"site_id": "SITE-A"}},
+                )
+            assert len(model.requests) <= 2
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
 
 
 def _scripted_proposal_call() -> types.Part:
