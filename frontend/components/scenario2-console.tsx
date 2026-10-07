@@ -20,6 +20,7 @@ import {
   dependencyNameLabel,
   eventSummary,
   eventTypeLabel,
+  evidenceEntityLabel,
   evidenceSourceLabel,
   formatTimestamp,
   incidentTextLabel,
@@ -579,7 +580,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   >
                     <div className="entity-row-main">
                       <strong>{evidenceSourceLabel(evidence.source_type)}</strong>
-                      <span>{evidence.entity_ids[0] ?? "наблюдение"}</span>
+                      <span>{evidenceEntityLabel(evidence)}</span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
                       </time>
