@@ -46,6 +46,11 @@ describe("Phase 9A final public UI", () => {
     expect(homeSource).not.toContain("Next.js UI");
     expect(homeSource).not.toContain("Сохранённый источник истины");
     expect(homeSource).not.toContain("home-principles");
+    expect(homeSource).not.toContain("Публичное демо операционного AI");
+    expect(homeSource).not.toContain("8 Щупалец · IT-операции");
+    expect(startSource).not.toContain("scenario-demonstrates");
+    expect(startSource).not.toContain("Демо-контур");
+    expect(startSource).not.toContain("DEMO_TENANT_ID");
   });
 
   it("exposes all three persisted Product scenarios without browser agent orchestration", () => {
