@@ -276,7 +276,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [autoScheduleAnchor, runId, signalCount, simulatorComplete, state]);
+  }, [autoScheduleAnchor, runId, signalCount, simulatorComplete]);
 
   async function handleDecision(
     proposal: MajorIncidentProposalView,
