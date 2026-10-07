@@ -71,6 +71,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
+.panel-kicker {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
 .hero-copy { max-width: 810px; margin: auto 0; padding: 56px 0; }
 .hero-copy h1 {
   margin: 14px 0 22px;
@@ -109,23 +113,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 }
 .launch-copy h2 { margin: 12px 0; font-size: 29px; letter-spacing: -0.03em; }
 .launch-copy p:last-child { margin: 0; color: var(--muted); line-height: 1.65; }
-.readiness-row {
-  display: flex; gap: 12px; margin-top: 40px; padding: 17px 0;
-  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-}
-.readiness-row div { display: grid; gap: 4px; }
-.readiness-row strong { font-size: 14px; }
-.readiness-row span:last-child { color: var(--muted); font-size: 12px; line-height: 1.45; }
-.status-dot {
-  width: 9px; height: 9px; margin-top: 5px; border-radius: 50%;
-  background: var(--warning); box-shadow: 0 0 0 5px rgba(243, 191, 98, 0.08);
-}
-.status-dot[data-state="ready"] {
-  background: var(--accent); box-shadow: 0 0 0 5px rgba(108, 228, 197, 0.08);
-}
-.status-dot[data-state="unavailable"] {
-  background: var(--danger); box-shadow: 0 0 0 5px rgba(255, 126, 136, 0.08);
-}
 .primary-button, .secondary-button, .approve-button, .reject-button {
   border: 0; border-radius: 12px; min-height: 48px; padding: 0 18px;
   font-weight: 760; cursor: pointer;
@@ -338,6 +325,12 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 .proposal-evidence { padding: 0 18px; }
 .decision-area { margin: 18px 18px 0; padding-top: 16px; border-top: 1px solid var(--line); }
 .decision-area p { margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.proposal-card > .decision-area:first-child {
+  margin: 0;
+  padding: 16px 18px;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
 .decision-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .approve-button { color: #041411; background: var(--accent); }
 .reject-button {
@@ -361,9 +354,25 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 .work-order-card .semantic-note { margin: 0; }
 .work-order-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .work-order-heading code { color: var(--muted); font-size: 9px; overflow-wrap: anywhere; text-align: right; }
-.console-footer {
-  margin-top: 14px; padding: 13px 3px; display: flex; gap: 18px; flex-wrap: wrap;
-  color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+.run-footer-bar {
+  margin-top: 14px;
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(14, 27, 39, 0.82);
+}
+.run-footer-bar > strong {
+  font-size: 13px;
+  font-weight: 720;
+}
+.run-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .console-loading, .fatal-card {
   max-width: 600px; margin: 20vh auto 0; padding: 30px;
@@ -482,6 +491,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 }
 
 :root[data-theme="light"] .run-header {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="light"] .run-footer-bar {
   background: rgba(255, 255, 255, 0.92);
 }
 
@@ -643,6 +656,15 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 
   .run-header-actions {
     justify-content: flex-start;
+  }
+
+  .run-footer-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .run-footer-actions {
+    justify-content: space-between;
   }
 
   .scroll-panel {
