@@ -229,7 +229,6 @@ export function Scenario2Console({ runId }: { runId: string }) {
   }, [refreshState, runId]);
 
   useEffect(() => {
-    setPlaybackNow(Date.now());
     const timerId = window.setInterval(() => {
       setPlaybackNow(Date.now());
     }, 1_000);
