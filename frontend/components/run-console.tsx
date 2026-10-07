@@ -35,6 +35,7 @@ import {
   diagnosisLabel,
   eventSummary,
   eventTypeLabel,
+  evidenceEntityLabel,
   evidenceSourceLabel,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
@@ -664,7 +665,7 @@ export function RunConsole({ runId }: { runId: string }) {
                     <div className="entity-row-main">
                       <strong>{evidenceSourceLabel(evidence.source_type)}</strong>
                       <span>
-                        {evidence.entity_ids[0] ?? "Наблюдение"}
+                        {evidenceEntityLabel(evidence)}
                       </span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
