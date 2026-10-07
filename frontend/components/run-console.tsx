@@ -324,7 +324,6 @@ export function RunConsole({ runId }: { runId: string }) {
   }, [publishState, refreshState, runId]);
 
   useEffect(() => {
-    setPlaybackNow(Date.now());
     const timerId = window.setInterval(() => {
       setPlaybackNow(Date.now());
     }, 1_000);
