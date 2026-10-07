@@ -110,6 +110,22 @@ def _diagnostic_code(state: OperationalState) -> str:
     return f"LINK_{state.value}"
 
 
+async def _record_tool_started(
+    uow: object,
+    *,
+    context: ToolCallContext,
+    tool_name: str,
+) -> None:
+    await append_uow_event(
+        uow,
+        context=context,
+        event_type=ApplicationEventType.TOOL_STARTED,
+        payload={"tool_name": tool_name},
+    )
+    # Persist before the provider call so the UI can show real in-flight work.
+    await uow.commit()
+
+
 async def _record_observation(
     uow: object,
     *,
@@ -255,6 +271,7 @@ class Scenario1ReadToolService:
                         "unknown_run_device",
                     )
 
+                await _record_tool_started(uow, context=context, tool_name="get_device")
                 topology = await self._cmdb.get_device(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -346,6 +363,7 @@ class Scenario1ReadToolService:
                         "unknown_run_site",
                     )
 
+                await _record_tool_started(uow, context=context, tool_name="get_site_health")
                 snapshot = await self._monitoring.get_site_health(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -445,6 +463,7 @@ class Scenario1ReadToolService:
                         "unknown_attachment_target",
                     )
 
+                await _record_tool_started(uow, context=context, tool_name="run_diagnostic")
                 snapshot = await self._monitoring.run_diagnostic(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
