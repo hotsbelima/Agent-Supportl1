@@ -56,6 +56,7 @@ export type PlaybackVisibility = {
   signalSites: Set<string>;
   approvalRequested: boolean;
   approvalDecided: boolean;
+  approvalDecision: string | null;
   actionExecuted: boolean;
 };
 
@@ -67,6 +68,7 @@ export function playbackVisibility(
   const signalSites = new Set<string>();
   let approvalRequested = false;
   let approvalDecided = false;
+  let approvalDecision: string | null = null;
   let actionExecuted = false;
 
   for (const event of visibleEvents) {
@@ -101,6 +103,7 @@ export function playbackVisibility(
 
     if (event.event_type === "approval.decided") {
       approvalDecided = true;
+      approvalDecision = stringValue(event.payload, "decision");
       continue;
     }
 
@@ -115,6 +118,7 @@ export function playbackVisibility(
     signalSites,
     approvalRequested,
     approvalDecided,
+    approvalDecision,
     actionExecuted,
   };
 }
