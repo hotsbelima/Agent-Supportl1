@@ -79,6 +79,7 @@ class _RecordingScenario2Runtime:
         product_event_id: str,
         operational_fact: dict[str, object],
         require_proposal_hitl: bool = False,
+        force_required_outcome_continuation: bool = False,
     ) -> SimpleNamespace:
         self.calls.append(
             {
@@ -87,6 +88,9 @@ class _RecordingScenario2Runtime:
                 "product_event_id": product_event_id,
                 "operational_fact": operational_fact,
                 "require_proposal_hitl": require_proposal_hitl,
+                "force_required_outcome_continuation": (
+                    force_required_outcome_continuation
+                ),
             }
         )
         if (
