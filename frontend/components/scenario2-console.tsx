@@ -13,6 +13,7 @@ import {
   isRetryableApiFailure,
 } from "@/lib/api";
 import {
+  actionTypeLabel,
   connectionLabel,
   connectionTone,
   eventSummary,
@@ -22,6 +23,7 @@ import {
   proposalTone,
   statusLabel,
   STALE_PROPOSAL_NOTE,
+  visibleTimelineEvents,
 } from "@/lib/presentation";
 import { abortableDelay } from "@/lib/recovery";
 import { streamRunEvents } from "@/lib/sse";
@@ -61,6 +63,7 @@ function isAbortError(error: unknown): boolean {
 export function Scenario2Console({ runId }: { runId: string }) {
   const [state, setState] = useState<Scenario2IngestionStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
+  const [playbackNow, setPlaybackNow] = useState(() => Date.now());
   const [connection, setConnection] =
     useState<ConnectionState>("Reconnecting");
   const [loading, setLoading] = useState(true);
@@ -225,6 +228,15 @@ export function Scenario2Console({ runId }: { runId: string }) {
     };
   }, [refreshState, runId]);
 
+  useEffect(() => {
+    setPlaybackNow(Date.now());
+    const timerId = window.setInterval(() => {
+      setPlaybackNow(Date.now());
+    }, 1_000);
+
+    return () => window.clearInterval(timerId);
+  }, [runId]);
+
   const signalCount = state?.operational_signals.length ?? 0;
   const simulatorComplete = signalCount >= CANONICAL_SIGNAL_COUNT;
   const latestSignalAt = state?.operational_signals.at(-1)?.received_at ?? null;
@@ -367,60 +379,14 @@ export function Scenario2Console({ runId }: { runId: string }) {
         .at(-1) ?? null
     : null;
   const latestMajorIncident = state.major_incidents.at(-1) ?? null;
-  const lastSeq = events.at(-1)?.seq ?? state.latest_event_seq;
+  const visibleEvents = visibleTimelineEvents(
+    events,
+    state.run.created_at,
+    playbackNow,
+  );
 
   return (
     <main className="console-shell">
-      <header className="run-header">
-        <div className="brand-lockup">
-          <Link href="/" className="brand-mark" aria-label="На главную">
-            8O
-          </Link>
-          <div>
-            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
-            <h1>Сценарий 2 · массовый сервисный инцидент</h1>
-          </div>
-        </div>
-
-        <div className="run-header-actions">
-          <Link className="secondary-button compact-button" href="/">
-            Новый запуск
-          </Link>
-        </div>
-
-        <div className="run-header-grid">
-          <div>
-            <span>Запуск</span>
-            <code>{state.run.run_id}</code>
-          </div>
-          <div>
-            <span>Статус</span>
-            <StatusBadge value={state.run.status} tone="info" />
-          </div>
-          <div>
-            <span>Инциденты</span>
-            <strong>{state.service_incidents.length}</strong>
-          </div>
-          <div>
-            <span>Сигналы</span>
-            <strong>{state.operational_signals.length}</strong>
-          </div>
-          <div>
-            <span>Соединение</span>
-            <span
-              className="status-badge"
-              data-tone={connectionTone(connection)}
-            >
-              {connectionLabel(connection)}
-            </span>
-          </div>
-          <div>
-            <span>Последнее событие</span>
-            <strong>#{lastSeq}</strong>
-          </div>
-        </div>
-      </header>
-
       {streamError ? (
         <div className="connection-warning" role="status">
           Сохранённое состояние остаётся доступным. <span>{streamError}</span>
@@ -514,7 +480,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Безопасные факты продукта</p>
+                <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
               <span className="panel-count">{state.evidence.length}</span>
@@ -611,15 +577,15 @@ export function Scenario2Console({ runId }: { runId: string }) {
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Сохранённый журнал аудита</p>
+                <p className="panel-kicker">История событий</p>
                 <h2>Хронология</h2>
               </div>
-              <span className="panel-count">{events.length}</span>
+              <span className="panel-count">{visibleEvents.length}</span>
             </div>
 
-            {events.length ? (
+            {visibleEvents.length ? (
               <ol className="timeline-list">
-                {events.map((event) => (
+                {visibleEvents.map((event) => (
                   <li className="timeline-item" key={event.seq}>
                     <div className="timeline-rail"><span>{event.seq}</span></div>
                     <div className="timeline-content">
@@ -688,7 +654,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Действие</dt>
-                    <dd>{latestProposal.action_type}</dd>
+                    <dd>{actionTypeLabel(latestProposal.action_type)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Затронутые площадки</dt>
@@ -822,10 +788,16 @@ export function Scenario2Console({ runId }: { runId: string }) {
         </section>
       </div>
 
-      <footer className="console-footer">
-        <span>Источник истины: состояние продукта в PostgreSQL</span>
-        <span>Поток событий: сохранённый SSE</span>
-        <span>Среда AI: Google ADK + Gemini</span>
+      <footer className="run-footer-bar">
+        <strong>Сценарий 2 · массовый сервисный инцидент</strong>
+        <div className="run-footer-actions">
+          <span className="status-badge" data-tone={connectionTone(connection)}>
+            {connectionLabel(connection)}
+          </span>
+          <Link className="secondary-button compact-button" href="/">
+            Новый запуск
+          </Link>
+        </div>
       </footer>
     </main>
   );
