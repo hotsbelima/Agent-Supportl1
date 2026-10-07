@@ -231,6 +231,9 @@ def test_phase7d_agent_exposes_exact_product_tools_plus_native_wait():
         assert tools[-1].name == WAIT_FOR_HUMAN_DECISION_TOOL
         assert isinstance(tools[-1], LongRunningFunctionTool)
 
+        assert "MUST call propose_major_incident" in SCENARIO2_AGENT_INSTRUCTION
+        assert "Do not finish with a text-only response" in SCENARIO2_AGENT_INSTRUCTION
+
         expected = {
             "get_local_service_health": {"site_id", "service_key"},
             "get_service_dependencies": {"service_key"},
