@@ -107,7 +107,12 @@ export function RunConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
-  const [journalVisible, setJournalVisible] = useState(false);
+  const [journalState, setJournalState] = useState({
+    runId,
+    visible: false,
+  });
+  const journalVisible =
+    journalState.runId === runId ? journalState.visible : false;
   const [selectedIncidentId, setSelectedIncidentId] = useState<{
     runId: string;
     id: string;
@@ -331,10 +336,6 @@ export function RunConsole({ runId }: { runId: string }) {
       controller.abort();
     };
   }, [publishState, refreshState, runId]);
-
-  useEffect(() => {
-    setJournalVisible(false);
-  }, [runId]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -742,7 +743,13 @@ export function RunConsole({ runId }: { runId: string }) {
               <button
                 className="journal-toggle"
                 type="button"
-                onClick={() => setJournalVisible((visible) => !visible)}
+                onClick={() =>
+                  setJournalState((current) => ({
+                    runId,
+                    visible:
+                      current.runId === runId ? !current.visible : true,
+                  }))
+                }
                 aria-expanded={journalVisible}
               >
                 {journalVisible ? "Скрыть журнал" : "Показать журнал"}
