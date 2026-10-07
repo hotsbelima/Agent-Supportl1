@@ -8,8 +8,14 @@ const scenario2Console = readFileSync(new URL("../components/scenario2-console.t
 const runRouter = readFileSync(new URL("../components/run-router.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../lib/api.ts", import.meta.url), "utf8");
 const recovery = readFileSync(new URL("../lib/recovery.ts", import.meta.url), "utf8");
+const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
 
 describe("Phase 9C deterministic public-demo release contract", () => {
+  it("uses one same-origin browser API boundary independent of Vercel preview hostnames", () => {
+    expect(api).toContain('const API_BASE_URL = "/product-api"');
+    expect(nextConfig).toContain('source: "/product-api/:path*"');
+  });
+
   it("keeps all three browser starts on persisted Product API routes", () => {
     expect(launcher).toContain("startScenario1()");
     expect(launcher).toContain("startScenario2()");
