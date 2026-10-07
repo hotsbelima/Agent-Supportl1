@@ -22,7 +22,10 @@ from agent_runtime.human_decision import (
     WAIT_FOR_HUMAN_DECISION_TOOL,
     build_human_decision_wait_tool,
 )
-from agent_runtime.scenario3_agent import build_scenario3_agent
+from agent_runtime.scenario3_agent import (
+    SCENARIO3_AGENT_INSTRUCTION,
+    build_scenario3_agent,
+)
 from agent_runtime.scenario3_service import Scenario3AgentRuntime
 from agent_runtime.service import AgentResumeResult
 from agent_runtime.sessions import get_run_session
@@ -198,6 +201,8 @@ def test_phase8c2_scenario3_tool_surface_is_exact_and_trusted_context_is_hidden(
 
         assert [tool.name for tool in tools] == EXPECTED_SCENARIO3_TOOLS
         assert isinstance(tools[-1], LongRunningFunctionTool)
+        assert "MUST call propose_field_visit" in SCENARIO3_AGENT_INSTRUCTION
+        assert "Do not finish with a text-only response" in SCENARIO3_AGENT_INSTRUCTION
         assert all(
             isinstance(tool, FunctionTool)
             for tool in tools[:-1]
