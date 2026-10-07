@@ -21,6 +21,8 @@ import {
   formatTimestamp,
   majorIncidentRationale,
   observationState,
+  playbackIncidentStatus,
+  playbackVisibility,
   proposalTone,
   statusLabel,
   STALE_PROPOSAL_NOTE,
@@ -358,21 +360,6 @@ export function Scenario2Console({ runId }: { runId: string }) {
     );
   }
 
-  const selectedIncident = selectedIncidentId
-    ? state.service_incidents.find(
-        (item) => item.incident_id === selectedIncidentId,
-      ) ?? null
-    : null;
-  const selectedObservation = selectedObservationId
-    ? state.evidence.find((item) => item.evidence_id === selectedObservationId) ??
-      null
-    : null;
-  const latestProposal = state.major_incident_proposals.length
-    ? [...state.major_incident_proposals]
-        .sort((a, b) => a.created_at.localeCompare(b.created_at))
-        .at(-1) ?? null
-    : null;
-  const latestMajorIncident = state.major_incidents.at(-1) ?? null;
   const visibleEvents = visibleTimelineEvents(
     events,
     state.run.created_at,
@@ -382,6 +369,40 @@ export function Scenario2Console({ runId }: { runId: string }) {
     visibleEvents,
     state,
   );
+  const playback = playbackVisibility(visibleEvents);
+  const visibleServiceIncidents = state.service_incidents.filter((item) =>
+    playback.signalSites.has(item.site_id),
+  );
+  const visibleEvidence = state.evidence.filter((item) =>
+    playback.evidenceIds.has(item.evidence_id),
+  );
+  const visibleProposals = state.major_incident_proposals.filter((item) =>
+    playback.proposalIds.has(item.proposal_id),
+  );
+  const visibleMajorIncidents = playback.actionExecuted
+    ? state.major_incidents
+    : [];
+
+  const selectedIncident = selectedIncidentId
+    ? visibleServiceIncidents.find(
+        (item) => item.incident_id === selectedIncidentId,
+      ) ?? null
+    : null;
+  const selectedObservation = selectedObservationId
+    ? visibleEvidence.find((item) => item.evidence_id === selectedObservationId) ??
+      null
+    : null;
+  const latestProposal = visibleProposals.length
+    ? [...visibleProposals]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .at(-1) ?? null
+    : null;
+  const latestProposalDisplayStatus = latestProposal
+    ? !playback.approvalDecided && !playback.actionExecuted
+      ? "PENDING_APPROVAL"
+      : latestProposal.status
+    : null;
+  const latestMajorIncident = visibleMajorIncidents.at(-1) ?? null;
 
   return (
     <main className="console-shell">
@@ -401,12 +422,15 @@ export function Scenario2Console({ runId }: { runId: string }) {
               </div>
               {selectedIncident ? (
                 <StatusBadge
-                  value={selectedIncident.status}
+                  value={playbackIncidentStatus(
+                    selectedIncident.status,
+                    playback.actionExecuted,
+                  )}
                   tone="info"
                 />
               ) : (
                 <span className="panel-count">
-                  {state.service_incidents.length}
+                  {visibleServiceIncidents.length}
                 </span>
               )}
             </div>
@@ -431,7 +455,14 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Статус</dt>
-                    <dd>{statusLabel(selectedIncident.status)}</dd>
+                    <dd>
+                      {statusLabel(
+                        playbackIncidentStatus(
+                          selectedIncident.status,
+                          playback.actionExecuted,
+                        ),
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Сервис</dt>
@@ -447,9 +478,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </dl>
               </div>
-            ) : state.service_incidents.length ? (
+            ) : visibleServiceIncidents.length ? (
               <div className="entity-list" role="list">
-                {state.service_incidents.map((item) => (
+                {visibleServiceIncidents.map((item) => (
                   <div
                     className="entity-row"
                     role="listitem"
@@ -459,7 +490,13 @@ export function Scenario2Console({ runId }: { runId: string }) {
                       <strong>{item.symptom_key}</strong>
                       <span>{item.site_id} · {item.service_key}</span>
                     </div>
-                    <StatusBadge value={item.status} tone="info" />
+                    <StatusBadge
+                      value={playbackIncidentStatus(
+                        item.status,
+                        playback.actionExecuted,
+                      )}
+                      tone="info"
+                    />
                     <button
                       className="detail-button"
                       type="button"
@@ -481,7 +518,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
-              <span className="panel-count">{state.evidence.length}</span>
+              <span className="panel-count">{visibleEvidence.length}</span>
             </div>
 
             {selectedObservation ? (
@@ -531,9 +568,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </pre>
                 </div>
               </div>
-            ) : state.evidence.length ? (
+            ) : visibleEvidence.length ? (
               <div className="entity-list" role="list">
-                {state.evidence.map((evidence) => (
+                {visibleEvidence.map((evidence) => (
                   <div
                     className="entity-row observation-row"
                     role="listitem"
@@ -650,8 +687,10 @@ export function Scenario2Console({ runId }: { runId: string }) {
               </div>
               {latestProposal ? (
                 <StatusBadge
-                  value={latestProposal.status}
-                  tone={proposalTone(latestProposal.status)}
+                  value={latestProposalDisplayStatus ?? latestProposal.status}
+                  tone={proposalTone(
+                    latestProposalDisplayStatus ?? latestProposal.status,
+                  )}
                 />
               ) : null}
             </div>
@@ -691,7 +730,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </div>
 
-                {latestProposal.status === "PENDING_APPROVAL" ? (
+                {latestProposal.status === "PENDING_APPROVAL" &&
+                playback.approvalRequested ? (
                   <div className="decision-area">
                     <p>
                       Для создания крупного инцидента требуется решение человека.
@@ -725,7 +765,8 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 ) : null}
 
-                {latestProposal.status === "STALE" ? (
+                {playback.approvalDecided &&
+                latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
                     {STALE_PROPOSAL_NOTE}
                   </p>
@@ -755,9 +796,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Результат действия</p>
-                <h2>Крупный инцидент</h2>
+                <h2>Что сделано</h2>
               </div>
-              <span className="panel-count">{state.major_incidents.length}</span>
+              <span className="panel-count">{visibleMajorIncidents.length}</span>
             </div>
 
             {latestMajorIncident ? (
@@ -789,16 +830,10 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </dl>
                 <p className="semantic-note">
-                  Крупный инцидент зарегистрирован как демонстрационное действие продукта.
-                  Это не изменение реальной клиентской инфраструктуры.
+                  Крупный инцидент зарегистрирован.
                 </p>
               </div>
-            ) : (
-              <EmptyPanel>
-                Крупный инцидент ещё не создан. До человеческого решения побочный
-                эффект запрещён.
-              </EmptyPanel>
-            )}
+            ) : null}
           </article>
         </section>
       </div>
