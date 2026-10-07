@@ -375,12 +375,19 @@ function standardExternalSignalActivity(
   const site =
     (details && stringValue(details, "site_id")) ?? incident?.site_id ?? null;
 
+  const symptomKey = details ? stringValue(details, "symptom_key") : null;
+  const signalTitle =
+    state.run.scenario_id === "scenario-3" ||
+    symptomKey === "payment_gateway_timeout"
+      ? `Получен сигнал: таймауты платежей${device ? ` на терминале ${device}` : ""}`
+      : device
+        ? `Получен сигнал: терминал ${device} недоступен`
+        : "Получен сигнал об инциденте";
+
   return activity(
     event,
     "fact",
-    device
-      ? `Получен сигнал: терминал ${device} недоступен`
-      : "Получен сигнал об инциденте",
+    signalTitle,
     site
       ? `Инцидент зарегистрирован на площадке ${site}.`
       : "Инцидент зарегистрирован в состоянии продукта.",
