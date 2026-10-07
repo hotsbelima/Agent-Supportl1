@@ -33,6 +33,7 @@ import {
   statusLabel,
   STALE_PROPOSAL_NOTE,
   scenario2InvestigationActivities,
+  userFacingTextLabel,
   visibleTimelineEvents,
 } from "@/lib/presentation";
 import { abortableDelay } from "@/lib/recovery";
@@ -388,9 +389,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
   const visibleEvidence = state.evidence.filter((item) =>
     playback.evidenceIds.has(item.evidence_id),
   );
-  const visibleProposals = state.major_incident_proposals.filter((item) =>
-    playback.proposalIds.has(item.proposal_id),
-  );
+  const visibleProposals = state.major_incident_proposals;
   const visibleMajorIncidents = state.major_incidents;
   const actionExecuted = state.major_incident_executions.length > 0;
 
@@ -558,7 +557,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 {selectedObservation.facts.length ? (
                   <ul className="facts-list observation-facts">
                     {selectedObservation.facts.map((fact) => (
-                      <li key={fact}>{fact}</li>
+                      <li key={fact}>{userFacingTextLabel(fact)}</li>
                     ))}
                   </ul>
                 ) : null}
