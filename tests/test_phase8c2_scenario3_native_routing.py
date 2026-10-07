@@ -491,6 +491,11 @@ class _RecordingDispatchRuntime:
     async def invoke_operational_event(self, **kwargs):
         self.calls.append(kwargs)
         return SimpleNamespace(
+            final_answer=(
+                None
+                if self.reach_hitl
+                else "Evidence complete; finishing with text instead of proposal."
+            ),
             awaiting_human_decision=self.reach_hitl,
             pending_proposal_id=(
                 "PROPOSAL-S3-DISPATCH" if self.reach_hitl else None
@@ -541,6 +546,75 @@ def test_phase8c2_shared_worker_routes_scenario3_only_to_scenario3_runtime():
     assert call["operational_signal"]["scenario_id"] == "scenario-3"
     assert outbox.delivered is True
     assert outbox.rescheduled is False
+
+
+
+def test_phase8c2_scenario3_text_only_required_outcome_continues_to_proposal_and_wait(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        proposal_id = "PROPOSAL-S3-CONTINUE"
+        proposal_calls: list[str] = []
+        model = _ScriptedModel(
+            steps=[
+                "Local failure is confirmed, but I am ending with text.",
+                _proposal_call(),
+                _wait_call(proposal_id),
+            ]
+        )
+        monkeypatch.setattr(
+            scenario3_service_module,
+            "build_scenario3_agent",
+            lambda adapter: _build_scripted_agent(
+                model,
+                proposal_id=proposal_id,
+                proposal_calls=proposal_calls,
+            ),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario3AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            tenant_id = "TENANT-S3-CONTINUE"
+            run_id = "RUN-S3-CONTINUE"
+            event_id = "EVENT-S3-CONTINUE"
+            signal = {
+                "event_id": event_id,
+                "scenario_id": "scenario-3",
+                "signal": {"signal_type": "itsm.incident.created"},
+                "incidents": [],
+            }
+
+            bad = await runtime.invoke_operational_event(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                operational_event_id=event_id,
+                operational_signal=signal,
+            )
+            assert bad.awaiting_human_decision is False
+            assert bad.pending_proposal_id is None
+            assert bad.final_answer is not None
+            assert proposal_calls == []
+
+            continued = await runtime.invoke_operational_event(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                operational_event_id=event_id,
+                operational_signal=signal,
+            )
+            assert continued.awaiting_human_decision is True
+            assert continued.pending_proposal_id == proposal_id
+            assert continued.paused_function_call_id is not None
+            assert continued.invocation_id is not None
+            assert continued.invocation_id != bad.invocation_id
+            assert proposal_calls == [proposal_id]
+            assert len(model.requests) == 3
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
 
 
 class _FakeApprovalService:
@@ -670,7 +744,7 @@ def _scenario3_rejected_result() -> tuple[RunStateSnapshot, ApprovalProcessed]:
     return snapshot, result
 
 
-def test_phase8c2_scenario3_missing_required_hitl_is_rescheduled():
+def test_phase8c2_scenario3_text_only_final_without_required_hitl_is_rescheduled():
     now = datetime.now(UTC)
     record = ApplicationOutboxRecord(
         outbox_id="OUTBOX-S3-8C2-HITL-GUARD",

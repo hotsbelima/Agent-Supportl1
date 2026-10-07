@@ -575,6 +575,72 @@ def test_phase7d_native_adk_pause_resume_and_redelivery_use_same_invocation(
     asyncio.run(scenario())
 
 
+
+def test_phase7d_text_only_required_outcome_continues_to_proposal_and_wait(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        proposal_id = "MI-PROP-7D-CONTINUE"
+        proposal_calls: list[str] = []
+        model = _Scenario2ScriptedModel(
+            steps=[
+                "All required evidence is present, but I am ending with text.",
+                _scripted_proposal_call(),
+                _scripted_wait_call(proposal_id),
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(
+                model,
+                proposal_id,
+                proposal_calls,
+            ),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            tenant_id = "TENANT-7D-CONTINUE"
+            run_id = "RUN-7D-CONTINUE"
+            event_id = "EVENT-7D-CONTINUE"
+            fact = {"signal": {"signal_id": "SIG-7D-CONTINUE"}}
+
+            bad = await runtime.invoke_operational_signal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                product_event_id=event_id,
+                operational_fact=fact,
+                require_proposal_hitl=True,
+            )
+            assert bad.awaiting_human_decision is False
+            assert bad.pending_proposal_id is None
+            assert bad.final_answer is not None
+            assert proposal_calls == []
+
+            continued = await runtime.invoke_operational_signal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                product_event_id=event_id,
+                operational_fact=fact,
+                require_proposal_hitl=True,
+            )
+            assert continued.awaiting_human_decision is True
+            assert continued.pending_proposal_id == proposal_id
+            assert continued.paused_function_call_id is not None
+            assert continued.invocation_id is not None
+            assert continued.invocation_id != bad.invocation_id
+            assert proposal_calls == [proposal_id]
+            assert len(model.requests) == 3
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
+
+
 def _build_stack(factory):
     state_service = Scenario2StateService(
         SqlAlchemyScenario2StateQuery(factory)

@@ -78,6 +78,7 @@ class _RecordingScenario2Runtime:
         run_id: str,
         product_event_id: str,
         operational_fact: dict[str, object],
+        require_proposal_hitl: bool = False,
     ) -> SimpleNamespace:
         self.calls.append(
             {
@@ -85,6 +86,7 @@ class _RecordingScenario2Runtime:
                 "run_id": run_id,
                 "product_event_id": product_event_id,
                 "operational_fact": operational_fact,
+                "require_proposal_hitl": require_proposal_hitl,
             }
         )
         if (
@@ -107,7 +109,11 @@ class _RecordingScenario2Runtime:
         return SimpleNamespace(
             session_id=run_id,
             invocation_id=invocation_id,
-            final_answer="persisted native result",
+            final_answer=(
+                None
+                if reached_terminal
+                else "Evidence collected; finishing with text instead of proposal."
+            ),
             recoverable=True,
             awaiting_human_decision=reached_terminal,
             pending_proposal_id=(
@@ -257,7 +263,7 @@ def test_three_product_events_have_three_ordered_invocations_in_one_run():
     asyncio.run(scenario())
 
 
-def test_cross_site_event_without_required_hitl_is_rescheduled():
+def test_cross_site_text_only_final_without_required_hitl_is_rescheduled():
     async def scenario() -> None:
         tenant_id = f"TENANT-7C-HITL-GUARD-{uuid4().hex[:10]}"
         engine = create_engine(DatabaseSettings(url=_database_url()))

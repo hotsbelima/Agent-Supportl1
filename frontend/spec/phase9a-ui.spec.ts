@@ -38,6 +38,10 @@ const apiSource = readFileSync(
   new URL("../lib/api.ts", import.meta.url),
   "utf8",
 );
+const presentationSource = readFileSync(
+  new URL("../lib/presentation.ts", import.meta.url),
+  "utf8",
+);
 
 describe("Phase 9A final public UI", () => {
   it("keeps the landing page focused on the product rather than implementation trivia", () => {
@@ -134,6 +138,37 @@ describe("Phase 9A final public UI", () => {
     expect(standardConsole).not.toContain("Product API");
     expect(scenario2Console).not.toContain("Product API");
     expect(startSource).not.toContain("Product API");
+  });
+
+  it("shows proposals and committed action results from authoritative state without playback gates", () => {
+    expect(standardConsole).toContain("const visibleProposals = state?.proposals ?? [];");
+    expect(standardConsole).not.toContain("playback.proposalIds.has");
+    expect(scenario2Console).toContain(
+      "const visibleProposals = state.major_incident_proposals;",
+    );
+    expect(scenario2Console).not.toContain("playback.proposalIds.has");
+    expect(standardConsole).toContain("state?.work_orders ?? []");
+    expect(standardConsole).toContain("state?.executed_actions ?? []");
+    expect(scenario2Console).toContain(
+      "state.major_incident_executions.length > 0",
+    );
+  });
+
+  it("localizes ordinary user-facing service text while keeping raw payloads in details", () => {
+    expect(presentationSource).toContain(
+      '"Physical access path inspection": "Проверка физического пути подключения"',
+    );
+    expect(presentationSource).toContain('AcmePay: "CloudPayments"');
+    expect(presentationSource).toContain(
+      "Агент проверил, зарегистрирован ли уже крупный инцидент по этой проблеме",
+    );
+    expect(presentationSource).toContain(
+      "Активного крупного инцидента по этой зависимости пока нет.",
+    );
+    expect(standardConsole).toContain("userFacingTextLabel(fact)");
+    expect(scenario2Console).toContain("userFacingTextLabel(fact)");
+    expect(standardConsole).toContain("<summary>Детали</summary>");
+    expect(scenario2Console).toContain("<summary>Детали</summary>");
   });
 
   it("keeps the public interface Russian while preserving canonical English domain terminology in GitHub", () => {

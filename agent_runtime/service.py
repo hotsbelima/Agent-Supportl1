@@ -92,7 +92,7 @@ def _latest_final_answer(
     return final_answer
 
 
-def _operational_event_id(event: Any) -> str | None:
+def _operational_event_identity(event: Any) -> tuple[str, str] | None:
     if getattr(event, "author", None) != "user":
         return None
     if not getattr(event, "invocation_id", None):
@@ -104,10 +104,21 @@ def _operational_event_id(event: Any) -> str | None:
         payload = json.loads(text)
     except (TypeError, ValueError):
         return None
-    if not isinstance(payload, dict) or payload.get("type") != "operational_signal":
+    if not isinstance(payload, dict) or payload.get("type") not in {
+        "operational_signal",
+        "required_outcome_continuation",
+    }:
         return None
     event_id = payload.get("operational_event_id")
-    return event_id if isinstance(event_id, str) and event_id else None
+    event_type = payload.get("type")
+    if not isinstance(event_id, str) or not event_id:
+        return None
+    return event_id, event_type
+
+
+def _operational_event_id(event: Any) -> str | None:
+    identity = _operational_event_identity(event)
+    return identity[0] if identity is not None else None
 
 
 def _successful_pending_proposal_ids(
@@ -157,19 +168,27 @@ def _find_operational_event_correlation(
     *,
     operational_event_id: str,
 ) -> _OperationalEventCorrelation | None:
-    invocation_ids = {
-        event.invocation_id
+    matches = [
+        (event.invocation_id, identity[1])
         for event in events
-        if _operational_event_id(event) == operational_event_id
+        if (identity := _operational_event_identity(event)) is not None
+        and identity[0] == operational_event_id
         and getattr(event, "invocation_id", None)
-    }
-    if not invocation_ids:
+    ]
+    if not matches:
         return None
-    if len(invocation_ids) != 1:
+    original_invocation_ids = {
+        invocation_id
+        for invocation_id, event_type in matches
+        if event_type == "operational_signal"
+    }
+    if len(original_invocation_ids) > 1:
         raise RuntimeError(
             "Product operational event is correlated to multiple native invocations"
         )
-    invocation_id = next(iter(invocation_ids))
+    # Required-outcome continuations may legitimately create later invocations;
+    # recovery follows the latest correlated invocation.
+    invocation_id = matches[-1][0]
 
     settled = False
     final_answer: str | None = None
@@ -382,10 +401,12 @@ class DeviceIncidentAgentRuntime:
         session_service: DatabaseSessionService,
         scenario_id: str,
         agent_builder: Callable[[Any], Any],
+        require_proposal_hitl: bool = False,
     ) -> None:
         if scenario_id not in {"scenario-1", "scenario-3"}:
             raise ValueError("unsupported device-Incident scenario_id")
         self._scenario_id = scenario_id
+        self._require_proposal_hitl = require_proposal_hitl
         agent = agent_builder(adapter)
         app = App(
             name=ADK_APP_NAME,
@@ -466,7 +487,14 @@ class DeviceIncidentAgentRuntime:
                 list(session.events),
                 operational_event_id=operational_event_id,
             )
-            if correlation is not None and correlation.settled:
+            continuation_required = bool(
+                self._require_proposal_hitl
+                and correlation is not None
+                and correlation.settled
+                and correlation.pending_proposal_id is None
+                and correlation.paused_function_call_id is None
+            )
+            if correlation is not None and correlation.settled and not continuation_required:
                 return AgentInvocationResult(
                     session_id=run_id,
                     invocation_id=correlation.invocation_id,
@@ -477,6 +505,8 @@ class DeviceIncidentAgentRuntime:
                     pending_proposal_id=correlation.pending_proposal_id,
                     paused_function_call_id=correlation.paused_function_call_id,
                 )
+        else:
+            continuation_required = False
 
         envelope = {
             "type": "operational_signal",
@@ -485,6 +515,19 @@ class DeviceIncidentAgentRuntime:
         }
         if operational_event_id:
             envelope["operational_event_id"] = operational_event_id
+
+        if continuation_required:
+            envelope = {
+                "type": "required_outcome_continuation",
+                "scenario": self._scenario_id,
+                "operational_event_id": operational_event_id,
+                "instruction": (
+                    "The prior invocation ended without the mandatory proposal/"
+                    "HITL outcome. Reuse successful Product evidence already in "
+                    "session history; do not repeat successful read tools. Complete "
+                    "the required proposal and await_human_decision now."
+                ),
+            }
 
         message = types.Content(
             role="user",
@@ -500,7 +543,9 @@ class DeviceIncidentAgentRuntime:
         )
 
         invocation_id: str | None = (
-            correlation.invocation_id if correlation is not None else None
+            None
+            if continuation_required
+            else (correlation.invocation_id if correlation is not None else None)
         )
         final_answer: str | None = None
         pending_proposal_id: str | None = (
@@ -513,7 +558,7 @@ class DeviceIncidentAgentRuntime:
             else False
         )
 
-        if correlation is not None:
+        if correlation is not None and not continuation_required:
             stream = self._runner.run_async(
                 user_id=tenant_id,
                 session_id=run_id,

@@ -48,6 +48,7 @@ import {
   statusLabel,
   STALE_PROPOSAL_NOTE,
   standardInvestigationActivities,
+  userFacingTextLabel,
   visibleTimelineEvents,
 } from "@/lib/presentation";
 import { streamRunEvents } from "@/lib/sse";
@@ -355,9 +356,7 @@ export function RunConsole({ runId }: { runId: string }) {
   const visibleEvidence = state
     ? state.evidence.filter((item) => playback.evidenceIds.has(item.evidence_id))
     : [];
-  const visibleProposals = state
-    ? state.proposals.filter((item) => playback.proposalIds.has(item.proposal_id))
-    : [];
+  const visibleProposals = state?.proposals ?? [];
   const visibleWorkOrders = state?.work_orders ?? [];
   const visibleExecutedActions = state?.executed_actions ?? [];
   const actionExecuted = visibleExecutedActions.length > 0;
@@ -642,7 +641,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 {selectedObservation.facts.length ? (
                   <ul className="facts-list observation-facts">
                     {selectedObservation.facts.map((fact) => (
-                      <li key={fact}>{fact}</li>
+                      <li key={fact}>{userFacingTextLabel(fact)}</li>
                     ))}
                   </ul>
                 ) : null}
