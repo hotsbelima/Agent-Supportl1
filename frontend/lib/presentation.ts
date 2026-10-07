@@ -266,6 +266,33 @@ export function kbTitleLabel(value: string): string {
   return KB_TITLE_LABELS[value] ?? value;
 }
 
+export function evidenceEntityLabel(evidence: EvidenceView): string {
+  const payload = evidence.payload;
+  if (evidence.source_type === "SERVICE_DEPENDENCY_MAPPING") {
+    const service = stringValue(payload, "service_key");
+    if (service) return serviceLabel(service);
+  }
+  if (evidence.source_type === "EXTERNAL_DEPENDENCY_STATUS") {
+    const dependency = stringValue(payload, "dependency_name");
+    if (dependency) return dependencyNameLabel(dependency);
+  }
+  if (evidence.source_type === "KB_ARTICLE") {
+    const title = stringValue(payload, "title");
+    if (title) return kbTitleLabel(title);
+  }
+  if (
+    evidence.source_type === "SITE_HEALTH" ||
+    evidence.source_type === "LOCAL_SERVICE_HEALTH"
+  ) {
+    const site = stringValue(payload, "site_id");
+    if (site) return site;
+  }
+  if (evidence.source_type === "MAJOR_INCIDENT_SEARCH") {
+    return "Проверка крупных инцидентов";
+  }
+  return evidence.entity_ids[0] ?? "Наблюдение";
+}
+
 const EVENT_TYPE_LABELS: Record<string, string> = {
   "simulation.started": "Запуск сценария",
   "external.signal": "Операционный сигнал",
