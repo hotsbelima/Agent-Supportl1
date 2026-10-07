@@ -491,6 +491,11 @@ class _RecordingDispatchRuntime:
     async def invoke_operational_event(self, **kwargs):
         self.calls.append(kwargs)
         return SimpleNamespace(
+            final_answer=(
+                None
+                if self.reach_hitl
+                else "Evidence complete; finishing with text instead of proposal."
+            ),
             awaiting_human_decision=self.reach_hitl,
             pending_proposal_id=(
                 "PROPOSAL-S3-DISPATCH" if self.reach_hitl else None
@@ -670,7 +675,7 @@ def _scenario3_rejected_result() -> tuple[RunStateSnapshot, ApprovalProcessed]:
     return snapshot, result
 
 
-def test_phase8c2_scenario3_missing_required_hitl_is_rescheduled():
+def test_phase8c2_scenario3_text_only_final_without_required_hitl_is_rescheduled():
     now = datetime.now(UTC)
     record = ApplicationOutboxRecord(
         outbox_id="OUTBOX-S3-8C2-HITL-GUARD",
