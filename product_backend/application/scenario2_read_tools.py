@@ -388,6 +388,7 @@ class Scenario2ReadToolService:
                         "Dependency is not established by Product evidence in this run.",
                         "unknown_run_dependency",
                     )
+                await _record_tool_started(uow, context=context, tool_name="get_external_dependency_status")
                 snapshot = (
                     await self._dependency_status.get_external_dependency_status(
                         tenant_id=context.tenant_id,
@@ -481,6 +482,7 @@ class Scenario2ReadToolService:
                         "Major Incident search key is not grounded in current run facts.",
                         "unestablished_major_incident_search_key",
                     )
+                await _record_tool_started(uow, context=context, tool_name="search_major_incidents")
                 snapshot = await self._major_incident_directory.search_major_incidents(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
