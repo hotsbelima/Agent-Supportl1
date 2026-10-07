@@ -479,12 +479,21 @@ class _FakeStateService:
 class _RecordingDispatchRuntime:
     gemini_configured = True
 
-    def __init__(self) -> None:
+    def __init__(self, *, reach_hitl: bool = True) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.reach_hitl = reach_hitl
 
     async def invoke_operational_event(self, **kwargs):
         self.calls.append(kwargs)
-        return None
+        return SimpleNamespace(
+            awaiting_human_decision=self.reach_hitl,
+            pending_proposal_id=(
+                "PROPOSAL-S3-DISPATCH" if self.reach_hitl else None
+            ),
+            paused_function_call_id=(
+                "CALL-S3-WAIT" if self.reach_hitl else None
+            ),
+        )
 
 
 def test_phase8c2_shared_worker_routes_scenario3_only_to_scenario3_runtime():
@@ -654,6 +663,42 @@ def _scenario3_rejected_result() -> tuple[RunStateSnapshot, ApprovalProcessed]:
         replayed=False,
     )
     return snapshot, result
+
+
+def test_phase8c2_scenario3_missing_required_hitl_is_rescheduled():
+    now = datetime.now(UTC)
+    record = ApplicationOutboxRecord(
+        outbox_id="OUTBOX-S3-8C2-HITL-GUARD",
+        tenant_id="TENANT-S3-8C2-HITL-GUARD",
+        run_id="RUN-S3-8C2-HITL-GUARD",
+        event_seq=2,
+        topic=AGENT_DISPATCH_TOPIC,
+        payload={
+            "event_id": "EVENT-S3-8C2-HITL-GUARD",
+            "event_seq": 2,
+            "signal": {"signal_type": "itsm.incident.created", "details": {}},
+        },
+        created_at=now,
+        available_at=now,
+        delivered_at=None,
+        attempt_count=1,
+    )
+    outbox = _FakeOutbox(record)
+    scenario1_runtime = _RecordingDispatchRuntime()
+    scenario3_runtime = _RecordingDispatchRuntime(reach_hitl=False)
+    worker = Scenario1DispatchWorker(
+        uow_factory=lambda: _FakeDispatchUow(outbox),
+        state_service=_FakeStateService("scenario-3"),
+        agent_runtime=scenario1_runtime,
+        scenario3_agent_runtime=scenario3_runtime,
+    )
+
+    processed = asyncio.run(worker.dispatch_once())
+
+    assert processed is True
+    assert len(scenario3_runtime.calls) == 1
+    assert outbox.delivered is False
+    assert outbox.rescheduled is True
 
 
 def test_phase8c2_committed_field_decision_survives_runtime_selection_failure():
