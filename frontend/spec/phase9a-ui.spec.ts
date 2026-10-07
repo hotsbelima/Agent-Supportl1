@@ -90,15 +90,16 @@ describe("Phase 9A final public UI", () => {
     expect(scenario2Console).not.toContain("onWheel");
   });
 
-  it("keeps mobile console panels compact with timeline second", () => {
+  it("keeps mobile panels compact in the investigation-first order", () => {
     expect(cssSource).toContain("height: min(23vh, 210px)");
     expect(cssSource).toContain(".incident-panel { order: 1; }");
-    expect(cssSource).toContain(".timeline-panel { order: 2; }");
-    expect(cssSource).toContain(".observation-panel { order: 3; }");
-    expect(standardConsole).toContain("incident-panel");
-    expect(standardConsole).toContain("observation-panel");
-    expect(scenario2Console).toContain("incident-panel");
-    expect(scenario2Console).toContain("observation-panel");
+    expect(cssSource).toContain(".investigation-panel { order: 2; }");
+    expect(cssSource).toContain(".decision-panel { order: 3; }");
+    expect(cssSource).toContain(".result-panel { order: 4; }");
+    expect(cssSource).toContain(".observation-panel { order: 5; }");
+    expect(cssSource).toContain(".timeline-panel { order: 6; }");
+    expect(standardConsole).toContain("investigation-panel");
+    expect(scenario2Console).toContain("investigation-panel");
   });
 
   it("keeps dark as default and light as an explicit persistent option", () => {
@@ -137,7 +138,8 @@ describe("Phase 9A final public UI", () => {
 
   it("keeps the public interface Russian while preserving canonical English domain terminology in GitHub", () => {
     expect(startSource).toContain("Запустить симуляцию");
-    expect(standardConsole).toContain("Хронология");
+    expect(standardConsole).toContain("Ход расследования");
+    expect(standardConsole).toContain("Технический журнал");
     expect(scenario2Console).toContain("Крупный инцидент");
     expect(terminology).toContain("| Инцидент | Incident |");
     expect(terminology).toContain("| Наблюдение | Evidence / Observation |");
