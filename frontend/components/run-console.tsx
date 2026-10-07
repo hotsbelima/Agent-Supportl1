@@ -376,9 +376,17 @@ export function RunConsole({ runId }: { runId: string }) {
         .at(-1) ?? null
     : null;
   const latestProposalDisplayStatus = latestProposal
-    ? !playback.approvalDecided && !playback.actionExecuted
-      ? "PENDING_APPROVAL"
-      : latestProposal.status
+    ? playback.actionExecuted
+      ? latestProposal.status
+      : !playback.approvalDecided
+        ? "PENDING_APPROVAL"
+        : playback.approvalDecision === "REJECTED"
+          ? "REJECTED"
+          : latestProposal.status === "STALE"
+            ? "STALE"
+            : playback.approvalDecision === "APPROVED"
+              ? "APPROVED"
+              : latestProposal.status
     : null;
 
   async function handleDecision(
