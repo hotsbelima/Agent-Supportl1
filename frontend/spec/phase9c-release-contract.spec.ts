@@ -48,8 +48,8 @@ describe("Phase 9C deterministic public-demo release contract", () => {
     expect(scenario2Console).not.toContain("progressNotice");
   });
 
-  it("paces visible events every 5 seconds and renders newest visible events first", () => {
-    expect(presentation).toContain("TIMELINE_PLAYBACK_INTERVAL_MS = 5_000");
+  it("paces visible events every 3.5 seconds and renders newest visible events first", () => {
+    expect(presentation).toContain("TIMELINE_PLAYBACK_INTERVAL_MS = 3_500");
     expect(presentation).toContain("Math.floor(elapsedMs / TIMELINE_PLAYBACK_INTERVAL_MS) + 1");
     expect(presentation).toContain("return ordered.slice(0, visibleCount).reverse()");
     expect(runConsole).toContain("visibleTimelineEvents(events, state.run.created_at, playbackNow)");
