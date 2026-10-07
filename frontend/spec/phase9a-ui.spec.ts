@@ -108,8 +108,10 @@ describe("Phase 9A final public UI", () => {
     expect(scenario2Console).not.toContain("delete");
   });
 
-  it("exposes dynamic readiness and loading as semantic status regions", () => {
-    expect(startSource).toContain('className="readiness-row" role="status" aria-live="polite"');
+  it("keeps readiness gating in logic while removing launcher status chrome", () => {
+    expect(startSource).not.toContain('className="readiness-row"');
+    expect(startSource).toContain("getHealth(controller.signal)");
+    expect(startSource).toContain("disabled={starting || !scenarioReady}");
     expect(standardConsole).toContain('className="console-loading" role="status" aria-live="polite"');
     expect(scenario2Console).toContain('className="console-loading" role="status" aria-live="polite"');
   });
