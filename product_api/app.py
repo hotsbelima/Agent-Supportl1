@@ -91,6 +91,7 @@ from product_backend.persistence.database import (
     create_session_factory,
 )
 from product_backend.persistence.run_state import SqlAlchemyRunStateQuery
+from product_backend.persistence.run_activity import SqlAlchemyRunActivityRepository
 from product_backend.persistence.uow import (
     SqlAlchemyApprovalExecutionUnitOfWork,
     SqlAlchemyDispatchUnitOfWork,
@@ -131,6 +132,7 @@ from .schemas import (
     ApprovalDecisionResponse,
     HumanDecisionRequest,
     RunStateResponse,
+    RunHeartbeatResponse,
     Scenario2ApprovalDecisionResponse,
     Scenario2DependencyStatusRequest,
     Scenario2IngestionStateResponse,
@@ -203,6 +205,7 @@ class ProductApiContainer:
     scenario3_sources: Scenario3ProviderSources | None = None
     scenario3_provider_read_service: Scenario3ProviderReadService | None = None
     scenario3_agent_runtime: Scenario3AgentRuntime | None = None
+    run_activity_repository: SqlAlchemyRunActivityRepository | None = None
 
     async def close(self) -> None:
         if self.scenario3_agent_runtime is not None:
@@ -383,6 +386,7 @@ def build_container_from_env() -> ProductApiContainer:
         ),
         scenario2_approval_service=scenario2_approval_service,
         scenario2_simulator=scenario2_simulator,
+        run_activity_repository=SqlAlchemyRunActivityRepository(session_factory),
         scenario2_sources=scenario2_sources,
         scenario3_fixture=scenario3_fixture,
         scenario3_sources=scenario3_sources,
@@ -1351,6 +1355,36 @@ def create_app(
                 message="Run was not found in the current tenant context.",
             )
         return run_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/runs/{run_id}/heartbeat",
+        response_model=RunHeartbeatResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def heartbeat_run(
+        run_id: Annotated[str, _ID_PATH],
+        request: Request,
+        tenant_id: TenantId,
+    ) -> RunHeartbeatResponse:
+        services = _container(request)
+        if services.run_activity_repository is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="RUN_ACTIVITY_UNAVAILABLE",
+                message="Run activity tracking is unavailable.",
+                retryable=True,
+            )
+        active = await services.run_activity_repository.heartbeat(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if active is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Run was not found in the current tenant context.",
+            )
+        return RunHeartbeatResponse(active=active)
 
     @app.get(
         "/api/v1/runs/{run_id}/events",

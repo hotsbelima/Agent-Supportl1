@@ -62,6 +62,7 @@ def _run_to_row(run: Run) -> RunRow:
         status=run.status.value,
         created_at=run.created_at,
         updated_at=run.updated_at,
+        client_last_seen_at=run.created_at,
     )
 
 
@@ -268,7 +269,16 @@ class SqlAlchemyRunRepository:
         return _run_from_row(row) if row is not None else None
 
     async def save(self, run: Run) -> None:
-        await self._session.merge(_run_to_row(run))
+        row = await self._session.get(
+            RunRow,
+            {"tenant_id": run.tenant_id, "run_id": run.run_id},
+        )
+        if row is None:
+            self._session.add(_run_to_row(run))
+            return
+        row.scenario_id = run.scenario_id
+        row.status = run.status.value
+        row.updated_at = run.updated_at
 
 
 class SqlAlchemyIncidentRepository:

@@ -121,6 +121,16 @@ export function getRunState(
   );
 }
 
+export function sendRunHeartbeat(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<{ active: boolean }> {
+  return requestJson<{ active: boolean }>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/heartbeat`,
+    { method: "POST", signal },
+  );
+}
+
 export function getScenario2State(
   runId: string,
   signal?: AbortSignal,
