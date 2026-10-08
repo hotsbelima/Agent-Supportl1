@@ -352,9 +352,9 @@ def test_scenario2_resource_exhausted_is_deferred_and_worker_stays_usable():
             ) >= timedelta(seconds=55)
 
             # The provider failure is durable/deferred, not fatal to the
-            # consumer object; once made due, redelivery requests a clean
-            # required-outcome continuation instead of blindly resuming the
-            # failed turn.
+            # consumer object. Once made due, redelivery resumes the same
+            # persisted ADK invocation so a provider failover cannot replay
+            # already-completed Product reads as a new invocation.
             async with factory() as session:
                 await session.execute(
                     update(ApplicationOutboxRow)
@@ -364,7 +364,7 @@ def test_scenario2_resource_exhausted_is_deferred_and_worker_stays_usable():
                 await session.commit()
 
             assert await worker.dispatch_once() is True
-            assert runtime.calls[-1]["force_required_outcome_continuation"] is True
+            assert runtime.calls[-1]["force_required_outcome_continuation"] is False
         finally:
             await _clear_scenario2_dispatch_rows(factory)
             await engine.dispose()

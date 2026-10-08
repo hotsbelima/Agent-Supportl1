@@ -429,10 +429,11 @@ class Scenario2AgentRuntime:
                     "product_event_id": product_event_id,
                     "instruction": (
                         "The prior invocation ended without the mandatory Major "
-                        "Incident proposal/HITL outcome. Reuse successful Product "
-                        "evidence already present in session history; do not repeat "
-                        "successful read tools. Complete propose_major_incident and "
-                        "await_human_decision now."
+                        "Incident proposal/HITL outcome. Reuse Product evidence "
+                        "already present in session history while it is still fresh. "
+                        "Refresh only evidence that has expired; do not repeat any "
+                        "still-fresh read tool. Then complete "
+                        "propose_major_incident and await_human_decision now."
                     ),
                 }
                 if continuation_required

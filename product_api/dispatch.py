@@ -777,7 +777,13 @@ class Scenario2DispatchWorker:
                     product_event_id=event_id,
                     operational_fact=fact,
                     require_proposal_hitl=requires_proposal,
-                    force_required_outcome_continuation=record.attempt_count > 1,
+                    # A retry after a provider failure must first resume the
+                    # persisted ADK invocation. Starting a fresh continuation
+                    # here loses the exact recovery point and can make the
+                    # model repeat already completed read tools as a new invocation.
+                    # The runtime creates a required-outcome continuation only
+                    # after the original invocation has settled without HITL.
+                    force_required_outcome_continuation=False,
                 ),
                 timeout=self._invocation_timeout,
             )
