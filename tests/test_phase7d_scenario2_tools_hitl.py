@@ -751,6 +751,37 @@ def test_phase7d_native_adk_pause_resume_and_redelivery_use_same_invocation(
 
 
 
+def test_scenario2_two_provider_failures_continue_to_proposal(monkeypatch):
+    async def scenario():
+        proposal_id = "MI-PROP-503-CONTINUED"
+        proposal_calls = []
+        model = _Scenario2ScriptedModel(steps=[
+            RuntimeError("503 UNAVAILABLE"), RuntimeError("503 UNAVAILABLE"),
+            _scripted_proposal_call(), _scripted_wait_call(proposal_id),
+        ])
+        monkeypatch.setattr(
+            scenario2_service_module, "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(model, proposal_id, proposal_calls),
+        )
+        runtime = Scenario2AgentRuntime(adapter=object(), session_service=InMemorySessionService())
+        invocation = dict(tenant_id="TENANT-503-CONT", run_id="RUN-503-CONT",
+                          product_event_id="EVENT-503-CONT", operational_fact={"signal": {}},
+                          require_proposal_hitl=True)
+        try:
+            for _ in range(2):
+                with pytest.raises(RuntimeError, match="503 UNAVAILABLE"):
+                    await runtime.invoke_operational_signal(**invocation)
+            recovered = await runtime.invoke_operational_signal(
+                **invocation, force_required_outcome_continuation=True,
+            )
+            assert recovered.recoverable
+            assert recovered.awaiting_human_decision
+            assert proposal_calls == [proposal_id]
+        finally:
+            await runtime.close()
+    asyncio.run(scenario())
+
+
 def test_scenario2_provider_failure_after_proposal_resumes_native_wait(monkeypatch):
     async def scenario():
         proposal_id = "MI-PROP-503-RECOVERY"
