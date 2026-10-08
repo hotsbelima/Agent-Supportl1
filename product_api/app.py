@@ -277,9 +277,12 @@ def build_container_from_env() -> ProductApiContainer:
         dependency_status=scenario2_sources,
         major_incident_directory=scenario2_sources,
         ttl_policy=Scenario2EvidenceTtlPolicy(
-            local_service_health=timedelta(minutes=5),
-            external_dependency_status=timedelta(minutes=2),
-            major_incident_search=timedelta(minutes=2),
+            # Several model/tool turns can span minutes under provider load.
+            # Keep independent observations valid long enough for the agent
+            # to compare them; the validator still rejects expired evidence.
+            local_service_health=timedelta(minutes=15),
+            external_dependency_status=timedelta(minutes=15),
+            major_incident_search=timedelta(minutes=15),
         ),
     )
     scenario2_proposal_service = MajorIncidentProposalService(

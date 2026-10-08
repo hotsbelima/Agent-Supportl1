@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 import re
@@ -43,6 +44,7 @@ class DispatchUnitOfWork(Protocol):
 
 
 DispatchUowFactory = Callable[[], DispatchUnitOfWork]
+logger = logging.getLogger(__name__)
 
 
 def _retry_delay_seconds(attempt_count: int) -> float:
@@ -72,6 +74,31 @@ def _provider_rate_limited(error: BaseException) -> bool:
     return False
 
 
+def _provider_temporarily_unavailable(error: BaseException) -> bool:
+    """Recognize a provider 503 through ADK's exception wrappers."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "status_code", None) == 503:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _scenario2_failure_kind(error: BaseException) -> str:
+    """Emit a bounded label, never a provider response or credential."""
+    if isinstance(error, TimeoutError):
+        return "invocation_timeout"
+    if _provider_temporarily_unavailable(error):
+        return "provider_unavailable"
+    if _provider_rate_limited(error):
+        return "provider_rate_limited"
+    if "repeated identical read-tool loop" in str(error):
+        return "repeated_read_loop"
+    return "invocation_failed"
+
+
 def _provider_rate_limit_delay_seconds(attempt_count: int) -> float:
     # Gemini free-tier limits are minute-windowed. A deferred outbox row keeps
     # this failure durable without immediately reclaiming the same hot item and
@@ -95,6 +122,9 @@ def _provider_failure_delay_seconds(
         return _provider_retry_after_seconds(error) or _provider_rate_limit_delay_seconds(
             attempt_count
         )
+    if _provider_temporarily_unavailable(error):
+        exponent = min(max(attempt_count - 1, 0), 2)
+        return float(min(60, 15 * (2**exponent)))
     return None
 
 
@@ -777,13 +807,11 @@ class Scenario2DispatchWorker:
                     product_event_id=event_id,
                     operational_fact=fact,
                     require_proposal_hitl=requires_proposal,
-                    # A retry after a provider failure must first resume the
-                    # persisted ADK invocation. Starting a fresh continuation
-                    # here loses the exact recovery point and can make the
-                    # model repeat already completed read tools as a new invocation.
-                    # The runtime creates a required-outcome continuation only
-                    # after the original invocation has settled without HITL.
-                    force_required_outcome_continuation=False,
+                    # First resume the exact persisted invocation after a
+                    # transient failure. If it repeatedly stalls without a
+                    # proposal, let the runtime ask the model to continue in
+                    # a bounded new invocation using Product evidence.
+                    force_required_outcome_continuation=record.attempt_count >= 3,
                 ),
                 timeout=self._invocation_timeout,
             )
@@ -816,6 +844,19 @@ class Scenario2DispatchWorker:
             delay_seconds = _provider_failure_delay_seconds(
                 error,
                 record.attempt_count,
+            )
+            logger.warning(
+                "Scenario 2 dispatch deferred run_id=%s event_seq=%s attempt=%s "
+                "cause=%s delay_seconds=%.1f",
+                record.run_id,
+                record.event_seq,
+                record.attempt_count,
+                _scenario2_failure_kind(error),
+                (
+                    delay_seconds
+                    if delay_seconds is not None
+                    else _retry_delay_seconds(record.attempt_count)
+                ),
             )
             await self._reschedule(
                 record,
