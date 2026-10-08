@@ -782,6 +782,36 @@ def test_scenario2_two_provider_failures_continue_to_proposal(monkeypatch):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("create_first", [False, True])
+def test_invalid_native_wait_does_not_poison_next_attempt(monkeypatch, create_first):
+    async def scenario():
+        proposal_id = "MI-PROP-WAIT-RECOVERY"
+        proposal_calls = []
+        steps = ([_scripted_proposal_call()] if create_first else [])
+        steps += [_scripted_wait_call("FABRICATED-ID")]
+        steps += ([] if create_first else [_scripted_proposal_call()])
+        steps += [_scripted_wait_call(proposal_id)]
+        model = _Scenario2ScriptedModel(steps=steps)
+        monkeypatch.setattr(
+            scenario2_service_module, "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(model, proposal_id, proposal_calls),
+        )
+        runtime = Scenario2AgentRuntime(adapter=object(), session_service=InMemorySessionService())
+        invocation = dict(tenant_id="TENANT-WAIT", run_id="RUN-WAIT", product_event_id="EVENT-WAIT",
+                          operational_fact={"signal": {}}, require_proposal_hitl=True)
+        try:
+            with pytest.raises(RuntimeError, match="Scenario 2 native wait"):
+                await runtime.invoke_operational_signal(**invocation)
+            recovered = await runtime.invoke_operational_signal(**invocation)
+            assert recovered.recoverable
+            assert recovered.awaiting_human_decision
+            assert recovered.pending_proposal_id == proposal_id
+            assert proposal_calls == [proposal_id]
+        finally:
+            await runtime.close()
+    asyncio.run(scenario())
+
+
 def test_scenario2_provider_failure_after_proposal_resumes_native_wait(monkeypatch):
     async def scenario():
         proposal_id = "MI-PROP-503-RECOVERY"
@@ -876,7 +906,7 @@ def test_phase7d_text_only_required_outcome_continues_to_proposal_and_wait(
     asyncio.run(scenario())
 
 
-def _build_stack(factory):
+def _build_stack(factory, *, isolate_runs=False):
     state_service = Scenario2StateService(
         SqlAlchemyScenario2StateQuery(factory)
     )
@@ -893,6 +923,7 @@ def _build_stack(factory):
     sources = PersistedScenario2FixtureSources(
         state_service,
         factory,
+        isolate_runs=isolate_runs,
     )
     read_service = Scenario2ReadToolService(
         read_uow_factory=lambda: SqlAlchemyScenario2ToolReadUnitOfWork(
@@ -909,7 +940,8 @@ def _build_stack(factory):
         ),
     )
     proposal_service = MajorIncidentProposalService(
-        lambda: SqlAlchemyScenario2ProposalUnitOfWork(factory)
+        lambda: SqlAlchemyScenario2ProposalUnitOfWork(factory),
+        isolate_runs=isolate_runs,
     )
     adapter = DefaultScenario2ToolAdapter(
         read_service=read_service,
@@ -1066,6 +1098,32 @@ async def _clear_scenario2_outbox(factory, tenant_id: str) -> None:
             )
         )
         await session.commit()
+
+
+def test_demo_postgres_repeated_runs_ignore_pending_and_executed_equivalents():
+    async def scenario():
+        tenant_id = f"TENANT-DEMO-SCOPE-{uuid4().hex[:10]}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        stack = _build_stack(factory, isolate_runs=True)
+        try:
+            first_run, first_proposal = await _prepare_pending_major_incident(stack, tenant_id)
+            second_run, second_proposal = await _prepare_pending_major_incident(stack, tenant_id)
+            for run_id, proposal_id in ((first_run, first_proposal), (second_run, second_proposal)):
+                result = await stack["approval"].decide(
+                    ToolCallContext(tenant_id=tenant_id, run_id=run_id),
+                    proposal_id=proposal_id, decision=ApprovalDecision.APPROVED,
+                    decided_by="demo-scope-test",
+                )
+                assert result.ok
+                assert result.major_incident.deduplication_scope == run_id
+            third_run, third_proposal = await _prepare_pending_major_incident(stack, tenant_id)
+            assert len({first_run, second_run, third_run}) == 3
+            assert len({first_proposal, second_proposal, third_proposal}) == 3
+        finally:
+            await _clear_scenario2_outbox(factory, tenant_id)
+            await engine.dispose()
+    asyncio.run(scenario())
 
 
 def test_phase7d_postgres_tools_proposal_approve_replay_and_cross_run_search():

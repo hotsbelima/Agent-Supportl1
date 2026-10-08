@@ -35,9 +35,12 @@ class PersistedScenario2FixtureSources:
         self,
         state_service: Scenario2StateService,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
+        *,
+        isolate_runs: bool = False,
     ) -> None:
         self._state_service = state_service
         self._session_factory = session_factory
+        self._isolate_runs = isolate_runs
 
     async def get_local_service_health(
         self,
@@ -141,6 +144,7 @@ class PersistedScenario2FixtureSources:
                 persisted = await session.execute(
                     select(MajorIncidentRow.major_incident_id).where(
                         MajorIncidentRow.tenant_id == tenant_id,
+                        MajorIncidentRow.deduplication_scope == (run_id if self._isolate_runs else ""),
                         MajorIncidentRow.service_key == service_key,
                         MajorIncidentRow.correlation_key == correlation_key,
                         MajorIncidentRow.dependency_id == dependency_id,

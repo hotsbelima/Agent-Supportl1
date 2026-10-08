@@ -63,6 +63,7 @@ class _Scenario2EventCorrelation:
     pending_proposal_id: str | None
     paused_function_call_id: str | None
     proposal_created_without_wait: bool
+    invalid_native_wait: bool = False
 
 
 def _safe_event_text(event: Any) -> str | None:
@@ -194,6 +195,7 @@ def _find_scenario2_event_correlation(
     events: list[Any],
     *,
     product_event_id: str,
+    strict_native_wait: bool = True,
 ) -> _Scenario2EventCorrelation | None:
     """Find the one native invocation associated with a Product event ID."""
     matches = [
@@ -223,6 +225,18 @@ def _find_scenario2_event_correlation(
     pending_proposal_id: str | None = None
     paused_function_call_id: str | None = None
     proposal_created_without_wait = False
+    invalid_native_wait = False
+    correlated_ids = {item[0] for item in matches}
+    # A correction invocation must retain a real proposal created by an earlier
+    # invocation for this same Product event. Never trust a model-supplied ID.
+    for prior in events:
+        if getattr(prior, "invocation_id", None) in correlated_ids:
+            prior_id = _pending_major_incident_proposal_id(prior)
+            if prior_id is not None:
+                if pending_proposal_id is not None and pending_proposal_id != prior_id:
+                    raise RuntimeError("Scenario 2 invocation created multiple pending proposals")
+                pending_proposal_id = prior_id
+                proposal_created_without_wait = True
 
     for event in events:
         if getattr(event, "invocation_id", None) != invocation_id:
@@ -254,13 +268,19 @@ def _find_scenario2_event_correlation(
                 proposal_id = args.get("proposal_id")
                 if isinstance(proposal_id, str) and proposal_id:
                     if pending_proposal_id is None:
-                        raise RuntimeError(
-                            "Scenario 2 native wait has no successful Product proposal"
-                        )
+                        if strict_native_wait:
+                            raise RuntimeError(
+                                "Scenario 2 native wait has no successful Product proposal"
+                            )
+                        invalid_native_wait = True
+                        continue
                     if pending_proposal_id != proposal_id:
-                        raise RuntimeError(
-                            "Scenario 2 native wait does not match Product proposal"
-                        )
+                        if strict_native_wait:
+                            raise RuntimeError(
+                                "Scenario 2 native wait does not match Product proposal"
+                            )
+                        invalid_native_wait = True
+                        continue
                     paused_function_call_id = call.id
                     proposal_created_without_wait = False
                     settled = True
@@ -301,6 +321,7 @@ def _find_scenario2_event_correlation(
         pending_proposal_id=pending_proposal_id,
         paused_function_call_id=paused_function_call_id,
         proposal_created_without_wait=proposal_created_without_wait,
+        invalid_native_wait=invalid_native_wait,
     )
 
 
@@ -400,6 +421,7 @@ class Scenario2AgentRuntime:
         correlation = _find_scenario2_event_correlation(
             list(session.events),
             product_event_id=product_event_id,
+            strict_native_wait=False,
         )
         continuation_count = _required_outcome_continuation_count(
             list(session.events),
@@ -418,10 +440,11 @@ class Scenario2AgentRuntime:
         continuation_required = bool(
             require_proposal_hitl
             and correlation is not None
-            and correlation.pending_proposal_id is None
+            and (correlation.pending_proposal_id is None or correlation.invalid_native_wait)
             and correlation.paused_function_call_id is None
             and (
                 correlation.settled
+                or correlation.invalid_native_wait
                 or repeated_read_loop
                 or (
                     force_required_outcome_continuation
@@ -450,7 +473,7 @@ class Scenario2AgentRuntime:
         final_answer: str | None = None
         recoverable = False
         pending_proposal_id: str | None = (
-            correlation.pending_proposal_id if correlation is not None and not continuation_required else None
+            correlation.pending_proposal_id if correlation is not None else None
         )
         paused_function_call_id: str | None = None
         proposal_created_without_wait = pending_proposal_id is not None
@@ -464,13 +487,18 @@ class Scenario2AgentRuntime:
                 {
                     "type": "scenario2_required_outcome_continuation",
                     "product_event_id": product_event_id,
+                    "pending_proposal_id": pending_proposal_id,
                     "instruction": (
                         "The prior invocation ended without the mandatory Major "
                         "Incident proposal/HITL outcome. Reuse Product evidence "
                         "already present in session history while it is still fresh. "
                         "Refresh only evidence that has expired; do not repeat any "
                         "still-fresh read tool. Then complete "
-                        "propose_major_incident and await_human_decision now."
+                        "propose_major_incident and await_human_decision now. "
+                        "A rejected proposal tool result is NOT a proposal. "
+                        "Correct the reported Product error; never invent an ID or "
+                        "wait after ok=false. If pending_proposal_id is supplied, "
+                        "reuse that successful proposal and only request its human decision."
                     ),
                 }
                 if continuation_required

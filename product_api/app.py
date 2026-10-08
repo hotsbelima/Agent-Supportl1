@@ -267,6 +267,7 @@ def build_container_from_env() -> ProductApiContainer:
     scenario2_sources = PersistedScenario2FixtureSources(
         scenario2_state_service,
         session_factory,
+        isolate_runs=PublicDemoSettings.from_env().enabled,
     )
     scenario2_read_service = Scenario2ReadToolService(
         read_uow_factory=lambda: SqlAlchemyScenario2ToolReadUnitOfWork(
@@ -286,7 +287,8 @@ def build_container_from_env() -> ProductApiContainer:
         ),
     )
     scenario2_proposal_service = MajorIncidentProposalService(
-        lambda: SqlAlchemyScenario2ProposalUnitOfWork(session_factory)
+        lambda: SqlAlchemyScenario2ProposalUnitOfWork(session_factory),
+        isolate_runs=PublicDemoSettings.from_env().enabled,
     )
     scenario2_tool_adapter = DefaultScenario2ToolAdapter(
         read_service=scenario2_read_service,

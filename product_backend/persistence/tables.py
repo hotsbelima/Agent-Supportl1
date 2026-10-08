@@ -436,6 +436,7 @@ class MajorIncidentProposalRow(Base):
         Index(
             "uq_major_incident_proposals_pending_equivalent",
             "tenant_id",
+            "deduplication_scope",
             "service_key",
             "correlation_key",
             "dependency_id",
@@ -448,6 +449,9 @@ class MajorIncidentProposalRow(Base):
     run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     proposal_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     correlation_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    deduplication_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default=""
+    )
     service_key: Mapped[str] = mapped_column(String(128), nullable=False)
     affected_site_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     dependency_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -517,6 +521,7 @@ class MajorIncidentRow(Base):
             "service_key",
             "correlation_key",
             "dependency_id",
+            "deduplication_scope",
             name="uq_major_incidents_equivalent",
         ),
         CheckConstraint("status = 'OPEN'", name="ck_major_incidents_status_known"),
@@ -527,6 +532,9 @@ class MajorIncidentRow(Base):
     major_incident_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     proposal_id: Mapped[str] = mapped_column(String(128), nullable=False)
     correlation_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    deduplication_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default=""
+    )
     service_key: Mapped[str] = mapped_column(String(128), nullable=False)
     affected_site_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     dependency_id: Mapped[str] = mapped_column(String(128), nullable=False)

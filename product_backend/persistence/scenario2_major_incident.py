@@ -25,6 +25,7 @@ from .tables import (
 
 def _proposal_from_row(row: MajorIncidentProposalRow) -> MajorIncidentProposal:
     return MajorIncidentProposal(
+        deduplication_scope=row.deduplication_scope,
         proposal_id=row.proposal_id,
         tenant_id=row.tenant_id,
         run_id=row.run_id,
@@ -45,6 +46,7 @@ def _proposal_from_row(row: MajorIncidentProposalRow) -> MajorIncidentProposal:
 
 def _proposal_to_row(proposal: MajorIncidentProposal) -> MajorIncidentProposalRow:
     return MajorIncidentProposalRow(
+        deduplication_scope=proposal.deduplication_scope,
         tenant_id=proposal.tenant_id,
         run_id=proposal.run_id,
         proposal_id=proposal.proposal_id,
@@ -89,6 +91,7 @@ def _approval_to_row(approval: MajorIncidentApproval) -> MajorIncidentApprovalRo
 
 def _major_incident_from_row(row: MajorIncidentRow) -> MajorIncidentRecord:
     return MajorIncidentRecord(
+        deduplication_scope=row.deduplication_scope,
         major_incident_id=row.major_incident_id,
         tenant_id=row.tenant_id,
         run_id=row.run_id,
@@ -106,6 +109,7 @@ def _major_incident_from_row(row: MajorIncidentRow) -> MajorIncidentRecord:
 
 def _major_incident_to_row(item: MajorIncidentRecord) -> MajorIncidentRow:
     return MajorIncidentRow(
+        deduplication_scope=item.deduplication_scope,
         tenant_id=item.tenant_id,
         run_id=item.run_id,
         major_incident_id=item.major_incident_id,
@@ -187,11 +191,13 @@ class SqlAlchemyMajorIncidentProposalRepository:
         service_key: str,
         correlation_key: str,
         dependency_id: str,
+        deduplication_scope: str = "",
     ) -> MajorIncidentProposal | None:
         result = await self._session.execute(
             _maybe_lock(
                 select(MajorIncidentProposalRow).where(
                     MajorIncidentProposalRow.tenant_id == tenant_id,
+                    MajorIncidentProposalRow.deduplication_scope == deduplication_scope,
                     MajorIncidentProposalRow.service_key == service_key,
                     MajorIncidentProposalRow.correlation_key == correlation_key,
                     MajorIncidentProposalRow.dependency_id == dependency_id,
@@ -303,10 +309,12 @@ class SqlAlchemyMajorIncidentRepository:
         service_key: str,
         correlation_key: str,
         dependency_id: str,
+        deduplication_scope: str = "",
     ) -> MajorIncidentRecord | None:
         result = await self._session.execute(
             select(MajorIncidentRow).where(
                 MajorIncidentRow.tenant_id == tenant_id,
+                MajorIncidentRow.deduplication_scope == deduplication_scope,
                 MajorIncidentRow.service_key == service_key,
                 MajorIncidentRow.correlation_key == correlation_key,
                 MajorIncidentRow.dependency_id == dependency_id,
