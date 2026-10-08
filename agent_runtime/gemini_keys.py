@@ -55,6 +55,24 @@ def _is_rate_limited(error: BaseException) -> bool:
     return False
 
 
+def _is_temporarily_unavailable(error: BaseException) -> bool:
+    """Recognize provider 503/UNAVAILABLE through ADK exception wrappers."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "status_code", None) == 503:
+            return True
+        code = getattr(current, "code", None)
+        code_value = code() if callable(code) else code
+        code_text = str(getattr(code_value, "name", code_value)).upper()
+        text = str(current).upper()
+        if "UNAVAILABLE" in code_text or "UNAVAILABLE" in text or "503" in text:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class GeminiProviderRateLimited(RuntimeError):
     """Safe signal consumed by durable dispatch; contains no key material."""
@@ -66,6 +84,21 @@ class GeminiProviderRateLimited(RuntimeError):
     def __str__(self) -> str:
         return (
             f"Gemini provider '{self.provider}' is rate limited; "
+            f"retry after {self.retry_after_seconds:.0f}s"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiProviderUnavailable(RuntimeError):
+    """Safe signal for a temporarily unavailable Gemini provider."""
+
+    provider: ProviderId
+    retry_after_seconds: float
+    failover_available: bool
+
+    def __str__(self) -> str:
+        return (
+            f"Gemini provider '{self.provider}' is unavailable; "
             f"retry after {self.retry_after_seconds:.0f}s"
         )
 
@@ -158,7 +191,10 @@ class GeminiProviderCoordinator:
             )
         raise GeminiProvidersUnavailable(retry_after)
 
-    async def _mark_rate_limited(self, provider: ProviderId) -> tuple[float, bool]:
+    async def _mark_provider_unavailable(
+        self,
+        provider: ProviderId,
+    ) -> tuple[float, bool]:
         async with self._lock:
             now = self._clock()
             deadline = now + self._cooldown_seconds
@@ -179,14 +215,25 @@ class GeminiProviderCoordinator:
         try:
             yield provider
         except Exception as error:
-            if not _is_rate_limited(error):
-                raise
-            retry_after, failover_available = await self._mark_rate_limited(provider)
-            raise GeminiProviderRateLimited(
-                provider=provider,
-                retry_after_seconds=retry_after,
-                failover_available=failover_available,
-            ) from error
+            if _is_rate_limited(error):
+                retry_after, failover_available = await self._mark_provider_unavailable(
+                    provider
+                )
+                raise GeminiProviderRateLimited(
+                    provider=provider,
+                    retry_after_seconds=retry_after,
+                    failover_available=failover_available,
+                ) from error
+            if _is_temporarily_unavailable(error):
+                retry_after, failover_available = await self._mark_provider_unavailable(
+                    provider
+                )
+                raise GeminiProviderUnavailable(
+                    provider=provider,
+                    retry_after_seconds=retry_after,
+                    failover_available=failover_available,
+                ) from error
+            raise
 
 
 def model_for_provider(
@@ -202,6 +249,7 @@ __all__ = [
     "DEFAULT_GEMINI_PROVIDER_COOLDOWN_SECONDS",
     "GeminiProviderCoordinator",
     "GeminiProviderRateLimited",
+    "GeminiProviderUnavailable",
     "GeminiProvidersUnavailable",
     "PRIMARY_ENV",
     "SECONDARY_ENV",

@@ -10,6 +10,7 @@ import pytest
 from agent_runtime.gemini_keys import (
     GeminiProviderCoordinator,
     GeminiProviderRateLimited,
+    GeminiProviderUnavailable,
     GeminiProvidersUnavailable,
     PRIMARY,
     SECONDARY,
@@ -83,6 +84,53 @@ def test_primary_429_fails_over_once_to_secondary() -> None:
 
     asyncio.run(fail_primary())
     assert asyncio.run(_provider_for_success(coordinator)) == SECONDARY
+
+
+def test_primary_503_fails_over_once_to_secondary() -> None:
+    coordinator = GeminiProviderCoordinator(
+        clients={PRIMARY: object(), SECONDARY: object()},
+        cooldown_seconds=90,
+    )
+
+    async def fail_primary() -> None:
+        with pytest.raises(GeminiProviderUnavailable) as captured:
+            async with coordinator.bind_invocation() as provider:
+                assert provider == PRIMARY
+
+                class ProviderUnavailable(RuntimeError):
+                    status_code = 503
+
+                raise ProviderUnavailable("private provider response")
+        assert captured.value.provider == PRIMARY
+        assert captured.value.failover_available is True
+
+    asyncio.run(fail_primary())
+    assert asyncio.run(_provider_for_success(coordinator)) == SECONDARY
+
+
+def test_both_503_defer_without_bouncing_between_keys() -> None:
+    coordinator = GeminiProviderCoordinator(
+        clients={PRIMARY: object(), SECONDARY: object()},
+        cooldown_seconds=90,
+    )
+
+    async def fail(provider: str) -> GeminiProviderUnavailable:
+        with pytest.raises(GeminiProviderUnavailable) as captured:
+            async with coordinator.bind_invocation() as selected:
+                assert selected == provider
+
+                class ProviderUnavailable(RuntimeError):
+                    status_code = 503
+
+                raise ProviderUnavailable("503 UNAVAILABLE")
+        return captured.value
+
+    assert asyncio.run(fail(PRIMARY)).failover_available is True
+    secondary_error = asyncio.run(fail(SECONDARY))
+    assert secondary_error.failover_available is False
+    with pytest.raises(GeminiProvidersUnavailable) as unavailable:
+        asyncio.run(_provider_for_success(coordinator))
+    assert unavailable.value.retry_after_seconds > 0
 
 
 def test_both_429_defer_without_bouncing_between_keys() -> None:
@@ -168,6 +216,17 @@ def test_durable_retry_uses_one_immediate_primary_failover_then_cooldown() -> No
         GeminiProviderRateLimited(SECONDARY, 90, False),
         1,
     ) == 90
+    assert _provider_failure_delay_seconds(
+        GeminiProviderUnavailable(PRIMARY, 90, True),
+        1,
+    ) == 0.0
+    assert _provider_failure_delay_seconds(
+        GeminiProviderUnavailable(SECONDARY, 90, False),
+        1,
+    ) == 90
+    assert _scenario2_failure_kind(
+        GeminiProviderUnavailable(PRIMARY, 90, True)
+    ) == "provider_unavailable"
 
 
 def test_provider_503_is_deferred_with_bounded_backoff_and_safe_reason() -> None:

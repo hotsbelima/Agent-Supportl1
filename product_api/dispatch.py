@@ -14,6 +14,7 @@ from typing import Protocol
 
 from agent_runtime.gemini_keys import (
     GeminiProviderRateLimited,
+    GeminiProviderUnavailable,
     GeminiProvidersUnavailable,
 )
 from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
@@ -90,6 +91,8 @@ def _scenario2_failure_kind(error: BaseException) -> str:
     """Emit a bounded label, never a provider response or credential."""
     if isinstance(error, TimeoutError):
         return "invocation_timeout"
+    if isinstance(error, GeminiProviderUnavailable):
+        return "provider_unavailable"
     if _provider_temporarily_unavailable(error):
         return "provider_unavailable"
     if _provider_rate_limited(error):
@@ -113,6 +116,10 @@ def _provider_failure_delay_seconds(
 ) -> float | None:
     """Use one immediate durable failover, then defer until a cooldown ends."""
     if isinstance(error, GeminiProviderRateLimited):
+        if error.provider == "primary" and error.failover_available:
+            return 0.0
+        return error.retry_after_seconds
+    if isinstance(error, GeminiProviderUnavailable):
         if error.provider == "primary" and error.failover_available:
             return 0.0
         return error.retry_after_seconds
