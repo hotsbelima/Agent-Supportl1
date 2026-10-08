@@ -152,10 +152,6 @@ export function StartScenario() {
       : readiness.message;
 
   async function handleStart() {
-    if (selectedScenario === "scenario-2") {
-      window.alert(SCENARIO_2_MAINTENANCE_MESSAGE);
-      return;
-    }
     if (starting || !scenarioReady) return;
     setStarting(true);
     setStartError(null);
