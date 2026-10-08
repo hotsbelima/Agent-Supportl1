@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
-import os
 from typing import Any
 
 from google.adk.apps import App
@@ -16,7 +15,8 @@ from google.genai import types
 
 from product_backend.adapters.tool_adapters import Scenario1ToolAdapter
 
-from .agent import build_scenario1_agent
+from .agent import MODEL, build_scenario1_agent
+from .gemini_keys import GeminiKeyPool, model_for_pool
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .retry import ProductRetryableToolPlugin
 from .sessions import ADK_APP_NAME, ensure_run_session, get_run_session
@@ -416,17 +416,20 @@ class DeviceIncidentAgentRuntime:
         adapter: Any,
         session_service: DatabaseSessionService,
         scenario_id: str,
-        agent_builder: Callable[[Any], Any],
+        agent_builder: Callable[..., Any],
         require_proposal_hitl: bool = False,
     ) -> None:
         if scenario_id not in {"scenario-1", "scenario-3"}:
             raise ValueError("unsupported device-Incident scenario_id")
         self._scenario_id = scenario_id
         self._require_proposal_hitl = require_proposal_hitl
-        agent = agent_builder(adapter)
+        self._key_pool = GeminiKeyPool()
         app = App(
             name=ADK_APP_NAME,
-            root_agent=agent,
+            root_agent=agent_builder(
+                adapter,
+                model=model_for_pool(self._key_pool, MODEL),
+            ),
             plugins=[
                 ProductRetryableToolPlugin(
                     max_retries=2,
@@ -448,7 +451,7 @@ class DeviceIncidentAgentRuntime:
 
     @property
     def gemini_configured(self) -> bool:
-        return bool(os.environ.get("GOOGLE_API_KEY"))
+        return self._key_pool.configured
 
     @property
     def resumability_wired(self) -> bool:

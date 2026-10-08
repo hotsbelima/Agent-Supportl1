@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 from typing import Any
 
 from google.adk.apps import App
@@ -21,6 +20,8 @@ from google.genai import types
 from product_backend.adapters.scenario2_tool_adapters import Scenario2ToolAdapter
 
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
+from .agent import MODEL
+from .gemini_keys import GeminiKeyPool, model_for_pool
 from .scenario2_agent import build_scenario2_agent
 from .retry import ProductRetryableToolPlugin
 from .service import (
@@ -302,9 +303,13 @@ class Scenario2AgentRuntime:
         adapter: Scenario2ToolAdapter,
         session_service: DatabaseSessionService,
     ) -> None:
+        self._key_pool = GeminiKeyPool()
         app = App(
             name=ADK_APP_NAME,
-            root_agent=build_scenario2_agent(adapter),
+            root_agent=build_scenario2_agent(
+                adapter,
+                model=model_for_pool(self._key_pool, MODEL),
+            ),
             plugins=[
                 ProductRetryableToolPlugin(
                     max_retries=2,
@@ -326,7 +331,7 @@ class Scenario2AgentRuntime:
 
     @property
     def gemini_configured(self) -> bool:
-        return bool(os.environ.get("GOOGLE_API_KEY"))
+        return self._key_pool.configured
 
     @property
     def resumability_wired(self) -> bool:

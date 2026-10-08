@@ -77,12 +77,16 @@ of observed facts, hypothesis status and pending/committed Product action.
 """
 
 
-def build_scenario3_agent(adapter: Scenario3ToolAdapter) -> LlmAgent:
+def build_scenario3_agent(
+    adapter: Scenario3ToolAdapter,
+    *,
+    model: object = MODEL,
+) -> LlmAgent:
     """Build the exact Scenario 3 Product tools plus the shared native wait."""
     product_tools = Scenario3AdkTools(adapter)
     return LlmAgent(
         name=SCENARIO3_AGENT_NAME,
-        model=MODEL,
+        model=model,
         instruction=SCENARIO3_AGENT_INSTRUCTION,
         tools=[
             *product_tools.functions(),

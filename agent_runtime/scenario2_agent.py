@@ -70,12 +70,16 @@ only concise operational summaries grounded in observed facts and Product result
 """
 
 
-def build_scenario2_agent(adapter: Scenario2ToolAdapter) -> LlmAgent:
+def build_scenario2_agent(
+    adapter: Scenario2ToolAdapter,
+    *,
+    model: object = MODEL,
+) -> LlmAgent:
     """Build Scenario 2 on the same native ADK session lifecycle established in 7C."""
     product_tools = Scenario2AdkTools(adapter)
     return LlmAgent(
         name=SCENARIO2_AGENT_NAME,
-        model=MODEL,
+        model=model,
         instruction=SCENARIO2_AGENT_INSTRUCTION,
         tools=[
             *product_tools.functions(),
