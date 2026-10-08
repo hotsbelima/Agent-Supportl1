@@ -33,8 +33,10 @@ from agent_runtime.scenario2_agent import (
 from agent_runtime.scenario2_service import (
     Scenario2AgentRuntime,
     _find_scenario2_event_correlation,
+    _required_outcome_continuation_count,
 )
 from agent_runtime.scenario2_tools import Scenario2AdkTools
+from agent_runtime.sessions import get_run_session
 from product_api.app import create_app
 from product_api.scenario2_fixture import (
     ACMEPAY_DEPENDENCY_ID,
@@ -544,6 +546,59 @@ def test_phase9g_repeated_identical_read_loop_is_stopped_before_unbounded_model_
                     operational_fact={"signal": {"site_id": "SITE-A"}},
                 )
             assert len(model.requests) <= 2
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
+
+
+def test_scenario2_retries_repeated_read_loop_as_a_new_agent_continuation(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        model = _Scenario2ScriptedModel(
+            steps=[
+                _scripted_duplicate_search_call(),
+                _scripted_duplicate_search_call(),
+                "Continuation received; the agent can reassess fresh evidence.",
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_duplicate_search_agent(model),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            invocation = {
+                "tenant_id": "TENANT-9G-LOOP-RECOVERY",
+                "run_id": "RUN-9G-LOOP-RECOVERY",
+                "product_event_id": "EVENT-9G-LOOP-RECOVERY",
+                "operational_fact": {"signal": {"site_id": "SITE-A"}},
+                "require_proposal_hitl": True,
+            }
+            with pytest.raises(RuntimeError, match="repeated identical read-tool loop"):
+                await runtime.invoke_operational_signal(**invocation)
+
+            result = await runtime.invoke_operational_signal(**invocation)
+            session = await get_run_session(
+                sessions,
+                tenant_id=invocation["tenant_id"],
+                run_id=invocation["run_id"],
+            )
+            assert session is not None
+            assert _required_outcome_continuation_count(
+                list(session.events),
+                product_event_id=invocation["product_event_id"],
+            ) == 1
+            assert result.final_answer == (
+                "Continuation received; the agent can reassess fresh evidence."
+            )
+            assert len(model.requests) == 3
         finally:
             await runtime.close()
 
