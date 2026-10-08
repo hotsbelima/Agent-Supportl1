@@ -21,7 +21,7 @@ from product_backend.adapters.scenario2_tool_adapters import Scenario2ToolAdapte
 
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .agent import MODEL
-from .gemini_keys import GeminiKeyPool, model_for_pool
+from .gemini_keys import GeminiProviderCoordinator, model_for_providers
 from .scenario2_agent import build_scenario2_agent
 from .retry import ProductRetryableToolPlugin
 from .service import (
@@ -302,14 +302,20 @@ class Scenario2AgentRuntime:
         *,
         adapter: Scenario2ToolAdapter,
         session_service: DatabaseSessionService,
+        provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
-        self._key_pool = GeminiKeyPool()
+        self._providers = provider_coordinator or GeminiProviderCoordinator()
+        root_agent = (
+            build_scenario2_agent(
+                adapter,
+                model=model_for_providers(self._providers, MODEL),
+            )
+            if self._providers.configured
+            else build_scenario2_agent(adapter)
+        )
         app = App(
             name=ADK_APP_NAME,
-            root_agent=build_scenario2_agent(
-                adapter,
-                model=model_for_pool(self._key_pool, MODEL),
-            ),
+            root_agent=root_agent,
             plugins=[
                 ProductRetryableToolPlugin(
                     max_retries=2,
@@ -327,11 +333,11 @@ class Scenario2AgentRuntime:
 
     @property
     def model(self) -> str:
-        return str(self._runner.agent.model)
+        return MODEL
 
     @property
     def gemini_configured(self) -> bool:
-        return self._key_pool.configured
+        return self._providers.configured
 
     @property
     def resumability_wired(self) -> bool:
@@ -340,6 +346,16 @@ class Scenario2AgentRuntime:
 
     async def close(self) -> None:
         await self._runner.close()
+
+    async def _run_events(self, **kwargs: Any):
+        """Keep one provider sticky for this native ADK invocation."""
+        if not self._providers.configured:
+            async for event in self._runner.run_async(**kwargs):
+                yield event
+            return
+        async with self._providers.bind_invocation():
+            async for event in self._runner.run_async(**kwargs):
+                yield event
 
     async def invoke_operational_signal(
         self,
@@ -438,13 +454,13 @@ class Scenario2AgentRuntime:
                     )
                 ],
             )
-            stream = self._runner.run_async(
+            stream = self._run_events(
                 user_id=tenant_id,
                 session_id=run_id,
                 new_message=message,
             )
         else:
-            stream = self._runner.run_async(
+            stream = self._run_events(
                 user_id=tenant_id,
                 session_id=run_id,
                 invocation_id=correlation.invocation_id,
@@ -584,7 +600,7 @@ class Scenario2AgentRuntime:
             )
 
         final_answer: str | None = None
-        async for event in self._runner.run_async(
+        async for event in self._run_events(
             user_id=tenant_id,
             session_id=run_id,
             invocation_id=correlation.invocation_id,

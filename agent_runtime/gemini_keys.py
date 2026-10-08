@@ -1,112 +1,234 @@
-"""Explicit Gemini API-key pool used by the native ADK runtimes."""
+"""Concurrency-safe primary/failover Gemini provider selection."""
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 import os
-from typing import Any
+import time
+from typing import Any, AsyncIterator, Literal
 
 from google.adk.models.google_llm import Gemini
 from google.genai import Client
 from pydantic import PrivateAttr
 
 
-GEMINI_KEY_ENV_NAMES = ("GOOGLE_API_KEY_HOTS", "GOOGLE_API_KEY_Belima")
+ProviderId = Literal["primary", "secondary"]
+PRIMARY: ProviderId = "primary"
+SECONDARY: ProviderId = "secondary"
+PRIMARY_ENV = "GOOGLE_API_KEY_PRIMARY"
+SECONDARY_ENV = "GOOGLE_API_KEY_SECONDARY"
+# Canonical names win. These aliases allow a zero-downtime rename from the
+# already connected named keys; the legacy single GOOGLE_API_KEY is never read.
+_PRIMARY_MIGRATION_ENV = "GOOGLE_API_KEY_HOTS"
+_SECONDARY_MIGRATION_ENV = "GOOGLE_API_KEY_Belima"
+DEFAULT_GEMINI_PROVIDER_COOLDOWN_SECONDS = 90.0
+MAX_GEMINI_PROVIDER_COOLDOWN_SECONDS = 86_400.0
+_COOLDOWN_ENV = "GEMINI_PROVIDER_COOLDOWN_SECONDS"
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    raw_value = os.environ.get(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        parsed = float(raw_value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _is_rate_limited(error: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "status_code", None) == 429:
+            return True
+        code = getattr(current, "code", None)
+        code_value = code() if callable(code) else code
+        code_text = str(getattr(code_value, "name", code_value)).upper()
+        text = str(current).upper()
+        if "RESOURCE_EXHAUSTED" in code_text or "RESOURCE_EXHAUSTED" in text or "429" in text:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 @dataclass(frozen=True, slots=True)
-class GeminiKey:
-    """A configured key without exposing its value to callers or logs."""
+class GeminiProviderRateLimited(RuntimeError):
+    """Safe signal consumed by durable dispatch; contains no key material."""
 
-    env_name: str
-    value: str
+    provider: ProviderId
+    retry_after_seconds: float
+    failover_available: bool
 
-
-class _RotatingModels:
-    def __init__(self, clients: tuple[Client, ...]) -> None:
-        self._clients = clients
-        self._next_index = 0
-
-    def _next_client(self) -> Client:
-        client = self._clients[self._next_index % len(self._clients)]
-        self._next_index = (self._next_index + 1) % len(self._clients)
-        return client
-
-    async def generate_content(self, **kwargs: Any) -> Any:
-        return await self._next_client().aio.models.generate_content(**kwargs)
-
-    async def generate_content_stream(self, **kwargs: Any) -> Any:
-        return await self._next_client().aio.models.generate_content_stream(**kwargs)
+    def __str__(self) -> str:
+        return (
+            f"Gemini provider '{self.provider}' is rate limited; "
+            f"retry after {self.retry_after_seconds:.0f}s"
+        )
 
 
-class _RotatingAio:
-    def __init__(self, clients: tuple[Client, ...]) -> None:
-        self.models = _RotatingModels(clients)
+class GeminiProvidersUnavailable(RuntimeError):
+    """Both configured providers are cooling down."""
+
+    def __init__(self, retry_after_seconds: float) -> None:
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(
+            f"No Gemini provider is currently available; retry after "
+            f"{retry_after_seconds:.0f}s"
+        )
 
 
-class _RotatingClient:
-    """Small google-genai client facade accepted by ADK's Gemini model."""
+class GeminiProviderCoordinator:
+    """Application-scoped primary/failover state shared by all scenarios."""
 
-    vertexai = False
-
-    def __init__(self, clients: tuple[Client, ...]) -> None:
-        self.aio = _RotatingAio(clients)
-
-
-class RotatingGemini(Gemini):
-    """One ADK model that round-robins requests across configured clients."""
-
-    _rotating_client: Any = PrivateAttr()
-
-    def __init__(self, *, model: str, clients: tuple[Client, ...]) -> None:
-        super().__init__(model=model)
-        self._rotating_client = _RotatingClient(clients)
-
-    @property
-    def api_client(self) -> Any:
-        return self._rotating_client
-
-    @property
-    def _live_api_client(self) -> Any:
-        return self._rotating_client
-
-
-class GeminiKeyPool:
-    """Round-robin pool for the configured Gemini credentials."""
-
-    def __init__(self, keys: tuple[GeminiKey, ...] | None = None) -> None:
-        self._keys = keys if keys is not None else self._read_environment()
-        self._clients = tuple(Client(api_key=key.value) for key in self._keys)
+    def __init__(
+        self,
+        *,
+        clients: dict[ProviderId, Any] | None = None,
+        cooldown_seconds: float | None = None,
+        clock: Any = time.monotonic,
+    ) -> None:
+        self._clock = clock
+        requested_cooldown = (
+            _positive_float_env(_COOLDOWN_ENV, DEFAULT_GEMINI_PROVIDER_COOLDOWN_SECONDS)
+            if cooldown_seconds is None
+            else cooldown_seconds
+        )
+        self._cooldown_seconds = min(
+            requested_cooldown,
+            MAX_GEMINI_PROVIDER_COOLDOWN_SECONDS,
+        )
+        if self._cooldown_seconds <= 0:
+            raise ValueError("cooldown_seconds must be positive")
+        self._clients: dict[ProviderId, Any] = (
+            clients if clients is not None else self._clients_from_environment()
+        )
+        self._blocked_until: dict[ProviderId, float] = {}
+        self._lock = asyncio.Lock()
+        self._active_provider: ContextVar[ProviderId | None] = ContextVar(
+            "gemini_active_provider",
+            default=None,
+        )
 
     @staticmethod
-    def _read_environment() -> tuple[GeminiKey, ...]:
-        configured: list[GeminiKey] = []
-        for env_name in GEMINI_KEY_ENV_NAMES:
-            value = os.environ.get(env_name, "").strip()
-            if value:
-                configured.append(GeminiKey(env_name=env_name, value=value))
-        return tuple(configured)
+    def _clients_from_environment() -> dict[ProviderId, Client]:
+        values = {
+            PRIMARY: os.environ.get(PRIMARY_ENV, "").strip()
+            or os.environ.get(_PRIMARY_MIGRATION_ENV, "").strip(),
+            SECONDARY: os.environ.get(SECONDARY_ENV, "").strip()
+            or os.environ.get(_SECONDARY_MIGRATION_ENV, "").strip(),
+        }
+        return {
+            provider: Client(api_key=value)
+            for provider, value in values.items()
+            if value
+        }
 
     @property
     def configured(self) -> bool:
-        return bool(self._keys)
+        return bool(self._clients)
 
     @property
-    def clients(self) -> tuple[Client, ...]:
-        return self._clients
+    def cooldown_seconds(self) -> float:
+        return self._cooldown_seconds
+
+    def client_for_active_provider(self) -> Any:
+        provider = self._active_provider.get()
+        if provider is None:
+            raise RuntimeError("Gemini client requested outside a bound invocation")
+        return self._clients[provider]
+
+    async def _select_provider(self) -> ProviderId:
+        async with self._lock:
+            now = self._clock()
+            for provider in (PRIMARY, SECONDARY):
+                if provider not in self._clients:
+                    continue
+                if self._blocked_until.get(provider, 0.0) <= now:
+                    self._blocked_until.pop(provider, None)
+                    return provider
+            retry_after = max(
+                0.0,
+                min(
+                    (deadline - now for deadline in self._blocked_until.values()),
+                    default=self._cooldown_seconds,
+                ),
+            )
+        raise GeminiProvidersUnavailable(retry_after)
+
+    async def _mark_rate_limited(self, provider: ProviderId) -> tuple[float, bool]:
+        async with self._lock:
+            now = self._clock()
+            deadline = now + self._cooldown_seconds
+            self._blocked_until[provider] = max(
+                self._blocked_until.get(provider, 0.0), deadline
+            )
+            other = SECONDARY if provider == PRIMARY else PRIMARY
+            failover_available = (
+                other in self._clients
+                and self._blocked_until.get(other, 0.0) <= now
+            )
+            return self._blocked_until[provider] - now, failover_available
+
+    @asynccontextmanager
+    async def bind_invocation(self) -> AsyncIterator[ProviderId]:
+        """Bind one provider to the current task for the whole ADK invocation."""
+        provider = await self._select_provider()
+        token = self._active_provider.set(provider)
+        try:
+            yield provider
+        except Exception as error:
+            if not _is_rate_limited(error):
+                raise
+            retry_after, failover_available = await self._mark_rate_limited(provider)
+            raise GeminiProviderRateLimited(
+                provider=provider,
+                retry_after_seconds=retry_after,
+                failover_available=failover_available,
+            ) from error
+        finally:
+            self._active_provider.reset(token)
 
 
-def model_for_pool(pool: GeminiKeyPool, model_name: str) -> Any:
-    """Return one key-rotating model, or the default model when unconfigured."""
-    if not pool.configured:
+class StickyFailoverGemini(Gemini):
+    """ADK model resolving its client from the task-local provider binding."""
+
+    _providers: GeminiProviderCoordinator = PrivateAttr()
+
+    def __init__(self, *, model: str, providers: GeminiProviderCoordinator) -> None:
+        super().__init__(model=model)
+        self._providers = providers
+
+    @property
+    def api_client(self) -> Any:
+        return self._providers.client_for_active_provider()
+
+    @property
+    def _live_api_client(self) -> Any:
+        return self._providers.client_for_active_provider()
+
+
+def model_for_providers(
+    providers: GeminiProviderCoordinator,
+    model_name: str,
+) -> Any:
+    if not providers.configured:
         return model_name
-    return RotatingGemini(model=model_name, clients=pool.clients)
+    return StickyFailoverGemini(model=model_name, providers=providers)
 
 
 __all__ = [
-    "GEMINI_KEY_ENV_NAMES",
-    "GeminiKey",
-    "GeminiKeyPool",
-    "RotatingGemini",
-    "model_for_pool",
+    "DEFAULT_GEMINI_PROVIDER_COOLDOWN_SECONDS",
+    "GeminiProviderCoordinator",
+    "GeminiProviderRateLimited",
+    "GeminiProvidersUnavailable",
+    "PRIMARY_ENV",
+    "SECONDARY_ENV",
+    "StickyFailoverGemini",
+    "model_for_providers",
 ]

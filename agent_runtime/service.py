@@ -16,7 +16,7 @@ from google.genai import types
 from product_backend.adapters.tool_adapters import Scenario1ToolAdapter
 
 from .agent import MODEL, build_scenario1_agent
-from .gemini_keys import GeminiKeyPool, model_for_pool
+from .gemini_keys import GeminiProviderCoordinator, model_for_providers
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .retry import ProductRetryableToolPlugin
 from .sessions import ADK_APP_NAME, ensure_run_session, get_run_session
@@ -418,18 +418,24 @@ class DeviceIncidentAgentRuntime:
         scenario_id: str,
         agent_builder: Callable[..., Any],
         require_proposal_hitl: bool = False,
+        provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
         if scenario_id not in {"scenario-1", "scenario-3"}:
             raise ValueError("unsupported device-Incident scenario_id")
         self._scenario_id = scenario_id
         self._require_proposal_hitl = require_proposal_hitl
-        self._key_pool = GeminiKeyPool()
+        self._providers = provider_coordinator or GeminiProviderCoordinator()
+        root_agent = (
+            agent_builder(
+                adapter,
+                model=model_for_providers(self._providers, MODEL),
+            )
+            if self._providers.configured
+            else agent_builder(adapter)
+        )
         app = App(
             name=ADK_APP_NAME,
-            root_agent=agent_builder(
-                adapter,
-                model=model_for_pool(self._key_pool, MODEL),
-            ),
+            root_agent=root_agent,
             plugins=[
                 ProductRetryableToolPlugin(
                     max_retries=2,
@@ -447,11 +453,11 @@ class DeviceIncidentAgentRuntime:
 
     @property
     def model(self) -> str:
-        return str(self._runner.agent.model)
+        return MODEL
 
     @property
     def gemini_configured(self) -> bool:
-        return self._key_pool.configured
+        return self._providers.configured
 
     @property
     def resumability_wired(self) -> bool:
@@ -460,6 +466,16 @@ class DeviceIncidentAgentRuntime:
 
     async def close(self) -> None:
         await self._runner.close()
+
+    async def _run_events(self, **kwargs: Any):
+        """Keep one provider sticky for this native ADK invocation."""
+        if not self._providers.configured:
+            async for event in self._runner.run_async(**kwargs):
+                yield event
+            return
+        async with self._providers.bind_invocation():
+            async for event in self._runner.run_async(**kwargs):
+                yield event
 
     async def invoke(
         self,
@@ -589,14 +605,14 @@ class DeviceIncidentAgentRuntime:
         )
 
         if correlation is not None and not continuation_required:
-            stream = self._runner.run_async(
+            stream = self._run_events(
                 user_id=tenant_id,
                 session_id=run_id,
                 invocation_id=correlation.invocation_id,
                 new_message=None,
             )
         else:
-            stream = self._runner.run_async(
+            stream = self._run_events(
                 user_id=tenant_id,
                 session_id=run_id,
                 new_message=message,
@@ -749,7 +765,7 @@ class DeviceIncidentAgentRuntime:
             )
 
         final_answer: str | None = None
-        async for event in self._runner.run_async(
+        async for event in self._run_events(
             user_id=tenant_id,
             session_id=run_id,
             invocation_id=correlation.invocation_id,
@@ -776,12 +792,14 @@ class Scenario1AgentRuntime(DeviceIncidentAgentRuntime):
         *,
         adapter: Scenario1ToolAdapter,
         session_service: DatabaseSessionService,
+        provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
         super().__init__(
             adapter=adapter,
             session_service=session_service,
             scenario_id="scenario-1",
             agent_builder=build_scenario1_agent,
+            provider_coordinator=provider_coordinator,
         )
 
 

@@ -7,6 +7,7 @@ from google.adk.sessions import DatabaseSessionService
 from product_backend.adapters.scenario3_tool_adapters import Scenario3ToolAdapter
 
 from .scenario3_agent import build_scenario3_agent
+from .gemini_keys import GeminiProviderCoordinator
 from .service import DeviceIncidentAgentRuntime
 
 
@@ -18,6 +19,7 @@ class Scenario3AgentRuntime(DeviceIncidentAgentRuntime):
         *,
         adapter: Scenario3ToolAdapter,
         session_service: DatabaseSessionService,
+        provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
         super().__init__(
             adapter=adapter,
@@ -25,6 +27,7 @@ class Scenario3AgentRuntime(DeviceIncidentAgentRuntime):
             scenario_id="scenario-3",
             agent_builder=build_scenario3_agent,
             require_proposal_hitl=True,
+            provider_coordinator=provider_coordinator,
         )
 
 

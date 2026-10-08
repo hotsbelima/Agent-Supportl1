@@ -11,6 +11,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
+from agent_runtime.gemini_keys import (
+    GeminiProviderRateLimited,
+    GeminiProvidersUnavailable,
+)
 from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
 from agent_runtime.scenario2_service import Scenario2AgentRuntime
 from agent_runtime.scenario3_service import Scenario3AgentRuntime
@@ -74,6 +78,24 @@ def _provider_rate_limit_delay_seconds(attempt_count: int) -> float:
     # starving later Scenario 1/3 work.
     exponent = max(0, min(attempt_count - 1, 2))
     return float(min(300, 65 * (2**exponent)))
+
+
+def _provider_failure_delay_seconds(
+    error: BaseException,
+    attempt_count: int,
+) -> float | None:
+    """Use one immediate durable failover, then defer until a cooldown ends."""
+    if isinstance(error, GeminiProviderRateLimited):
+        if error.provider == "primary" and error.failover_available:
+            return 0.0
+        return error.retry_after_seconds
+    if isinstance(error, GeminiProvidersUnavailable):
+        return error.retry_after_seconds
+    if _provider_rate_limited(error):
+        return _provider_retry_after_seconds(error) or _provider_rate_limit_delay_seconds(
+            attempt_count
+        )
+    return None
 
 
 _PROVIDER_RETRY_AFTER_RE = re.compile(
@@ -217,13 +239,22 @@ class Scenario1DispatchWorker:
             )
             await uow.commit()
 
-    async def _reschedule(self, record: ApplicationOutboxRecord) -> None:
+    async def _reschedule(
+        self,
+        record: ApplicationOutboxRecord,
+        *,
+        delay_seconds: float | None = None,
+    ) -> None:
         async with self._uow_factory() as uow:
             await uow.outbox.reschedule(
                 tenant_id=record.tenant_id,
                 run_id=record.run_id,
                 outbox_id=record.outbox_id,
-                delay_seconds=_retry_delay_seconds(record.attempt_count),
+                delay_seconds=(
+                    _retry_delay_seconds(record.attempt_count)
+                    if delay_seconds is None
+                    else delay_seconds
+                ),
             )
             await uow.commit()
 
@@ -367,10 +398,16 @@ class Scenario1DispatchWorker:
             except Exception:
                 pass
             raise
-        except Exception:
+        except Exception as error:
             # Do not log provider payloads/secrets. The durable row remains the
             # recovery source and will be retried with the same event identity.
-            await self._reschedule(record)
+            await self._reschedule(
+                record,
+                delay_seconds=_provider_failure_delay_seconds(
+                    error,
+                    record.attempt_count,
+                ),
+            )
             return True
 
         await self._mark_delivered(record)
@@ -449,7 +486,6 @@ class Scenario2DispatchWorker:
         self._invocation_timeout = invocation_timeout_seconds
         self._max_calls_per_minute = _scenario2_max_calls_per_minute()
         self._invocation_starts: deque[datetime] = deque()
-        self._provider_blocked_until: datetime | None = None
         self._wake = asyncio.Event()
         self._stopping = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -529,15 +565,6 @@ class Scenario2DispatchWorker:
             self._invocation_starts.popleft()
 
         delays: list[float] = []
-        if self._provider_blocked_until is not None:
-            provider_delay = (
-                self._provider_blocked_until - now
-            ).total_seconds()
-            if provider_delay > 0:
-                delays.append(provider_delay)
-            else:
-                self._provider_blocked_until = None
-
         if len(self._invocation_starts) >= self._max_calls_per_minute:
             rate_limit_at = self._invocation_starts[0] + timedelta(minutes=1)
             rate_delay = (rate_limit_at - now).total_seconds()
@@ -548,18 +575,6 @@ class Scenario2DispatchWorker:
 
     def _record_invocation_start(self) -> None:
         self._invocation_starts.append(datetime.now(UTC))
-
-    def _block_provider(self, error: BaseException, attempt_count: int) -> float:
-        delay_seconds = _provider_retry_after_seconds(error)
-        if delay_seconds is None:
-            delay_seconds = _provider_rate_limit_delay_seconds(attempt_count)
-        blocked_until = datetime.now(UTC) + timedelta(seconds=delay_seconds)
-        if (
-            self._provider_blocked_until is None
-            or blocked_until > self._provider_blocked_until
-        ):
-            self._provider_blocked_until = blocked_until
-        return delay_seconds
 
     async def _operational_fact(
         self,
@@ -792,12 +807,10 @@ class Scenario2DispatchWorker:
                 pass
             raise
         except Exception as error:
-            delay_seconds = None
-            if _provider_rate_limited(error):
-                delay_seconds = self._block_provider(
-                    error,
-                    record.attempt_count,
-                )
+            delay_seconds = _provider_failure_delay_seconds(
+                error,
+                record.attempt_count,
+            )
             await self._reschedule(
                 record,
                 delay_seconds=delay_seconds,

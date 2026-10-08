@@ -26,6 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from google.adk.sessions import DatabaseSessionService
 
+from agent_runtime.gemini_keys import GeminiProviderCoordinator
 from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
 from agent_runtime.scenario2_service import Scenario2AgentRuntime
 from agent_runtime.scenario3_service import Scenario3AgentRuntime
@@ -240,9 +241,11 @@ def build_container_from_env() -> ProductApiContainer:
         read_service=read_service,
         proposal_service=proposal_service,
     )
+    gemini_providers = GeminiProviderCoordinator()
     agent_runtime = Scenario1AgentRuntime(
         adapter=tool_adapter,
         session_service=adk_session_service,
+        provider_coordinator=gemini_providers,
     )
     state_service = RunStateService(
         SqlAlchemyRunStateQuery(session_factory)
@@ -293,6 +296,7 @@ def build_container_from_env() -> ProductApiContainer:
     scenario2_agent_runtime = Scenario2AgentRuntime(
         adapter=scenario2_tool_adapter,
         session_service=adk_session_service,
+        provider_coordinator=gemini_providers,
     )
     scenario2_dispatch_worker = Scenario2DispatchWorker(
         uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(session_factory),
@@ -336,6 +340,7 @@ def build_container_from_env() -> ProductApiContainer:
     scenario3_agent_runtime = Scenario3AgentRuntime(
         adapter=scenario3_tool_adapter,
         session_service=adk_session_service,
+        provider_coordinator=gemini_providers,
     )
 
     # Scenario 1 and Scenario 3 share one durable device-Incident consumer.
