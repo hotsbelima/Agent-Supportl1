@@ -762,12 +762,14 @@ class _ProposalRepo:
         service_key: str,
         correlation_key: str,
         dependency_id: str,
+        deduplication_scope: str = "",
     ):
         return next(
             (
                 item
                 for item in self.store.proposals.values()
                 if item.tenant_id == tenant_id
+                and item.deduplication_scope == deduplication_scope
                 and item.service_key == service_key
                 and item.correlation_key == correlation_key
                 and item.dependency_id == dependency_id
@@ -821,12 +823,14 @@ class _MajorIncidentRepo:
         service_key: str,
         correlation_key: str,
         dependency_id: str,
+        deduplication_scope: str = "",
     ):
         return next(
             (
                 item
                 for item in self.store.major_incidents.values()
                 if item.tenant_id == tenant_id
+                and item.deduplication_scope == deduplication_scope
                 and item.service_key == service_key
                 and item.correlation_key == correlation_key
                 and item.dependency_id == dependency_id
@@ -1036,6 +1040,35 @@ def test_product_approve_creates_one_record_and_replay_creates_no_duplicate():
         assert len(store.major_incidents) == 1
         assert len(store.executions) == 1
 
+    asyncio.run(scenario())
+
+
+def test_demo_scope_ignores_old_pending_and_preserves_scope_on_execution():
+    async def scenario():
+        store = _Store()
+        old = replace(_proposal(), run_id="OLD-RUN", proposal_id="OLD-PROPOSAL")
+        store.proposals[old.proposal_id] = old
+        ids = iter(["NEW-PROPOSAL", "NEW-APPROVAL", "NEW-INCIDENT", "NEW-EXECUTION"])
+        service = MajorIncidentProposalService(
+            lambda: _Uow(store), clock=lambda: NOW,
+            id_factory=lambda prefix: next(ids), isolate_runs=True,
+        )
+        context = ToolCallContext(tenant_id=TENANT, run_id=RUN_ID)
+        created = await service.create(context, _request())
+        assert created.ok
+        assert created.proposal.deduplication_scope == RUN_ID
+        assert store.proposals[old.proposal_id] == old
+        sources = _Sources()
+        approval = MajorIncidentApprovalService(
+            lambda: _Uow(store), local_health=sources, dependency_mapping=sources,
+            dependency_status=sources, major_incident_directory=sources,
+            clock=lambda: NOW + timedelta(minutes=1), id_factory=lambda prefix: next(ids),
+        )
+        result = await approval.decide(context, proposal_id=created.proposal.proposal_id,
+                                      decision=ApprovalDecision.APPROVED, decided_by="operator")
+        assert result.ok
+        assert result.major_incident.deduplication_scope == RUN_ID
+        assert len(store.executions) == 1
     asyncio.run(scenario())
 
 

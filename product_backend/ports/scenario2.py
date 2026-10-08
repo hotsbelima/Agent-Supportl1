@@ -110,6 +110,7 @@ class MajorIncidentProposalRepository(Protocol):
         service_key: str,
         correlation_key: str,
         dependency_id: str,
+        deduplication_scope: str = "",
     ) -> MajorIncidentProposal | None: ...
 
 
@@ -157,6 +158,7 @@ class MajorIncidentRepository(Protocol):
         service_key: str,
         correlation_key: str,
         dependency_id: str,
+        deduplication_scope: str = "",
     ) -> MajorIncidentRecord | None: ...
 
 
