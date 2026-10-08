@@ -394,6 +394,16 @@ class Scenario2AgentRuntime:
             list(session.events),
             product_event_id=product_event_id,
         )
+        repeated_read_loop = bool(
+            correlation is not None
+            and any(
+                count > MAX_IDENTICAL_READ_CALLS_PER_INVOCATION
+                for count in _scenario2_read_call_counts(
+                    list(session.events),
+                    invocation_id=correlation.invocation_id,
+                ).values()
+            )
+        )
         continuation_required = bool(
             require_proposal_hitl
             and correlation is not None
@@ -401,6 +411,7 @@ class Scenario2AgentRuntime:
             and correlation.paused_function_call_id is None
             and (
                 correlation.settled
+                or repeated_read_loop
                 or (
                     force_required_outcome_continuation
                     and continuation_count < MAX_REQUIRED_OUTCOME_CONTINUATIONS

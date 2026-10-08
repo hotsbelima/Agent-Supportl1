@@ -16,7 +16,10 @@ from agent_runtime.gemini_keys import (
     model_for_provider,
 )
 from google.genai import Client
-from product_api.dispatch import _provider_failure_delay_seconds
+from product_api.dispatch import (
+    _provider_failure_delay_seconds,
+    _scenario2_failure_kind,
+)
 
 
 class _Clock:
@@ -165,3 +168,18 @@ def test_durable_retry_uses_one_immediate_primary_failover_then_cooldown() -> No
         GeminiProviderRateLimited(SECONDARY, 90, False),
         1,
     ) == 90
+
+
+def test_provider_503_is_deferred_with_bounded_backoff_and_safe_reason() -> None:
+    class ProviderUnavailable(RuntimeError):
+        status_code = 503
+
+    provider_error = ProviderUnavailable("private provider response")
+    wrapped = RuntimeError("ADK invocation failed")
+    wrapped.__cause__ = provider_error
+
+    assert _provider_failure_delay_seconds(wrapped, 1) == 15
+    assert _provider_failure_delay_seconds(wrapped, 2) == 30
+    assert _provider_failure_delay_seconds(wrapped, 9) == 60
+    assert _scenario2_failure_kind(wrapped) == "provider_unavailable"
+    assert _scenario2_failure_kind(TimeoutError()) == "invocation_timeout"
