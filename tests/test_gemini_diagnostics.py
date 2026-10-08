@@ -71,3 +71,19 @@ def test_wrapped_error_status_is_preserved_without_error_text():
     assert error_metadata(wrapped) == {
         "error_types": "RuntimeError>RuntimeError", "status_code": 503, "code": 503,
     }
+
+
+def test_scenario2_adapter_does_not_log_raw_exception(caplog):
+    from product_backend.adapters.scenario2_tool_adapters import DefaultScenario2ToolAdapter
+
+    async def broken():
+        raise RuntimeError("PRIVATE-DATABASE-ERROR-DO-NOT-LOG")
+
+    adapter = DefaultScenario2ToolAdapter(read_service=None, proposal_service=None)
+    caplog.set_level(logging.INFO)
+    result = asyncio.run(adapter._invoke(
+        operation=broken, unexpected_reason="propose_major_incident_unexpected_failure",
+    ))
+    assert result.ok is False
+    assert "error_type=RuntimeError" in caplog.text
+    assert "PRIVATE-DATABASE-ERROR-DO-NOT-LOG" not in caplog.text
