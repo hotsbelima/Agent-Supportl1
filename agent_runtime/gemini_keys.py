@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
 import os
 import time
@@ -12,7 +11,6 @@ from typing import Any, AsyncIterator, Literal
 
 from google.adk.models.google_llm import Gemini
 from google.genai import Client
-from pydantic import PrivateAttr
 
 
 ProviderId = Literal["primary", "secondary"]
@@ -110,10 +108,6 @@ class GeminiProviderCoordinator:
         )
         self._blocked_until: dict[ProviderId, float] = {}
         self._lock = asyncio.Lock()
-        self._active_provider: ContextVar[ProviderId | None] = ContextVar(
-            "gemini_active_provider",
-            default=None,
-        )
 
     @staticmethod
     def _clients_from_environment() -> dict[ProviderId, Client]:
@@ -137,10 +131,13 @@ class GeminiProviderCoordinator:
     def cooldown_seconds(self) -> float:
         return self._cooldown_seconds
 
-    def client_for_active_provider(self) -> Any:
-        provider = self._active_provider.get()
-        if provider is None:
-            raise RuntimeError("Gemini client requested outside a bound invocation")
+    @property
+    def configured_providers(self) -> tuple[ProviderId, ...]:
+        return tuple(
+            provider for provider in (PRIMARY, SECONDARY) if provider in self._clients
+        )
+
+    def client_for(self, provider: ProviderId) -> Any:
         return self._clients[provider]
 
     async def _select_provider(self) -> ProviderId:
@@ -177,9 +174,8 @@ class GeminiProviderCoordinator:
 
     @asynccontextmanager
     async def bind_invocation(self) -> AsyncIterator[ProviderId]:
-        """Bind one provider to the current task for the whole ADK invocation."""
+        """Select one provider for the whole ADK invocation."""
         provider = await self._select_provider()
-        token = self._active_provider.set(provider)
         try:
             yield provider
         except Exception as error:
@@ -191,35 +187,15 @@ class GeminiProviderCoordinator:
                 retry_after_seconds=retry_after,
                 failover_available=failover_available,
             ) from error
-        finally:
-            self._active_provider.reset(token)
 
 
-class StickyFailoverGemini(Gemini):
-    """ADK model resolving its client from the task-local provider binding."""
-
-    _providers: GeminiProviderCoordinator = PrivateAttr()
-
-    def __init__(self, *, model: str, providers: GeminiProviderCoordinator) -> None:
-        super().__init__(model=model)
-        self._providers = providers
-
-    @property
-    def api_client(self) -> Any:
-        return self._providers.client_for_active_provider()
-
-    @property
-    def _live_api_client(self) -> Any:
-        return self._providers.client_for_active_provider()
-
-
-def model_for_providers(
+def model_for_provider(
     providers: GeminiProviderCoordinator,
+    provider: ProviderId,
     model_name: str,
-) -> Any:
-    if not providers.configured:
-        return model_name
-    return StickyFailoverGemini(model=model_name, providers=providers)
+) -> Gemini:
+    """Create a model pinned to one explicit client for its full stream."""
+    return Gemini(model=model_name, client=providers.client_for(provider))
 
 
 __all__ = [
@@ -229,6 +205,5 @@ __all__ = [
     "GeminiProvidersUnavailable",
     "PRIMARY_ENV",
     "SECONDARY_ENV",
-    "StickyFailoverGemini",
-    "model_for_providers",
+    "model_for_provider",
 ]

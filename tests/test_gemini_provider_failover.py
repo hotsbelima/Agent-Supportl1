@@ -13,8 +13,9 @@ from agent_runtime.gemini_keys import (
     GeminiProvidersUnavailable,
     PRIMARY,
     SECONDARY,
-    model_for_providers,
+    model_for_provider,
 )
+from google.genai import Client
 from product_api.dispatch import _provider_failure_delay_seconds
 
 
@@ -30,7 +31,7 @@ async def _provider_for_success(
     coordinator: GeminiProviderCoordinator,
 ) -> str:
     async with coordinator.bind_invocation() as provider:
-        assert coordinator.client_for_active_provider() is not None
+        assert coordinator.client_for(provider) is not None
         return provider
 
 
@@ -41,16 +42,25 @@ def test_primary_is_sticky_and_secondary_is_idle() -> None:
     assert asyncio.run(_provider_for_success(coordinator)) == PRIMARY
 
 
-def test_adk_model_resolves_the_client_bound_to_its_invocation() -> None:
-    clients = {PRIMARY: object(), SECONDARY: object()}
+def test_adk_models_are_pinned_to_explicit_provider_clients() -> None:
+    clients = {
+        PRIMARY: Client(api_key="primary-test-key"),
+        SECONDARY: Client(api_key="secondary-test-key"),
+    }
     coordinator = GeminiProviderCoordinator(clients=clients)
-    model = model_for_providers(coordinator, "gemini-3.5-flash-lite")
+    primary_model = model_for_provider(
+        coordinator,
+        PRIMARY,
+        "gemini-3.5-flash-lite",
+    )
+    secondary_model = model_for_provider(
+        coordinator,
+        SECONDARY,
+        "gemini-3.5-flash-lite",
+    )
 
-    async def bound_client() -> object:
-        async with coordinator.bind_invocation():
-            return model.api_client
-
-    assert asyncio.run(bound_client()) is clients[PRIMARY]
+    assert primary_model.client is clients[PRIMARY]
+    assert secondary_model.client is clients[SECONDARY]
     assert asyncio.run(_provider_for_success(coordinator)) == PRIMARY
 
 
@@ -120,7 +130,7 @@ def test_parallel_invocations_do_not_mutate_process_environment() -> None:
     async def invoke() -> tuple[str, object]:
         async with coordinator.bind_invocation() as provider:
             await asyncio.sleep(0)
-            return provider, coordinator.client_for_active_provider()
+            return provider, coordinator.client_for(provider)
 
     async def parallel() -> list[tuple[str, object]]:
         return await asyncio.gather(invoke(), invoke())

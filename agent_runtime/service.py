@@ -16,7 +16,11 @@ from google.genai import types
 from product_backend.adapters.tool_adapters import Scenario1ToolAdapter
 
 from .agent import MODEL, build_scenario1_agent
-from .gemini_keys import GeminiProviderCoordinator, model_for_providers
+from .gemini_keys import (
+    GeminiProviderCoordinator,
+    ProviderId,
+    model_for_provider,
+)
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .retry import ProductRetryableToolPlugin
 from .sessions import ADK_APP_NAME, ensure_run_session, get_run_session
@@ -425,29 +429,37 @@ class DeviceIncidentAgentRuntime:
         self._scenario_id = scenario_id
         self._require_proposal_hitl = require_proposal_hitl
         self._providers = provider_coordinator or GeminiProviderCoordinator()
-        root_agent = (
-            agent_builder(
-                adapter,
-                model=model_for_providers(self._providers, MODEL),
-            )
-            if self._providers.configured
-            else agent_builder(adapter)
-        )
-        app = App(
-            name=ADK_APP_NAME,
-            root_agent=root_agent,
-            plugins=[
-                ProductRetryableToolPlugin(
-                    max_retries=2,
-                    throw_exception_if_retry_exceeded=False,
+
+        def make_runner(provider: ProviderId | None) -> Runner:
+            root_agent = (
+                agent_builder(
+                    adapter,
+                    model=model_for_provider(self._providers, provider, MODEL),
                 )
-            ],
-            resumability_config=ResumabilityConfig(is_resumable=True),
-        )
-        self._runner = Runner(
-            app=app,
-            session_service=session_service,
-            auto_create_session=False,
+                if provider is not None
+                else agent_builder(adapter)
+            )
+            app = App(
+                name=ADK_APP_NAME,
+                root_agent=root_agent,
+                plugins=[
+                    ProductRetryableToolPlugin(
+                        max_retries=2,
+                        throw_exception_if_retry_exceeded=False,
+                    )
+                ],
+                resumability_config=ResumabilityConfig(is_resumable=True),
+            )
+            return Runner(
+                app=app,
+                session_service=session_service,
+                auto_create_session=False,
+            )
+
+        self._runners: dict[ProviderId | None, Runner] = (
+            {provider: make_runner(provider) for provider in self._providers.configured_providers}
+            if self._providers.configured
+            else {None: make_runner(None)}
         )
         self._session_service = session_service
 
@@ -461,20 +473,21 @@ class DeviceIncidentAgentRuntime:
 
     @property
     def resumability_wired(self) -> bool:
-        config = self._runner.resumability_config
+        config = next(iter(self._runners.values())).resumability_config
         return bool(config is not None and config.is_resumable)
 
     async def close(self) -> None:
-        await self._runner.close()
+        for runner in self._runners.values():
+            await runner.close()
 
     async def _run_events(self, **kwargs: Any):
-        """Keep one provider sticky for this native ADK invocation."""
+        """Run against one provider-pinned model for this native ADK invocation."""
         if not self._providers.configured:
-            async for event in self._runner.run_async(**kwargs):
+            async for event in self._runners[None].run_async(**kwargs):
                 yield event
             return
-        async with self._providers.bind_invocation():
-            async for event in self._runner.run_async(**kwargs):
+        async with self._providers.bind_invocation() as provider:
+            async for event in self._runners[provider].run_async(**kwargs):
                 yield event
 
     async def invoke(

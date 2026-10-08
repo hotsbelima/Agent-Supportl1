@@ -467,6 +467,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
     grid-column: 1 / -1;
     grid-template-columns: 1fr 1fr;
   }
+  .console-column:last-child.proposal-pending {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
   .run-header-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 760px) {
@@ -660,6 +664,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
     min-height: 0;
     height: 100%;
     grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .console-column.proposal-pending {
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .timeline-column {

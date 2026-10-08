@@ -140,9 +140,10 @@ describe("Phase 9A final public UI", () => {
     expect(startSource).not.toContain("Product API");
   });
 
-  it("shows proposals and committed action results from authoritative state without playback gates", () => {
+  it("reveals Scenario 1 proposal at its creation event and keeps results authoritative", () => {
     expect(standardConsole).toContain("const visibleProposals = state?.proposals ?? [];");
-    expect(standardConsole).not.toContain("playback.proposalIds.has");
+    expect(standardConsole).toContain("shouldRevealProposalPanel(");
+    expect(standardConsole).toContain("showProposalPanel ? (");
     expect(scenario2Console).toContain(
       "const visibleProposals = state.major_incident_proposals;",
     );

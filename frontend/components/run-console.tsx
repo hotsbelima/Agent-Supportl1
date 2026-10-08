@@ -46,6 +46,7 @@ import {
   playbackVisibility,
   proposalRationale,
   proposalTone,
+  shouldRevealProposalPanel,
   statusLabel,
   STALE_PROPOSAL_NOTE,
   standardInvestigationActivities,
@@ -384,6 +385,11 @@ export function RunConsole({ runId }: { runId: string }) {
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
     : null;
+  const showProposalPanel = shouldRevealProposalPanel(
+    state?.run.scenario_id,
+    latestProposal?.proposal_id ?? null,
+    playback.proposalIds,
+  );
   const latestProposalDisplayStatus = latestProposal?.status ?? null;
   const latestProposalHitlReady =
     latestProposal !== null &&
@@ -790,8 +796,13 @@ export function RunConsole({ runId }: { runId: string }) {
           </article>
         </section>
 
-        <section className="console-column">
-          <article className="panel scroll-panel decision-panel">
+        <section
+          className={
+            showProposalPanel ? "console-column" : "console-column proposal-pending"
+          }
+        >
+          {showProposalPanel ? (
+            <article className="panel scroll-panel decision-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Подтверждение действий агента</p>
@@ -891,7 +902,8 @@ export function RunConsole({ runId }: { runId: string }) {
                 Предложения пока нет. Агент создаст его только после достаточного набора сохранённых наблюдений.
               </EmptyPanel>
             )}
-          </article>
+            </article>
+          ) : null}
 
           <article className="panel scroll-panel result-panel">
             <div className="panel-heading">

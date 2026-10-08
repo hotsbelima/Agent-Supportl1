@@ -124,6 +124,16 @@ export function playbackVisibility(
   };
 }
 
+export function shouldRevealProposalPanel(
+  scenarioId: string | null | undefined,
+  proposalId: string | null,
+  visibleProposalIds: ReadonlySet<string>,
+): boolean {
+  if (!scenarioId) return false;
+  if (scenarioId !== "scenario-1") return true;
+  return proposalId !== null && visibleProposalIds.has(proposalId);
+}
+
 export function nativeHitlReady(
   events: ApplicationEventView[],
   proposalId: string,

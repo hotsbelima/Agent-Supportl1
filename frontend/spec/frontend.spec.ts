@@ -13,6 +13,7 @@ import {
   playbackIncidentStatus,
   playbackVisibility,
   proposalTone,
+  shouldRevealProposalPanel,
   scenario2InvestigationActivities,
   STALE_PROPOSAL_NOTE,
   TIMELINE_PLAYBACK_INTERVAL_MS,
@@ -168,6 +169,24 @@ describe("operational presentation", () => {
     expect(afterExecution.approvalDecision).toBe("APPROVED");
     expect(afterExecution.actionExecuted).toBe(true);
     expect(playbackIncidentStatus("ESCALATED", true)).toBe("ESCALATED");
+  });
+
+  it("reveals the Scenario 1 proposal panel only when its creation event is visible", () => {
+    const beforeProposal = playbackVisibility([
+      { ...event("external.signal"), seq: 1 },
+      { ...event("observation.recorded", { evidence_id: "E-1" }), seq: 2 },
+    ]);
+    expect(
+      shouldRevealProposalPanel("scenario-1", "P-1", beforeProposal.proposalIds),
+    ).toBe(false);
+
+    const afterProposal = playbackVisibility([
+      { ...event("proposal.created", { proposal_id: "P-1" }), seq: 3 },
+    ]);
+    expect(
+      shouldRevealProposalPanel("scenario-1", "P-1", afterProposal.proposalIds),
+    ).toBe(true);
+    expect(shouldRevealProposalPanel("scenario-3", null, new Set())).toBe(true);
   });
 
   it("builds Scenario 2 human activity only from persisted signals, evidence and proposal state", () => {

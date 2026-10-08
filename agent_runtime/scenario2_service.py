@@ -21,7 +21,11 @@ from product_backend.adapters.scenario2_tool_adapters import Scenario2ToolAdapte
 
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .agent import MODEL
-from .gemini_keys import GeminiProviderCoordinator, model_for_providers
+from .gemini_keys import (
+    GeminiProviderCoordinator,
+    ProviderId,
+    model_for_provider,
+)
 from .scenario2_agent import build_scenario2_agent
 from .retry import ProductRetryableToolPlugin
 from .service import (
@@ -305,29 +309,37 @@ class Scenario2AgentRuntime:
         provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
         self._providers = provider_coordinator or GeminiProviderCoordinator()
-        root_agent = (
-            build_scenario2_agent(
-                adapter,
-                model=model_for_providers(self._providers, MODEL),
-            )
-            if self._providers.configured
-            else build_scenario2_agent(adapter)
-        )
-        app = App(
-            name=ADK_APP_NAME,
-            root_agent=root_agent,
-            plugins=[
-                ProductRetryableToolPlugin(
-                    max_retries=2,
-                    throw_exception_if_retry_exceeded=False,
+
+        def make_runner(provider: ProviderId | None) -> Runner:
+            root_agent = (
+                build_scenario2_agent(
+                    adapter,
+                    model=model_for_provider(self._providers, provider, MODEL),
                 )
-            ],
-            resumability_config=ResumabilityConfig(is_resumable=True),
-        )
-        self._runner = Runner(
-            app=app,
-            session_service=session_service,
-            auto_create_session=False,
+                if provider is not None
+                else build_scenario2_agent(adapter)
+            )
+            app = App(
+                name=ADK_APP_NAME,
+                root_agent=root_agent,
+                plugins=[
+                    ProductRetryableToolPlugin(
+                        max_retries=2,
+                        throw_exception_if_retry_exceeded=False,
+                    )
+                ],
+                resumability_config=ResumabilityConfig(is_resumable=True),
+            )
+            return Runner(
+                app=app,
+                session_service=session_service,
+                auto_create_session=False,
+            )
+
+        self._runners: dict[ProviderId | None, Runner] = (
+            {provider: make_runner(provider) for provider in self._providers.configured_providers}
+            if self._providers.configured
+            else {None: make_runner(None)}
         )
         self._session_service = session_service
 
@@ -341,20 +353,21 @@ class Scenario2AgentRuntime:
 
     @property
     def resumability_wired(self) -> bool:
-        config = self._runner.resumability_config
+        config = next(iter(self._runners.values())).resumability_config
         return bool(config is not None and config.is_resumable)
 
     async def close(self) -> None:
-        await self._runner.close()
+        for runner in self._runners.values():
+            await runner.close()
 
     async def _run_events(self, **kwargs: Any):
-        """Keep one provider sticky for this native ADK invocation."""
+        """Run against one provider-pinned model for this native ADK invocation."""
         if not self._providers.configured:
-            async for event in self._runner.run_async(**kwargs):
+            async for event in self._runners[None].run_async(**kwargs):
                 yield event
             return
-        async with self._providers.bind_invocation():
-            async for event in self._runner.run_async(**kwargs):
+        async with self._providers.bind_invocation() as provider:
+            async for event in self._runners[provider].run_async(**kwargs):
                 yield event
 
     async def invoke_operational_signal(
