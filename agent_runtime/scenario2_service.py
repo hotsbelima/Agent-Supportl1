@@ -8,7 +8,9 @@ long-running human-decision pause/resume point.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import aclosing
 import json
+import logging
 from typing import Any
 
 from google.adk.apps import App
@@ -24,6 +26,8 @@ from .agent import MODEL
 from .gemini_keys import (
     GeminiProviderCoordinator,
     ProviderId,
+    diagnostic_invocation,
+    update_diagnostic_context,
     model_for_provider,
 )
 from .scenario2_agent import build_scenario2_agent
@@ -34,6 +38,8 @@ from .service import (
     _latest_final_answer,
 )
 from .sessions import ADK_APP_NAME, ensure_run_session, get_run_session
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,13 +369,18 @@ class Scenario2AgentRuntime:
     async def _run_events(self, **kwargs: Any):
         """Run against one provider-pinned model for this native ADK invocation."""
         if not self._providers.configured:
-            async for event in self._runners[None].run_async(**kwargs):
-                yield event
+            async with aclosing(self._runners[None].run_async(**kwargs)) as events:
+                async for event in events:
+                    yield event
             return
         async with self._providers.bind_invocation() as provider:
-            async for event in self._runners[provider].run_async(**kwargs):
-                yield event
+            update_diagnostic_context(provider=provider, invocation_id=kwargs.get("invocation_id"))
+            async with aclosing(self._runners[provider].run_async(**kwargs)) as events:
+                async for event in events:
+                    update_diagnostic_context(invocation_id=event.invocation_id)
+                    yield event
 
+    @diagnostic_invocation
     async def invoke_operational_signal(
         self,
         *,
@@ -438,9 +449,11 @@ class Scenario2AgentRuntime:
         )
         final_answer: str | None = None
         recoverable = False
-        pending_proposal_id: str | None = None
+        pending_proposal_id: str | None = (
+            correlation.pending_proposal_id if correlation is not None and not continuation_required else None
+        )
         paused_function_call_id: str | None = None
-        proposal_created_without_wait = False
+        proposal_created_without_wait = pending_proposal_id is not None
         read_call_counts = _scenario2_read_call_counts(
             list(session.events),
             invocation_id=invocation_id,
@@ -492,68 +505,74 @@ class Scenario2AgentRuntime:
                 new_message=None,
             )
 
-        async for event in stream:
-            if invocation_id is None and event.invocation_id:
-                invocation_id = event.invocation_id
+        async with aclosing(stream):
+            async for event in stream:
+                if invocation_id is None and event.invocation_id:
+                    invocation_id = event.invocation_id
 
-            get_calls = getattr(event, "get_function_calls", None)
-            for call in (get_calls() if callable(get_calls) else []):
-                fingerprint = _read_call_fingerprint(call)
-                if fingerprint is None:
-                    continue
-                read_call_counts[fingerprint] = read_call_counts.get(fingerprint, 0) + 1
-                if read_call_counts[fingerprint] > MAX_IDENTICAL_READ_CALLS_PER_INVOCATION:
-                    raise RuntimeError(
-                        "Scenario 2 repeated identical read-tool loop detected"
+                get_calls = getattr(event, "get_function_calls", None)
+                for call in (get_calls() if callable(get_calls) else []):
+                    logger.info(
+                        "Scenario 2 tool call run_id=%s invocation_id=%s tool=%s call_id=%s",
+                        run_id, invocation_id, call.name, call.id,
                     )
+                    update_diagnostic_context(last_tool=call.name)
+                    fingerprint = _read_call_fingerprint(call)
+                    if fingerprint is None:
+                        continue
+                    read_call_counts[fingerprint] = read_call_counts.get(fingerprint, 0) + 1
+                    if read_call_counts[fingerprint] > MAX_IDENTICAL_READ_CALLS_PER_INVOCATION:
+                        raise RuntimeError(
+                            "Scenario 2 repeated identical read-tool loop detected"
+                        )
 
-            created_proposal_id = _pending_major_incident_proposal_id(event)
-            if created_proposal_id is not None:
-                if (
-                    pending_proposal_id is not None
-                    and pending_proposal_id != created_proposal_id
-                ):
-                    raise RuntimeError(
-                        "Scenario 2 invocation created multiple pending proposals"
-                    )
-                pending_proposal_id = created_proposal_id
-                proposal_created_without_wait = True
+                created_proposal_id = _pending_major_incident_proposal_id(event)
+                if created_proposal_id is not None:
+                    if (
+                        pending_proposal_id is not None
+                        and pending_proposal_id != created_proposal_id
+                    ):
+                        raise RuntimeError(
+                            "Scenario 2 invocation created multiple pending proposals"
+                        )
+                    pending_proposal_id = created_proposal_id
+                    proposal_created_without_wait = True
 
-            long_running_ids = set(
-                getattr(event, "long_running_tool_ids", None) or []
-            )
-            get_calls = getattr(event, "get_function_calls", None)
-            for call in (get_calls() if callable(get_calls) else []):
-                if (
-                    call.name == WAIT_FOR_HUMAN_DECISION_TOOL
-                    and call.id
-                    and call.id in long_running_ids
-                ):
-                    args = dict(call.args or {})
-                    proposal_id = args.get("proposal_id")
-                    if isinstance(proposal_id, str) and proposal_id:
-                        if pending_proposal_id is None:
-                            raise RuntimeError(
-                                "Scenario 2 native wait has no successful Product proposal"
-                            )
-                        if pending_proposal_id != proposal_id:
-                            raise RuntimeError(
-                                "Scenario 2 native wait does not match Product proposal"
-                            )
-                        paused_function_call_id = call.id
-                        proposal_created_without_wait = False
-                        invocation_id = event.invocation_id or invocation_id
-                        recoverable = True
+                long_running_ids = set(
+                    getattr(event, "long_running_tool_ids", None) or []
+                )
+                get_calls = getattr(event, "get_function_calls", None)
+                for call in (get_calls() if callable(get_calls) else []):
+                    if (
+                        call.name == WAIT_FOR_HUMAN_DECISION_TOOL
+                        and call.id
+                        and call.id in long_running_ids
+                    ):
+                        args = dict(call.args or {})
+                        proposal_id = args.get("proposal_id")
+                        if isinstance(proposal_id, str) and proposal_id:
+                            if pending_proposal_id is None:
+                                raise RuntimeError(
+                                    "Scenario 2 native wait has no successful Product proposal"
+                                )
+                            if pending_proposal_id != proposal_id:
+                                raise RuntimeError(
+                                    "Scenario 2 native wait does not match Product proposal"
+                                )
+                            paused_function_call_id = call.id
+                            proposal_created_without_wait = False
+                            invocation_id = event.invocation_id or invocation_id
+                            recoverable = True
 
-            if event.is_final_response():
-                recoverable = True
-                text = _safe_event_text(event)
-                if text:
-                    final_answer = text
+                if event.is_final_response():
+                    recoverable = True
+                    text = _safe_event_text(event)
+                    if text:
+                        final_answer = text
 
-            actions = getattr(event, "actions", None)
-            if actions is not None and getattr(actions, "end_of_agent", False):
-                recoverable = True
+                actions = getattr(event, "actions", None)
+                if actions is not None and getattr(actions, "end_of_agent", False):
+                    recoverable = True
 
         return Scenario2AgentInvocationResult(
             session_id=run_id,
@@ -569,6 +588,7 @@ class Scenario2AgentRuntime:
             paused_function_call_id=paused_function_call_id,
         )
 
+    @diagnostic_invocation
     async def resume_human_decision(
         self,
         *,
