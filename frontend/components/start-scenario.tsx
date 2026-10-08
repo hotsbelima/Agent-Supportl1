@@ -53,6 +53,9 @@ const SCENARIOS: Record<
   },
 };
 
+const SCENARIO_2_MAINTENANCE_MESSAGE =
+  "Сценарий 2 на техническом обслуживании. Возвращайтесь позднее для того, чтобы его запустить. Сейчас вы можете запустить сценарии 1 и 3.";
+
 function baseReadiness(health: HealthResponse): Readiness {
   if (
     health.status === "ok" &&
@@ -149,6 +152,10 @@ export function StartScenario() {
       : readiness.message;
 
   async function handleStart() {
+    if (selectedScenario === "scenario-2") {
+      window.alert(SCENARIO_2_MAINTENANCE_MESSAGE);
+      return;
+    }
     if (starting || !scenarioReady) return;
     setStarting(true);
     setStartError(null);
@@ -183,6 +190,10 @@ export function StartScenario() {
               data-active={selectedScenario === scenario}
               aria-pressed={selectedScenario === scenario}
               onClick={() => {
+                if (scenario === "scenario-2") {
+                  window.alert(SCENARIO_2_MAINTENANCE_MESSAGE);
+                  return;
+                }
                 setSelectedScenario(scenario);
                 setStartError(null);
               }}
