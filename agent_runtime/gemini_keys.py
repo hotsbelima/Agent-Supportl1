@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
+import contextvars
 from dataclasses import dataclass
+from functools import wraps
+import json
+import logging
 import os
 import time
+from uuid import uuid4
 from typing import Any, AsyncIterator, Literal
 
 from google.adk.models.google_llm import Gemini
@@ -25,6 +30,195 @@ _SECONDARY_MIGRATION_ENV = "GOOGLE_API_KEY_Belima"
 DEFAULT_GEMINI_PROVIDER_COOLDOWN_SECONDS = 90.0
 MAX_GEMINI_PROVIDER_COOLDOWN_SECONDS = 86_400.0
 _COOLDOWN_ENV = "GEMINI_PROVIDER_COOLDOWN_SECONDS"
+logger = logging.getLogger(__name__)
+
+_GEMINI_CALL_CONTEXT: contextvars.ContextVar[dict[str, Any] | None] = (
+    contextvars.ContextVar("gemini_call_context", default=None)
+)
+
+
+def diagnostic_invocation(function: Any) -> Any:
+    """Keep context creation/reset in one coroutine, never across generator yields."""
+    @wraps(function)
+    async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        previous = _GEMINI_CALL_CONTEXT.get() or {}
+        fact = kwargs.get("operational_fact", {})
+        context = {
+            "run_id": kwargs.get("run_id", previous.get("run_id")),
+            "event_seq": fact.get("event", {}).get("event_seq", previous.get("event_seq")),
+            "attempt": previous.get("attempt"),
+            "call_seq": 0,
+        }
+        token = _GEMINI_CALL_CONTEXT.set(context)
+        try:
+            return await function(*args, **kwargs)
+        except Exception as error:
+            logger.warning(
+                "Agent invocation error run_id=%s event_seq=%s attempt=%s "
+                "invocation_id=%s last_tool=%s error=%s",
+                context.get("run_id"), context.get("event_seq"), context.get("attempt"),
+                context.get("invocation_id"), context.get("last_tool"), error_metadata(error),
+            )
+            raise
+        finally:
+            _GEMINI_CALL_CONTEXT.reset(token)
+    return wrapped
+
+
+def update_diagnostic_context(**values: Any) -> None:
+    context = _GEMINI_CALL_CONTEXT.get()
+    if context is not None:
+        context.update(values)
+
+
+def error_metadata(error: BaseException) -> dict[str, Any]:
+    """Only types and numeric/canonical codes; never exception messages or repr."""
+    chain = []
+    status = None
+    code = None
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen and len(chain) < 8:
+        seen.add(id(current))
+        chain.append(type(current).__name__)
+        for field in ("status_code", "code"):
+            value = getattr(current, field, None)
+            if isinstance(value, int):
+                status = value if 100 <= value <= 599 else status
+                code = value
+        current = current.__cause__ or current.__context__
+    return {"error_types": ">".join(chain), "status_code": status, "code": code}
+
+
+def _request_metrics(llm_request: Any) -> tuple[int, int, int, int]:
+    """Return safe shape/size metrics without returning prompt contents."""
+    contents = list(getattr(llm_request, "contents", None) or [])
+    part_count = 0
+    text_chars = 0
+    for content in contents:
+        parts = list(getattr(content, "parts", None) or [])
+        part_count += len(parts)
+        for part in parts:
+            text = getattr(part, "text", None)
+            if isinstance(text, str):
+                text_chars += len(text)
+            for field in ("function_call", "function_response"):
+                value = getattr(part, field, None)
+                if value is not None:
+                    try:
+                        text_chars += len(json.dumps(value, default=str, ensure_ascii=False))
+                    except Exception:
+                        text_chars += len(str(value))
+    try:
+        serialized = llm_request.model_dump_json(
+            exclude_none=True, exclude={"config": {"http_options"}, "live_connect_config": True}
+        )
+        request_bytes = len(serialized.encode("utf-8"))
+    except Exception:
+        request_bytes = 0
+    return len(contents), part_count, text_chars, request_bytes
+
+
+def _usage_metrics(response: Any) -> tuple[int | None, int | None, int | None]:
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return None, None, None
+    return (
+        getattr(usage, "prompt_token_count", None),
+        getattr(usage, "candidates_token_count", None),
+        getattr(usage, "total_token_count", None),
+    )
+
+
+class InstrumentedGemini(Gemini):
+    """Gemini model with bounded request/response diagnostics."""
+
+    async def generate_content_async(self, llm_request: Any, stream: bool = False):
+        context = _GEMINI_CALL_CONTEXT.get() or {}
+        context["call_seq"] = context.get("call_seq", 0) + 1
+        context = dict(context)
+        request_id = uuid4().hex
+        prefix = (
+            f"request_id={request_id} run_id={context.get('run_id')} "
+            f"event_seq={context.get('event_seq')} attempt={context.get('attempt')} "
+            f"call_seq={context.get('call_seq')} phase={context.get('last_tool', 'signal')}"
+        )
+        content_count, part_count, text_chars, request_bytes = _request_metrics(
+            llm_request
+        )
+        started_at = time.monotonic()
+        response_count = 0
+        prompt_tokens: int | None = None
+        output_tokens: int | None = None
+        total_tokens: int | None = None
+        logger.info(
+            "Gemini request start %s run_id=%s event_seq=%s attempt=%s "
+            "invocation_id=%s provider=%s model=%s stream=%s contents=%s "
+            "parts=%s text_chars=%s request_bytes_estimate=%s",
+            prefix,
+            context.get("run_id"),
+            context.get("event_seq"),
+            context.get("attempt"),
+            context.get("invocation_id"),
+            context.get("provider", "unconfigured"),
+            getattr(llm_request, "model", None),
+            stream,
+            content_count,
+            part_count,
+            text_chars,
+            request_bytes,
+        )
+        try:
+            async with aclosing(super().generate_content_async(llm_request, stream=stream)) as responses:
+                async for response in responses:
+                    response_count += 1
+                    usage = _usage_metrics(response)
+                    if usage[0] is not None:
+                        prompt_tokens, output_tokens, total_tokens = usage
+                    yield response
+        except asyncio.CancelledError:
+            logger.info("Gemini request cancelled %s duration_ms=%.1f", prefix,
+                        (time.monotonic() - started_at) * 1000)
+            raise
+        except Exception as error:
+            logger.warning(
+                "Gemini request error %s run_id=%s event_seq=%s attempt=%s "
+                "invocation_id=%s provider=%s model=%s stream=%s duration_ms=%.1f "
+                "responses=%s status_code=%s error_type=%s code=%s",
+                prefix,
+                context.get("run_id"),
+                context.get("event_seq"),
+                context.get("attempt"),
+                context.get("invocation_id"),
+                context.get("provider", "unconfigured"),
+                getattr(llm_request, "model", None),
+                stream,
+                (time.monotonic() - started_at) * 1000,
+                response_count,
+                error_metadata(error)["status_code"],
+                error_metadata(error)["error_types"],
+                error_metadata(error)["code"],
+            )
+            raise
+        else:
+            logger.info(
+                "Gemini request success %s run_id=%s event_seq=%s attempt=%s "
+                "invocation_id=%s provider=%s model=%s stream=%s duration_ms=%.1f "
+                "responses=%s prompt_tokens=%s output_tokens=%s total_tokens=%s",
+                prefix,
+                context.get("run_id"),
+                context.get("event_seq"),
+                context.get("attempt"),
+                context.get("invocation_id"),
+                context.get("provider", "unconfigured"),
+                getattr(llm_request, "model", None),
+                stream,
+                (time.monotonic() - started_at) * 1000,
+                response_count,
+                prompt_tokens,
+                output_tokens,
+                total_tokens,
+            )
 
 
 def _positive_float_env(name: str, default: float) -> float:
@@ -242,7 +436,7 @@ def model_for_provider(
     model_name: str,
 ) -> Gemini:
     """Create a model pinned to one explicit client for its full stream."""
-    return Gemini(model=model_name, client=providers.client_for(provider))
+    return InstrumentedGemini(model=model_name, client=providers.client_for(provider))
 
 
 __all__ = [
@@ -253,5 +447,8 @@ __all__ = [
     "GeminiProvidersUnavailable",
     "PRIMARY_ENV",
     "SECONDARY_ENV",
+    "diagnostic_invocation",
+    "error_metadata",
+    "update_diagnostic_context",
     "model_for_provider",
 ]

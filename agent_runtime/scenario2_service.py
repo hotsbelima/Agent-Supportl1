@@ -8,7 +8,9 @@ long-running human-decision pause/resume point.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import aclosing
 import json
+import logging
 from typing import Any
 
 from google.adk.apps import App
@@ -24,6 +26,8 @@ from .agent import MODEL
 from .gemini_keys import (
     GeminiProviderCoordinator,
     ProviderId,
+    diagnostic_invocation,
+    update_diagnostic_context,
     model_for_provider,
 )
 from .scenario2_agent import build_scenario2_agent
@@ -34,6 +38,8 @@ from .service import (
     _latest_final_answer,
 )
 from .sessions import ADK_APP_NAME, ensure_run_session, get_run_session
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,13 +369,18 @@ class Scenario2AgentRuntime:
     async def _run_events(self, **kwargs: Any):
         """Run against one provider-pinned model for this native ADK invocation."""
         if not self._providers.configured:
-            async for event in self._runners[None].run_async(**kwargs):
-                yield event
+            async with aclosing(self._runners[None].run_async(**kwargs)) as events:
+                async for event in events:
+                    yield event
             return
         async with self._providers.bind_invocation() as provider:
-            async for event in self._runners[provider].run_async(**kwargs):
-                yield event
+            update_diagnostic_context(provider=provider, invocation_id=kwargs.get("invocation_id"))
+            async with aclosing(self._runners[provider].run_async(**kwargs)) as events:
+                async for event in events:
+                    update_diagnostic_context(invocation_id=event.invocation_id)
+                    yield event
 
+    @diagnostic_invocation
     async def invoke_operational_signal(
         self,
         *,
@@ -498,6 +509,11 @@ class Scenario2AgentRuntime:
 
             get_calls = getattr(event, "get_function_calls", None)
             for call in (get_calls() if callable(get_calls) else []):
+                logger.info(
+                    "Scenario 2 tool call run_id=%s invocation_id=%s tool=%s call_id=%s",
+                    run_id, invocation_id, call.name, call.id,
+                )
+                update_diagnostic_context(last_tool=call.name)
                 fingerprint = _read_call_fingerprint(call)
                 if fingerprint is None:
                     continue
@@ -569,6 +585,7 @@ class Scenario2AgentRuntime:
             paused_function_call_id=paused_function_call_id,
         )
 
+    @diagnostic_invocation
     async def resume_human_decision(
         self,
         *,

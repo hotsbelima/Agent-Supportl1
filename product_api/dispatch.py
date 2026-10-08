@@ -16,6 +16,9 @@ from agent_runtime.gemini_keys import (
     GeminiProviderRateLimited,
     GeminiProviderUnavailable,
     GeminiProvidersUnavailable,
+    diagnostic_invocation,
+    error_metadata,
+    update_diagnostic_context,
 )
 from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
 from agent_runtime.scenario2_service import Scenario2AgentRuntime
@@ -99,6 +102,10 @@ def _scenario2_failure_kind(error: BaseException) -> str:
         return "provider_rate_limited"
     if "repeated identical read-tool loop" in str(error):
         return "repeated_read_loop"
+    if "no recoverable state" in str(error):
+        return "no_recoverable_state"
+    if "ended before proposal/HITL terminal state" in str(error):
+        return "missing_proposal_hitl"
     return "invocation_failed"
 
 
@@ -791,6 +798,7 @@ class Scenario2DispatchWorker:
             )
             await uow.commit()
 
+    @diagnostic_invocation
     async def dispatch_once(self) -> bool:
         """Process one due Scenario 2 envelope after a recoverable ADK point."""
         if not self._agent_runtime.gemini_configured:
@@ -803,10 +811,21 @@ class Scenario2DispatchWorker:
         record = await self._claim()
         if record is None:
             return False
+        update_diagnostic_context(run_id=record.run_id, event_seq=record.event_seq,
+                                  attempt=record.attempt_count)
         try:
             event_id, fact, requires_proposal = await self._operational_fact(record)
             if self._task is not None and not self._task.done():
                 self._record_invocation_start()
+            logger.info(
+                "Scenario 2 dispatch start run_id=%s event_seq=%s attempt=%s "
+                "require_proposal=%s force_continuation=%s",
+                record.run_id,
+                record.event_seq,
+                record.attempt_count,
+                requires_proposal,
+                record.attempt_count >= 3,
+            )
             result = await asyncio.wait_for(
                 self._agent_runtime.invoke_operational_signal(
                     tenant_id=record.tenant_id,
@@ -821,6 +840,18 @@ class Scenario2DispatchWorker:
                     force_required_outcome_continuation=record.attempt_count >= 3,
                 ),
                 timeout=self._invocation_timeout,
+            )
+            logger.info(
+                "Scenario 2 dispatch result run_id=%s event_seq=%s attempt=%s "
+                "recoverable=%s awaiting_human_decision=%s proposal_id=%s "
+                "paused_call_id=%s",
+                record.run_id,
+                record.event_seq,
+                record.attempt_count,
+                result.recoverable,
+                result.awaiting_human_decision,
+                result.pending_proposal_id,
+                result.paused_function_call_id,
             )
             if not result.recoverable:
                 raise RuntimeError("native ADK invocation has no recoverable state")
@@ -864,6 +895,16 @@ class Scenario2DispatchWorker:
                     if delay_seconds is not None
                     else _retry_delay_seconds(record.attempt_count)
                 ),
+            )
+            logger.warning(
+                "Scenario 2 dispatch error details run_id=%s event_seq=%s "
+                "attempt=%s error_type=%s status_code=%s code=%s",
+                record.run_id,
+                record.event_seq,
+                record.attempt_count,
+                error_metadata(error)["error_types"],
+                error_metadata(error)["status_code"],
+                error_metadata(error)["code"],
             )
             await self._reschedule(
                 record,
