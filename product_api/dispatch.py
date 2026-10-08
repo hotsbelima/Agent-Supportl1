@@ -106,6 +106,12 @@ def _scenario2_failure_kind(error: BaseException) -> str:
         return "no_recoverable_state"
     if "ended before proposal/HITL terminal state" in str(error):
         return "missing_proposal_hitl"
+    if str(error) == "Scenario 2 native wait has no successful Product proposal":
+        return "wait_without_proposal"
+    if str(error) == "Scenario 2 native wait does not match Product proposal":
+        return "wait_proposal_mismatch"
+    if str(error) == "Product event is correlated to multiple native ADK invocations":
+        return "ambiguous_invocation_correlation"
     return "invocation_failed"
 
 
