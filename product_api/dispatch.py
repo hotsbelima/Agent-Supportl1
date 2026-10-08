@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import math
+import os
+import re
+from collections import deque
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
@@ -69,6 +74,49 @@ def _provider_rate_limit_delay_seconds(attempt_count: int) -> float:
     # starving later Scenario 1/3 work.
     exponent = max(0, min(attempt_count - 1, 2))
     return float(min(300, 65 * (2**exponent)))
+
+
+_PROVIDER_RETRY_AFTER_RE = re.compile(
+    r"retry\s+in\s+(?P<duration>(?:\d+(?:\.\d+)?\s*h)?\s*"
+    r"(?:\d+(?:\.\d+)?\s*m)?\s*"
+    r"(?:\d+(?:\.\d+)?\s*s)?)",
+    re.IGNORECASE,
+)
+_PROVIDER_DURATION_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|m|s)",
+    re.IGNORECASE,
+)
+
+
+def _provider_retry_after_seconds(error: BaseException) -> float | None:
+    """Extract a provider-supplied retry delay without exposing its payload."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        match = _PROVIDER_RETRY_AFTER_RE.search(str(current))
+        if match is not None:
+            total = 0.0
+            for duration in _PROVIDER_DURATION_RE.finditer(match.group("duration")):
+                value = float(duration.group("value"))
+                total += value * {
+                    "h": 3600.0,
+                    "m": 60.0,
+                    "s": 1.0,
+                }[duration.group("unit").lower()]
+            if total > 0:
+                return max(1.0, math.ceil(total))
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _scenario2_max_calls_per_minute() -> int:
+    raw_value = os.environ.get("SCENARIO2_LLM_MAX_CALLS_PER_MINUTE", "3")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = 3
+    return max(1, min(value, 60))
 
 
 class Scenario1DispatchWorker:
@@ -399,6 +447,9 @@ class Scenario2DispatchWorker:
         self._poll_interval = poll_interval_seconds
         self._lease_seconds = lease_seconds
         self._invocation_timeout = invocation_timeout_seconds
+        self._max_calls_per_minute = _scenario2_max_calls_per_minute()
+        self._invocation_starts: deque[datetime] = deque()
+        self._provider_blocked_until: datetime | None = None
         self._wake = asyncio.Event()
         self._stopping = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -469,6 +520,46 @@ class Scenario2DispatchWorker:
                 ),
             )
             await uow.commit()
+
+    def _admission_delay_seconds(self) -> float:
+        """Return the time until the next provider call may safely start."""
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(minutes=1)
+        while self._invocation_starts and self._invocation_starts[0] <= cutoff:
+            self._invocation_starts.popleft()
+
+        delays: list[float] = []
+        if self._provider_blocked_until is not None:
+            provider_delay = (
+                self._provider_blocked_until - now
+            ).total_seconds()
+            if provider_delay > 0:
+                delays.append(provider_delay)
+            else:
+                self._provider_blocked_until = None
+
+        if len(self._invocation_starts) >= self._max_calls_per_minute:
+            rate_limit_at = self._invocation_starts[0] + timedelta(minutes=1)
+            rate_delay = (rate_limit_at - now).total_seconds()
+            if rate_delay > 0:
+                delays.append(rate_delay)
+
+        return max(delays, default=0.0)
+
+    def _record_invocation_start(self) -> None:
+        self._invocation_starts.append(datetime.now(UTC))
+
+    def _block_provider(self, error: BaseException, attempt_count: int) -> float:
+        delay_seconds = _provider_retry_after_seconds(error)
+        if delay_seconds is None:
+            delay_seconds = _provider_rate_limit_delay_seconds(attempt_count)
+        blocked_until = datetime.now(UTC) + timedelta(seconds=delay_seconds)
+        if (
+            self._provider_blocked_until is None
+            or blocked_until > self._provider_blocked_until
+        ):
+            self._provider_blocked_until = blocked_until
+        return delay_seconds
 
     async def _operational_fact(
         self,
@@ -652,11 +743,18 @@ class Scenario2DispatchWorker:
         """Process one due Scenario 2 envelope after a recoverable ADK point."""
         if not self._agent_runtime.gemini_configured:
             return False
+        # Direct dispatch_once calls remain deterministic for tests and manual
+        # recovery. The long-lived worker loop enforces admission before claim.
+        if self._task is not None and not self._task.done():
+            if self._admission_delay_seconds() > 0:
+                return False
         record = await self._claim()
         if record is None:
             return False
         try:
             event_id, fact, requires_proposal = await self._operational_fact(record)
+            if self._task is not None and not self._task.done():
+                self._record_invocation_start()
             result = await asyncio.wait_for(
                 self._agent_runtime.invoke_operational_signal(
                     tenant_id=record.tenant_id,
@@ -694,13 +792,15 @@ class Scenario2DispatchWorker:
                 pass
             raise
         except Exception as error:
+            delay_seconds = None
+            if _provider_rate_limited(error):
+                delay_seconds = self._block_provider(
+                    error,
+                    record.attempt_count,
+                )
             await self._reschedule(
                 record,
-                delay_seconds=(
-                    _provider_rate_limit_delay_seconds(record.attempt_count)
-                    if _provider_rate_limited(error)
-                    else None
-                ),
+                delay_seconds=delay_seconds,
             )
             return True
 
@@ -730,7 +830,10 @@ class Scenario2DispatchWorker:
             try:
                 await asyncio.wait_for(
                     self._wake.wait(),
-                    timeout=self._poll_interval,
+                    timeout=max(
+                        self._poll_interval,
+                        self._admission_delay_seconds(),
+                    ),
                 )
             except TimeoutError:
                 pass
