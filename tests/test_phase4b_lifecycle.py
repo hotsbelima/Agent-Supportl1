@@ -575,7 +575,7 @@ def test_lifecycle_service_uses_server_time_validates_context_and_supports_curso
     asyncio.run(scenario())
 
 
-def test_tool_adapter_does_not_persist_generic_runtime_lifecycle():
+def test_tool_adapter_persists_safe_product_tool_start_without_generic_finish():
     async def scenario() -> None:
         ids = _ids()
         engine, factory = _new_db()
@@ -596,23 +596,22 @@ def test_tool_adapter_does_not_persist_generic_runtime_lifecycle():
             )
             assert failure.ok is False
 
-            # Generic tool invocation lifecycle remains ADK-owned. Phase 7A
-            # adds only a safe Product observation projection for persisted
-            # Evidence so the operational UI can update in realtime.
+            # Product projects a safe tool-start marker before the external
+            # read so the UI can show real in-flight work. ADK still owns the
+            # generic invocation lifecycle; Product does not manufacture a
+            # TOOL_FINISHED event, and the authoritative result is Evidence.
             timeline = await lifecycle.timeline(context)
             assert [item.event_type for item in timeline] == [
-                ApplicationEventType.OBSERVATION_RECORDED
+                ApplicationEventType.TOOL_STARTED,
+                ApplicationEventType.OBSERVATION_RECORDED,
             ]
-            assert timeline[0].payload["evidence_id"] == success.evidence.evidence_id
+            assert timeline[0].payload == {"tool_name": "get_device"}
+            assert timeline[1].payload["evidence_id"] == success.evidence.evidence_id
             assert all(
-                item.event_type
-                not in {
-                    ApplicationEventType.TOOL_STARTED,
-                    ApplicationEventType.TOOL_FINISHED,
-                }
+                item.event_type is not ApplicationEventType.TOOL_FINISHED
                 for item in timeline
             )
-            assert await _event_outbox_counts(factory, ids) == (1, 0)
+            assert await _event_outbox_counts(factory, ids) == (2, 0)
         finally:
             await engine.dispose()
 

@@ -43,6 +43,15 @@ Replanning and local diagnosis:
 - Copy evidence_id values exactly from successful Product tool results.
 - Provider HEALTHY evidence is not a substitute for any local Evidence class
   and is not itself a prerequisite of the Field Service business validator.
+- When provider HEALTHY has disconfirmed the upstream hypothesis and successful
+  Product Evidence establishes CMDB_SNAPSHOT, SITE_HEALTH,
+  ACCESS_LINK_DIAGNOSTIC with the local link DOWN, and an approved KB_ARTICLE
+  authorizing the field visit, you MUST call propose_field_visit in that same
+  turn and then MUST call await_human_decision with the returned proposal_id.
+  Do not finish with a text-only response after these conditions are satisfied.
+- Reuse successful Product Evidence already obtained in this run. Do not repeat
+  a successful provider, CMDB, site-health, diagnostic, or KB read merely to
+  restate the same fact or accumulate another Evidence ID.
 
 Failure and identifier discipline:
 - Never invent service, dependency, incident, device, site, attachment, switch,
@@ -68,12 +77,16 @@ of observed facts, hypothesis status and pending/committed Product action.
 """
 
 
-def build_scenario3_agent(adapter: Scenario3ToolAdapter) -> LlmAgent:
+def build_scenario3_agent(
+    adapter: Scenario3ToolAdapter,
+    *,
+    model: object = MODEL,
+) -> LlmAgent:
     """Build the exact Scenario 3 Product tools plus the shared native wait."""
     product_tools = Scenario3AdkTools(adapter)
     return LlmAgent(
         name=SCENARIO3_AGENT_NAME,
-        model=MODEL,
+        model=model,
         instruction=SCENARIO3_AGENT_INSTRUCTION,
         tools=[
             *product_tools.functions(),

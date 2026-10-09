@@ -28,15 +28,30 @@ import {
   type TimelineAccumulator,
 } from "@/lib/recovery";
 import {
+  actionTypeLabel,
+  activityKindLabel,
   connectionLabel,
   connectionTone,
+  diagnosisLabel,
   eventSummary,
+  eventTypeLabel,
+  evidenceEntityLabel,
+  evidenceSourceLabel,
   FIELD_SERVICE_OUTCOME_NOTE,
   formatTimestamp,
+  incidentTextLabel,
   observationState,
+  nativeHitlReady,
+  playbackIncidentStatus,
+  playbackVisibility,
+  proposalRationale,
   proposalTone,
+  shouldRevealProposalPanel,
   statusLabel,
   STALE_PROPOSAL_NOTE,
+  standardInvestigationActivities,
+  userFacingTextLabel,
+  visibleTimelineEvents,
 } from "@/lib/presentation";
 import { streamRunEvents } from "@/lib/sse";
 import type {
@@ -83,6 +98,7 @@ function recoveryMessage(error: unknown): string {
 export function RunConsole({ runId }: { runId: string }) {
   const [state, setState] = useState<RunStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
+  const [playbackNow, setPlaybackNow] = useState(() => Date.now());
   const [connection, setConnection] =
     useState<ConnectionState>("Reconnecting");
   const [loading, setLoading] = useState(true);
@@ -94,6 +110,12 @@ export function RunConsole({ runId }: { runId: string }) {
   } | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [journalState, setJournalState] = useState({
+    runId,
+    visible: false,
+  });
+  const journalVisible =
+    journalState.runId === runId ? journalState.visible : false;
   const [selectedIncidentId, setSelectedIncidentId] = useState<{
     runId: string;
     id: string;
@@ -318,7 +340,29 @@ export function RunConsole({ runId }: { runId: string }) {
     };
   }, [publishState, refreshState, runId]);
 
-  const primaryIncident = state?.incidents[0] ?? null;
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setPlaybackNow(Date.now());
+    }, 1_000);
+
+    return () => window.clearInterval(timerId);
+  }, [runId]);
+
+  const visibleEvents = state
+    ? visibleTimelineEvents(events, state.run.created_at, playbackNow)
+    : [];
+  const investigationActivities = state
+    ? standardInvestigationActivities(visibleEvents, state)
+    : [];
+  const playback = playbackVisibility(visibleEvents);
+  const visibleEvidence = state
+    ? state.evidence.filter((item) => playback.evidenceIds.has(item.evidence_id))
+    : [];
+  const visibleProposals = state?.proposals ?? [];
+  const visibleWorkOrders = state?.work_orders ?? [];
+  const visibleExecutedActions = state?.executed_actions ?? [];
+  const actionExecuted = visibleExecutedActions.length > 0;
+
   const selectedIncidentKey =
     selectedIncidentId?.runId === runId ? selectedIncidentId.id : null;
   const selectedObservationKey =
@@ -327,9 +371,8 @@ export function RunConsole({ runId }: { runId: string }) {
     ? state?.incidents.find((item) => item.incident_id === selectedIncidentKey) ?? null
     : null;
   const selectedObservation = selectedObservationKey
-    ? state?.evidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
+    ? visibleEvidence.find((item) => item.evidence_id === selectedObservationKey) ?? null
     : null;
-  const lastSeq = events.at(-1)?.seq ?? 0;
   const scenarioLabel =
     state?.run.scenario_id === "scenario-3"
       ? "Сценарий 3"
@@ -337,11 +380,20 @@ export function RunConsole({ runId }: { runId: string }) {
         ? "Сценарий 1"
         : state?.run.scenario_id ?? "Неизвестный сценарий";
 
-  const latestProposal: ProposalView | null = state?.proposals.length
-    ? [...state.proposals]
+  const latestProposal: ProposalView | null = visibleProposals.length
+    ? [...visibleProposals]
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
     : null;
+  const showProposalPanel = shouldRevealProposalPanel(
+    state?.run.scenario_id,
+    latestProposal?.proposal_id ?? null,
+    playback.proposalIds,
+  );
+  const latestProposalDisplayStatus = latestProposal?.status ?? null;
+  const latestProposalHitlReady =
+    latestProposal !== null &&
+    nativeHitlReady(events, latestProposal.proposal_id);
 
   async function handleDecision(
     proposal: ProposalView,
@@ -435,53 +487,6 @@ export function RunConsole({ runId }: { runId: string }) {
 
   return (
     <main className="console-shell">
-      <header className="run-header">
-        <div className="brand-lockup">
-          <Link href="/" className="brand-mark" aria-label="На главную">
-            8O
-          </Link>
-          <div>
-            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
-            <h1>{scenarioLabel} · операционная консоль</h1>
-          </div>
-        </div>
-
-        <div className="run-header-actions">
-          <Link className="secondary-button compact-button" href="/">
-            Новый запуск
-          </Link>
-        </div>
-
-        <div className="run-header-grid">
-          <div>
-            <span>Запуск</span>
-            <code>{state.run.run_id}</code>
-          </div>
-          <div>
-            <span>Сценарий</span>
-            <strong>{state.run.scenario_id}</strong>
-          </div>
-          <div>
-            <span>Статус запуска</span>
-            <StatusBadge value={state.run.status} tone="info" />
-          </div>
-          <div>
-            <span>Инцидент</span>
-            <code>{primaryIncident?.incident_id ?? "—"}</code>
-          </div>
-          <div>
-            <span>Соединение</span>
-            <span className="status-badge" data-tone={connectionTone(connection)}>
-              {connectionLabel(connection)}
-            </span>
-          </div>
-          <div>
-            <span>Последнее событие</span>
-            <strong>#{lastSeq}</strong>
-          </div>
-        </div>
-      </header>
-
       {streamError ? (
         <div className="connection-warning" role="status">
           Сохранённое состояние остаётся доступным, пока поток событий восстанавливается.{" "}
@@ -491,7 +496,7 @@ export function RunConsole({ runId }: { runId: string }) {
 
       <div className="console-grid">
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel incident-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Текущее состояние</p>
@@ -499,16 +504,20 @@ export function RunConsole({ runId }: { runId: string }) {
               </div>
               {selectedIncident ? (
                 <StatusBadge
-                  value={selectedIncident.status}
+                  value={playbackIncidentStatus(
+                    selectedIncident.status,
+                    actionExecuted,
+                  )}
                   tone={
-                    selectedIncident.status === "ESCALATED"
+                    playbackIncidentStatus(
+                      selectedIncident.status,
+                      actionExecuted,
+                    ) === "ESCALATED"
                       ? "warning"
                       : "info"
                   }
                 />
-              ) : (
-                <span className="panel-count">{state.incidents.length}</span>
-              )}
+              ) : null}
             </div>
 
             {selectedIncident ? (
@@ -531,7 +540,14 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Статус</dt>
-                    <dd>{statusLabel(selectedIncident.status)}</dd>
+                    <dd>
+                      {statusLabel(
+                        playbackIncidentStatus(
+                          selectedIncident.status,
+                          actionExecuted,
+                        ),
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Устройство</dt>
@@ -539,14 +555,17 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                   <div className="wide">
                     <dt>Описание</dt>
-                    <dd>{selectedIncident.symptom}</dd>
+                    <dd>{incidentTextLabel(selectedIncident.symptom)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Обновлён</dt>
                     <dd>{formatTimestamp(selectedIncident.updated_at)}</dd>
                   </div>
                 </dl>
-                {selectedIncident.status === "ESCALATED" ? (
+                {playbackIncidentStatus(
+                  selectedIncident.status,
+                  actionExecuted,
+                ) === "ESCALATED" ? (
                   <p className="semantic-note">
                     Эскалация означает, что выездной сервис запрошен; это не означает, что устройство уже отремонтировано или инцидент закрыт.
                   </p>
@@ -557,12 +576,22 @@ export function RunConsole({ runId }: { runId: string }) {
                 {state.incidents.map((item) => (
                   <div className="entity-row" role="listitem" key={item.incident_id}>
                     <div className="entity-row-main">
-                      <strong>{item.symptom}</strong>
+                      <strong>{incidentTextLabel(item.symptom)}</strong>
                       <span>{item.site_id}</span>
                     </div>
                     <StatusBadge
-                      value={item.status}
-                      tone={item.status === "ESCALATED" ? "warning" : "info"}
+                      value={playbackIncidentStatus(
+                        item.status,
+                        actionExecuted,
+                      )}
+                      tone={
+                        playbackIncidentStatus(
+                          item.status,
+                          actionExecuted,
+                        ) === "ESCALATED"
+                          ? "warning"
+                          : "info"
+                      }
                     />
                     <button
                       className="detail-button"
@@ -579,13 +608,13 @@ export function RunConsole({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel observation-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Безопасные факты продукта</p>
+                <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
-              <span className="panel-count">{state.evidence.length}</span>
+              
             </div>
 
             {selectedObservation ? (
@@ -600,7 +629,7 @@ export function RunConsole({ runId }: { runId: string }) {
                 <dl className="facts-grid">
                   <div>
                     <dt>Тип</dt>
-                    <dd>{selectedObservation.source_type}</dd>
+                    <dd>{evidenceSourceLabel(selectedObservation.source_type)}</dd>
                   </div>
                   <div>
                     <dt>Получено</dt>
@@ -622,43 +651,31 @@ export function RunConsole({ runId }: { runId: string }) {
                 {selectedObservation.facts.length ? (
                   <ul className="facts-list observation-facts">
                     {selectedObservation.facts.map((fact) => (
-                      <li key={fact}>{fact}</li>
+                      <li key={fact}>{userFacingTextLabel(fact)}</li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="muted-copy observation-copy">
-                    Для этого наблюдения пока нет нормализованных фактов.
-                  </p>
-                )}
-                {selectedObservation.expires_at ? (
-                  <p className="expiry observation-copy">
-                    Действительно до:{" "}
-                    <strong>
-                      {formatTimestamp(selectedObservation.expires_at)}
-                    </strong>
-                  </p>
                 ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Безопасные типизированные данные
+                    Данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
                   </pre>
                 </div>
               </div>
-            ) : state.evidence.length ? (
+            ) : visibleEvidence.length ? (
               <div className="entity-list" role="list">
-                {state.evidence.map((evidence) => (
+                {visibleEvidence.map((evidence) => (
                   <div
                     className="entity-row observation-row"
                     role="listitem"
                     key={evidence.evidence_id}
                   >
                     <div className="entity-row-main">
-                      <strong>{evidence.source_type}</strong>
+                      <strong>{evidenceSourceLabel(evidence.source_type)}</strong>
                       <span>
-                        {evidence.entity_ids[0] ?? "Наблюдение"}
+                        {evidenceEntityLabel(evidence)}
                       </span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
@@ -693,18 +710,68 @@ export function RunConsole({ runId }: { runId: string }) {
         </section>
 
         <section className="console-column timeline-column">
+          <article className="panel scroll-panel investigation-panel">
+            <div className="panel-heading sticky-heading">
+              <div>
+                <p className="panel-kicker">
+                  Что происходило и к каким выводам пришёл агент
+                </p>
+                <h2>Ход расследования</h2>
+              </div>
+              
+            </div>
+
+            {investigationActivities.length ? (
+              <ol className="activity-list">
+                {investigationActivities.map((item) => (
+                  <li className="activity-item" data-kind={item.kind} key={item.id}>
+                    <div className="activity-meta">
+                      <span>{activityKindLabel(item.kind)}</span>
+                      <time dateTime={item.occurred_at}>
+                        {formatTimestamp(item.occurred_at)}
+                      </time>
+                    </div>
+                    <strong>{item.title}</strong>
+                    {item.detail ? <p>{item.detail}</p> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyPanel>
+                Ход расследования появится после первых подтверждённых событий.
+              </EmptyPanel>
+            )}
+          </article>
+
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Сохранённый журнал аудита</p>
-                <h2>Хронология</h2>
+                <p className="panel-kicker">События системы</p>
+                <h2>Технический журнал</h2>
               </div>
-              <span className="panel-count">{events.length}</span>
+              <button
+                className="journal-toggle"
+                type="button"
+                onClick={() =>
+                  setJournalState((current) => ({
+                    runId,
+                    visible:
+                      current.runId === runId ? !current.visible : true,
+                  }))
+                }
+                aria-expanded={journalVisible}
+              >
+                {journalVisible ? "Скрыть журнал" : "Показать журнал"}
+              </button>
             </div>
 
-            {events.length ? (
+            {!journalVisible ? (
+              <div className="journal-hidden-copy">
+                Содержимое журнала скрыто, чтобы не перегружать интерфейс технической информацией.
+              </div>
+            ) : visibleEvents.length ? (
               <ol className="timeline-list">
-                {events.map((event) => (
+                {visibleEvents.map((event) => (
                   <li className="timeline-item" key={event.seq}>
                     <div className="timeline-rail"><span>{event.seq}</span></div>
                     <div className="timeline-content">
@@ -714,9 +781,9 @@ export function RunConsole({ runId }: { runId: string }) {
                           {formatTimestamp(event.occurred_at)}
                         </time>
                       </div>
-                      <code className="event-type">{event.event_type}</code>
+                      <span className="event-type">{eventTypeLabel(event.event_type)}</span>
                       <details className="event-details">
-                        <summary>Безопасные сохранённые детали</summary>
+                        <summary>Детали</summary>
                         <pre>{JSON.stringify(event.payload, null, 2)}</pre>
                       </details>
                     </div>
@@ -724,58 +791,36 @@ export function RunConsole({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>Сохранённых событий приложения пока нет.</EmptyPanel>
+              <EmptyPanel>Событий системы пока нет.</EmptyPanel>
             )}
           </article>
         </section>
 
-        <section className="console-column">
-          <article className="panel scroll-panel">
+        <section
+          className={
+            showProposalPanel ? "console-column" : "console-column proposal-pending"
+          }
+        >
+          {showProposalPanel ? (
+            <article className="panel scroll-panel decision-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Граница человеческого решения</p>
+                <p className="panel-kicker">Подтверждение действий агента</p>
                 <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
                 <StatusBadge
-                  value={latestProposal.status}
-                  tone={proposalTone(latestProposal.status)}
+                  value={latestProposalDisplayStatus ?? latestProposal.status}
+                  tone={proposalTone(
+                    latestProposalDisplayStatus ?? latestProposal.status,
+                  )}
                 />
               ) : null}
             </div>
 
             {latestProposal ? (
               <div className="proposal-card">
-                <dl className="facts-grid">
-                  <div className="wide">
-                    <dt>ID предложения</dt>
-                    <dd><code>{latestProposal.proposal_id}</code></dd>
-                  </div>
-                  <div>
-                    <dt>Диагноз</dt>
-                    <dd>{latestProposal.diagnosis}</dd>
-                  </div>
-                  <div>
-                    <dt>Действие</dt>
-                    <dd>{latestProposal.action_type}</dd>
-                  </div>
-                </dl>
-
-                <div className="proposal-rationale">
-                  <span>Обоснование</span>
-                  <p>{latestProposal.rationale}</p>
-                </div>
-
-                <div className="proposal-evidence">
-                  <span className="subtle-label">ID наблюдений</span>
-                  <div className="chip-row">
-                    {latestProposal.evidence_ids.map((id) => (
-                      <code key={id}>{id}</code>
-                    ))}
-                  </div>
-                </div>
-
-                {latestProposal.status === "PENDING_APPROVAL" ? (
+                {latestProposal.status === "PENDING_APPROVAL" && latestProposalHitlReady ? (
                   <div className="decision-area">
                     <p>
                       До регистрации действия выездного сервиса требуется решение человека.
@@ -805,6 +850,35 @@ export function RunConsole({ runId }: { runId: string }) {
                   </div>
                 ) : null}
 
+                <dl className="facts-grid">
+                  <div className="wide">
+                    <dt>ID предложения</dt>
+                    <dd><code>{latestProposal.proposal_id}</code></dd>
+                  </div>
+                  <div>
+                    <dt>Диагноз</dt>
+                    <dd>{diagnosisLabel(latestProposal.diagnosis)}</dd>
+                  </div>
+                  <div>
+                    <dt>Действие</dt>
+                    <dd>{actionTypeLabel(latestProposal.action_type)}</dd>
+                  </div>
+                </dl>
+
+                <div className="proposal-rationale">
+                  <span>Обоснование</span>
+                  <p>{proposalRationale(latestProposal)}</p>
+                </div>
+
+                <div className="proposal-evidence">
+                  <span className="subtle-label">ID наблюдений</span>
+                  <div className="chip-row">
+                    {latestProposal.evidence_ids.map((id) => (
+                      <code key={id}>{id}</code>
+                    ))}
+                  </div>
+                </div>
+
                 {latestProposal.status === "STALE" ? (
                   <p className="semantic-note stale-note">
                     {STALE_PROPOSAL_NOTE}
@@ -828,21 +902,22 @@ export function RunConsole({ runId }: { runId: string }) {
                 Предложения пока нет. Агент создаст его только после достаточного набора сохранённых наблюдений.
               </EmptyPanel>
             )}
-          </article>
+            </article>
+          ) : null}
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel result-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Зарегистрированный результат</p>
-                <h2>Выездной сервис</h2>
+                <p className="panel-kicker">Результат действия</p>
+                <h2>Что сделано</h2>
               </div>
-              <span className="panel-count">{state.work_orders.length}</span>
+              
             </div>
 
-            {state.work_orders.length ? (
+            {visibleWorkOrders.length ? (
               <div className="work-order-list">
-                {state.work_orders.map((order) => {
-                  const action = state.executed_actions.find(
+                {visibleWorkOrders.map((order) => {
+                  const action = visibleExecutedActions.find(
                     (item) => item.proposal_id === order.proposal_id,
                   );
                   return (
@@ -858,7 +933,7 @@ export function RunConsole({ runId }: { runId: string }) {
                         </div>
                         <div>
                           <dt>Тип действия</dt>
-                          <dd>{action?.action_type ?? "Выездной сервис"}</dd>
+                          <dd>{action ? actionTypeLabel(action.action_type) : "Выездной сервис"}</dd>
                         </div>
                         <div>
                           <dt>Устройство</dt>
@@ -892,17 +967,21 @@ export function RunConsole({ runId }: { runId: string }) {
                   );
                 })}
               </div>
-            ) : (
-              <EmptyPanel>Заявка на выезд ещё не зарегистрирована.</EmptyPanel>
-            )}
+            ) : null}
           </article>
         </section>
       </div>
 
-      <footer className="console-footer">
-        <span>Источник истины: состояние продукта в PostgreSQL</span>
-        <span>Поток событий: сохранённый SSE</span>
-        <span>Запуск AI: сохранённое событие → Google ADK</span>
+      <footer className="run-footer-bar">
+        <strong>{scenarioLabel} · операционная консоль</strong>
+        <div className="run-footer-actions">
+          <span className="status-badge" data-tone={connectionTone(connection)}>
+            {connectionLabel(connection)}
+          </span>
+          <Link className="secondary-button compact-button" href="/">
+            Новый запуск
+          </Link>
+        </div>
       </footer>
     </main>
   );

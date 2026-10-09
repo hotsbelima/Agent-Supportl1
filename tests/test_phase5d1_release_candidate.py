@@ -67,6 +67,7 @@ def test_controlled_seed_is_not_exposed_as_public_http_endpoint():
         "/api/v1/runs/{run_id}",
         "/api/v1/runs/{run_id}/events",
         "/api/v1/runs/{run_id}/events/stream",
+        "/api/v1/runs/{run_id}/heartbeat",
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/approve",
         "/api/v1/runs/{run_id}/proposals/{proposal_id}/reject",
     }

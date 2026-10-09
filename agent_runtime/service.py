@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
-import os
 from typing import Any
 
 from google.adk.apps import App
@@ -16,7 +15,12 @@ from google.genai import types
 
 from product_backend.adapters.tool_adapters import Scenario1ToolAdapter
 
-from .agent import build_scenario1_agent
+from .agent import MODEL, build_scenario1_agent
+from .gemini_keys import (
+    GeminiProviderCoordinator,
+    ProviderId,
+    model_for_provider,
+)
 from .human_decision import WAIT_FOR_HUMAN_DECISION_TOOL
 from .retry import ProductRetryableToolPlugin
 from .sessions import ADK_APP_NAME, ensure_run_session, get_run_session
@@ -92,7 +96,7 @@ def _latest_final_answer(
     return final_answer
 
 
-def _operational_event_id(event: Any) -> str | None:
+def _operational_event_identity(event: Any) -> tuple[str, str] | None:
     if getattr(event, "author", None) != "user":
         return None
     if not getattr(event, "invocation_id", None):
@@ -104,10 +108,37 @@ def _operational_event_id(event: Any) -> str | None:
         payload = json.loads(text)
     except (TypeError, ValueError):
         return None
-    if not isinstance(payload, dict) or payload.get("type") != "operational_signal":
+    if not isinstance(payload, dict) or payload.get("type") not in {
+        "operational_signal",
+        "required_outcome_continuation",
+    }:
         return None
     event_id = payload.get("operational_event_id")
-    return event_id if isinstance(event_id, str) and event_id else None
+    event_type = payload.get("type")
+    if not isinstance(event_id, str) or not event_id:
+        return None
+    return event_id, event_type
+
+
+def _operational_event_id(event: Any) -> str | None:
+    identity = _operational_event_identity(event)
+    return identity[0] if identity is not None else None
+
+
+MAX_REQUIRED_OUTCOME_CONTINUATIONS = 2
+
+
+def _required_outcome_continuation_count(
+    events: list[Any],
+    *,
+    operational_event_id: str,
+) -> int:
+    return sum(
+        1
+        for event in events
+        if (identity := _operational_event_identity(event)) is not None
+        and identity == (operational_event_id, "required_outcome_continuation")
+    )
 
 
 def _successful_pending_proposal_ids(
@@ -157,19 +188,27 @@ def _find_operational_event_correlation(
     *,
     operational_event_id: str,
 ) -> _OperationalEventCorrelation | None:
-    invocation_ids = {
-        event.invocation_id
+    matches = [
+        (event.invocation_id, identity[1])
         for event in events
-        if _operational_event_id(event) == operational_event_id
+        if (identity := _operational_event_identity(event)) is not None
+        and identity[0] == operational_event_id
         and getattr(event, "invocation_id", None)
-    }
-    if not invocation_ids:
+    ]
+    if not matches:
         return None
-    if len(invocation_ids) != 1:
+    original_invocation_ids = {
+        invocation_id
+        for invocation_id, event_type in matches
+        if event_type == "operational_signal"
+    }
+    if len(original_invocation_ids) > 1:
         raise RuntimeError(
             "Product operational event is correlated to multiple native invocations"
         )
-    invocation_id = next(iter(invocation_ids))
+    # Required-outcome continuations may legitimately create later invocations;
+    # recovery follows the latest correlated invocation.
+    invocation_id = matches[-1][0]
 
     settled = False
     final_answer: str | None = None
@@ -381,45 +420,75 @@ class DeviceIncidentAgentRuntime:
         adapter: Any,
         session_service: DatabaseSessionService,
         scenario_id: str,
-        agent_builder: Callable[[Any], Any],
+        agent_builder: Callable[..., Any],
+        require_proposal_hitl: bool = False,
+        provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
         if scenario_id not in {"scenario-1", "scenario-3"}:
             raise ValueError("unsupported device-Incident scenario_id")
         self._scenario_id = scenario_id
-        agent = agent_builder(adapter)
-        app = App(
-            name=ADK_APP_NAME,
-            root_agent=agent,
-            plugins=[
-                ProductRetryableToolPlugin(
-                    max_retries=2,
-                    throw_exception_if_retry_exceeded=False,
+        self._require_proposal_hitl = require_proposal_hitl
+        self._providers = provider_coordinator or GeminiProviderCoordinator()
+
+        def make_runner(provider: ProviderId | None) -> Runner:
+            root_agent = (
+                agent_builder(
+                    adapter,
+                    model=model_for_provider(self._providers, provider, MODEL),
                 )
-            ],
-            resumability_config=ResumabilityConfig(is_resumable=True),
-        )
-        self._runner = Runner(
-            app=app,
-            session_service=session_service,
-            auto_create_session=False,
+                if provider is not None
+                else agent_builder(adapter)
+            )
+            app = App(
+                name=ADK_APP_NAME,
+                root_agent=root_agent,
+                plugins=[
+                    ProductRetryableToolPlugin(
+                        max_retries=2,
+                        throw_exception_if_retry_exceeded=False,
+                    )
+                ],
+                resumability_config=ResumabilityConfig(is_resumable=True),
+            )
+            return Runner(
+                app=app,
+                session_service=session_service,
+                auto_create_session=False,
+            )
+
+        self._runners: dict[ProviderId | None, Runner] = (
+            {provider: make_runner(provider) for provider in self._providers.configured_providers}
+            if self._providers.configured
+            else {None: make_runner(None)}
         )
         self._session_service = session_service
 
     @property
     def model(self) -> str:
-        return str(self._runner.agent.model)
+        return MODEL
 
     @property
     def gemini_configured(self) -> bool:
-        return bool(os.environ.get("GOOGLE_API_KEY"))
+        return self._providers.configured
 
     @property
     def resumability_wired(self) -> bool:
-        config = self._runner.resumability_config
+        config = next(iter(self._runners.values())).resumability_config
         return bool(config is not None and config.is_resumable)
 
     async def close(self) -> None:
-        await self._runner.close()
+        for runner in self._runners.values():
+            await runner.close()
+
+    async def _run_events(self, **kwargs: Any):
+        """Run against one provider-pinned model for this native ADK invocation."""
+        if not self._providers.configured:
+            async for event in self._runners[None].run_async(**kwargs):
+                yield event
+            return
+        async with self._providers.bind_invocation() as provider:
+            async for event in self._runners[provider].run_async(**kwargs):
+                yield event
 
     async def invoke(
         self,
@@ -443,6 +512,7 @@ class DeviceIncidentAgentRuntime:
         run_id: str,
         operational_event_id: str | None,
         operational_signal: dict[str, Any],
+        force_required_outcome_continuation: bool = False,
     ) -> AgentInvocationResult:
         """Invoke or recover the same native ADK invocation for one Product event.
 
@@ -466,7 +536,24 @@ class DeviceIncidentAgentRuntime:
                 list(session.events),
                 operational_event_id=operational_event_id,
             )
-            if correlation is not None and correlation.settled:
+            continuation_count = _required_outcome_continuation_count(
+                list(session.events),
+                operational_event_id=operational_event_id,
+            )
+            continuation_required = bool(
+                self._require_proposal_hitl
+                and correlation is not None
+                and correlation.pending_proposal_id is None
+                and correlation.paused_function_call_id is None
+                and (
+                    correlation.settled
+                    or (
+                        force_required_outcome_continuation
+                        and continuation_count < MAX_REQUIRED_OUTCOME_CONTINUATIONS
+                    )
+                )
+            )
+            if correlation is not None and correlation.settled and not continuation_required:
                 return AgentInvocationResult(
                     session_id=run_id,
                     invocation_id=correlation.invocation_id,
@@ -477,6 +564,8 @@ class DeviceIncidentAgentRuntime:
                     pending_proposal_id=correlation.pending_proposal_id,
                     paused_function_call_id=correlation.paused_function_call_id,
                 )
+        else:
+            continuation_required = False
 
         envelope = {
             "type": "operational_signal",
@@ -485,6 +574,19 @@ class DeviceIncidentAgentRuntime:
         }
         if operational_event_id:
             envelope["operational_event_id"] = operational_event_id
+
+        if continuation_required:
+            envelope = {
+                "type": "required_outcome_continuation",
+                "scenario": self._scenario_id,
+                "operational_event_id": operational_event_id,
+                "instruction": (
+                    "The prior invocation ended without the mandatory proposal/"
+                    "HITL outcome. Reuse successful Product evidence already in "
+                    "session history; do not repeat successful read tools. Complete "
+                    "the required proposal and await_human_decision now."
+                ),
+            }
 
         message = types.Content(
             role="user",
@@ -500,7 +602,9 @@ class DeviceIncidentAgentRuntime:
         )
 
         invocation_id: str | None = (
-            correlation.invocation_id if correlation is not None else None
+            None
+            if continuation_required
+            else (correlation.invocation_id if correlation is not None else None)
         )
         final_answer: str | None = None
         pending_proposal_id: str | None = (
@@ -513,15 +617,15 @@ class DeviceIncidentAgentRuntime:
             else False
         )
 
-        if correlation is not None:
-            stream = self._runner.run_async(
+        if correlation is not None and not continuation_required:
+            stream = self._run_events(
                 user_id=tenant_id,
                 session_id=run_id,
                 invocation_id=correlation.invocation_id,
                 new_message=None,
             )
         else:
-            stream = self._runner.run_async(
+            stream = self._run_events(
                 user_id=tenant_id,
                 session_id=run_id,
                 new_message=message,
@@ -674,7 +778,7 @@ class DeviceIncidentAgentRuntime:
             )
 
         final_answer: str | None = None
-        async for event in self._runner.run_async(
+        async for event in self._run_events(
             user_id=tenant_id,
             session_id=run_id,
             invocation_id=correlation.invocation_id,
@@ -701,12 +805,14 @@ class Scenario1AgentRuntime(DeviceIncidentAgentRuntime):
         *,
         adapter: Scenario1ToolAdapter,
         session_service: DatabaseSessionService,
+        provider_coordinator: GeminiProviderCoordinator | None = None,
     ) -> None:
         super().__init__(
             adapter=adapter,
             session_service=session_service,
             scenario_id="scenario-1",
             agent_builder=build_scenario1_agent,
+            provider_coordinator=provider_coordinator,
         )
 
 

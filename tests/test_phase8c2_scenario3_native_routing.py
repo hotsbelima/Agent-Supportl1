@@ -22,8 +22,12 @@ from agent_runtime.human_decision import (
     WAIT_FOR_HUMAN_DECISION_TOOL,
     build_human_decision_wait_tool,
 )
-from agent_runtime.scenario3_agent import build_scenario3_agent
+from agent_runtime.scenario3_agent import (
+    SCENARIO3_AGENT_INSTRUCTION,
+    build_scenario3_agent,
+)
 from agent_runtime.scenario3_service import Scenario3AgentRuntime
+from agent_runtime.scenario3_tools import Scenario3AdkTools
 from agent_runtime.service import AgentResumeResult
 from agent_runtime.sessions import get_run_session
 from product_api.app import ProductApiContainer, create_app
@@ -191,6 +195,55 @@ def test_phase8c2_scenario1_and_scenario3_share_authoritative_access_link_truth(
     asyncio.run(scenario())
 
 
+
+def test_phase8c2_scenario3_read_cache_reuses_only_successful_unexpired_results():
+    class _CacheAdapter:
+        def __init__(self) -> None:
+            self.calls: dict[str, int] = {}
+
+        async def search_kb(self, context, request):
+            del context
+            query = request.query
+            self.calls[query] = self.calls.get(query, 0) + 1
+            if query == "failed":
+                return {"ok": False, "error": {"code": "KB_UNAVAILABLE"}}
+            expires_at = (
+                "2099-01-01T00:00:00+00:00"
+                if query == "fresh"
+                else "2000-01-01T00:00:00+00:00"
+            )
+            return {
+                "ok": True,
+                "query": query,
+                "evidence": [{"expires_at": expires_at}],
+                "articles": [{"article_id": f"KB-{query}"}],
+            }
+
+    async def scenario() -> None:
+        adapter = _CacheAdapter()
+        tools = Scenario3AdkTools(adapter)
+        context = SimpleNamespace(
+            user_id="TENANT-8C2-CACHE",
+            session=SimpleNamespace(id="RUN-8C2-CACHE"),
+        )
+
+        first = await tools.search_kb("fresh", context)
+        first["articles"][0]["article_id"] = "MUTATED"
+        second = await tools.search_kb("fresh", context)
+        assert adapter.calls["fresh"] == 1
+        assert second["articles"][0]["article_id"] == "KB-fresh"
+
+        await tools.search_kb("expired", context)
+        await tools.search_kb("expired", context)
+        assert adapter.calls["expired"] == 2
+
+        await tools.search_kb("failed", context)
+        await tools.search_kb("failed", context)
+        assert adapter.calls["failed"] == 2
+
+    asyncio.run(scenario())
+
+
 def test_phase8c2_scenario3_tool_surface_is_exact_and_trusted_context_is_hidden():
     async def scenario() -> None:
         agent = build_scenario3_agent(object())
@@ -198,6 +251,8 @@ def test_phase8c2_scenario3_tool_surface_is_exact_and_trusted_context_is_hidden(
 
         assert [tool.name for tool in tools] == EXPECTED_SCENARIO3_TOOLS
         assert isinstance(tools[-1], LongRunningFunctionTool)
+        assert "MUST call propose_field_visit" in SCENARIO3_AGENT_INSTRUCTION
+        assert "Do not finish with a text-only response" in SCENARIO3_AGENT_INSTRUCTION
         assert all(
             isinstance(tool, FunctionTool)
             for tool in tools[:-1]
@@ -479,12 +534,26 @@ class _FakeStateService:
 class _RecordingDispatchRuntime:
     gemini_configured = True
 
-    def __init__(self) -> None:
+    def __init__(self, *, reach_hitl: bool = True) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.reach_hitl = reach_hitl
 
     async def invoke_operational_event(self, **kwargs):
         self.calls.append(kwargs)
-        return None
+        return SimpleNamespace(
+            final_answer=(
+                None
+                if self.reach_hitl
+                else "Evidence complete; finishing with text instead of proposal."
+            ),
+            awaiting_human_decision=self.reach_hitl,
+            pending_proposal_id=(
+                "PROPOSAL-S3-DISPATCH" if self.reach_hitl else None
+            ),
+            paused_function_call_id=(
+                "CALL-S3-WAIT" if self.reach_hitl else None
+            ),
+        )
 
 
 def test_phase8c2_shared_worker_routes_scenario3_only_to_scenario3_runtime():
@@ -527,6 +596,75 @@ def test_phase8c2_shared_worker_routes_scenario3_only_to_scenario3_runtime():
     assert call["operational_signal"]["scenario_id"] == "scenario-3"
     assert outbox.delivered is True
     assert outbox.rescheduled is False
+
+
+
+def test_phase8c2_scenario3_text_only_required_outcome_continues_to_proposal_and_wait(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        proposal_id = "PROPOSAL-S3-CONTINUE"
+        proposal_calls: list[str] = []
+        model = _ScriptedModel(
+            steps=[
+                "Local failure is confirmed, but I am ending with text.",
+                _proposal_call(),
+                _wait_call(proposal_id),
+            ]
+        )
+        monkeypatch.setattr(
+            scenario3_service_module,
+            "build_scenario3_agent",
+            lambda adapter: _build_scripted_agent(
+                model,
+                proposal_id=proposal_id,
+                proposal_calls=proposal_calls,
+            ),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario3AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            tenant_id = "TENANT-S3-CONTINUE"
+            run_id = "RUN-S3-CONTINUE"
+            event_id = "EVENT-S3-CONTINUE"
+            signal = {
+                "event_id": event_id,
+                "scenario_id": "scenario-3",
+                "signal": {"signal_type": "itsm.incident.created"},
+                "incidents": [],
+            }
+
+            bad = await runtime.invoke_operational_event(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                operational_event_id=event_id,
+                operational_signal=signal,
+            )
+            assert bad.awaiting_human_decision is False
+            assert bad.pending_proposal_id is None
+            assert bad.final_answer is not None
+            assert proposal_calls == []
+
+            continued = await runtime.invoke_operational_event(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                operational_event_id=event_id,
+                operational_signal=signal,
+            )
+            assert continued.awaiting_human_decision is True
+            assert continued.pending_proposal_id == proposal_id
+            assert continued.paused_function_call_id is not None
+            assert continued.invocation_id is not None
+            assert continued.invocation_id != bad.invocation_id
+            assert proposal_calls == [proposal_id]
+            assert len(model.requests) == 3
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
 
 
 class _FakeApprovalService:
@@ -656,6 +794,42 @@ def _scenario3_rejected_result() -> tuple[RunStateSnapshot, ApprovalProcessed]:
     return snapshot, result
 
 
+def test_phase8c2_scenario3_text_only_final_without_required_hitl_is_rescheduled():
+    now = datetime.now(UTC)
+    record = ApplicationOutboxRecord(
+        outbox_id="OUTBOX-S3-8C2-HITL-GUARD",
+        tenant_id="TENANT-S3-8C2-HITL-GUARD",
+        run_id="RUN-S3-8C2-HITL-GUARD",
+        event_seq=2,
+        topic=AGENT_DISPATCH_TOPIC,
+        payload={
+            "event_id": "EVENT-S3-8C2-HITL-GUARD",
+            "event_seq": 2,
+            "signal": {"signal_type": "itsm.incident.created", "details": {}},
+        },
+        created_at=now,
+        available_at=now,
+        delivered_at=None,
+        attempt_count=1,
+    )
+    outbox = _FakeOutbox(record)
+    scenario1_runtime = _RecordingDispatchRuntime()
+    scenario3_runtime = _RecordingDispatchRuntime(reach_hitl=False)
+    worker = Scenario1DispatchWorker(
+        uow_factory=lambda: _FakeDispatchUow(outbox),
+        state_service=_FakeStateService("scenario-3"),
+        agent_runtime=scenario1_runtime,
+        scenario3_agent_runtime=scenario3_runtime,
+    )
+
+    processed = asyncio.run(worker.dispatch_once())
+
+    assert processed is True
+    assert len(scenario3_runtime.calls) == 1
+    assert outbox.delivered is False
+    assert outbox.rescheduled is True
+
+
 def test_phase8c2_committed_field_decision_survives_runtime_selection_failure():
     snapshot, result = _scenario3_rejected_result()
     approval_service = _FakeApprovalService(result)
@@ -725,4 +899,42 @@ def test_phase8c2_generic_field_decision_routes_resume_by_persisted_scenario_id(
     assert (
         scenario3_runtime.calls[0]["proposal_id"]
         == result.proposal.proposal_id
+    )
+
+
+def test_phase8c2_scenario3_redelivery_forces_required_outcome_continuation():
+    now = datetime.now(UTC)
+    record = ApplicationOutboxRecord(
+        outbox_id="OUTBOX-S3-8C2-REDELIVERY-RECOVERY",
+        tenant_id="TENANT-S3-8C2-REDELIVERY-RECOVERY",
+        run_id="RUN-S3-8C2-REDELIVERY-RECOVERY",
+        event_seq=2,
+        topic=AGENT_DISPATCH_TOPIC,
+        payload={
+            "event_id": "EVENT-S3-8C2-REDELIVERY-RECOVERY",
+            "event_seq": 2,
+            "signal": {"signal_type": "itsm.incident.created", "details": {}},
+        },
+        created_at=now,
+        available_at=now,
+        delivered_at=None,
+        attempt_count=2,
+    )
+    outbox = _FakeOutbox(record)
+    scenario1_runtime = _RecordingDispatchRuntime()
+    scenario3_runtime = _RecordingDispatchRuntime()
+    worker = Scenario1DispatchWorker(
+        uow_factory=lambda: _FakeDispatchUow(outbox),
+        state_service=_FakeStateService("scenario-3"),
+        agent_runtime=scenario1_runtime,
+        scenario3_agent_runtime=scenario3_runtime,
+    )
+
+    processed = asyncio.run(worker.dispatch_once())
+
+    assert processed is True
+    assert len(scenario3_runtime.calls) == 1
+    assert (
+        scenario3_runtime.calls[0]["force_required_outcome_continuation"]
+        is True
     )

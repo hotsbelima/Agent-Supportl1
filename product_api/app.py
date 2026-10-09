@@ -26,6 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from google.adk.sessions import DatabaseSessionService
 
+from agent_runtime.gemini_keys import GeminiProviderCoordinator
 from agent_runtime.service import DeviceIncidentAgentRuntime, Scenario1AgentRuntime
 from agent_runtime.scenario2_service import Scenario2AgentRuntime
 from agent_runtime.scenario3_service import Scenario3AgentRuntime
@@ -90,6 +91,7 @@ from product_backend.persistence.database import (
     create_session_factory,
 )
 from product_backend.persistence.run_state import SqlAlchemyRunStateQuery
+from product_backend.persistence.run_activity import SqlAlchemyRunActivityRepository
 from product_backend.persistence.uow import (
     SqlAlchemyApprovalExecutionUnitOfWork,
     SqlAlchemyDispatchUnitOfWork,
@@ -130,6 +132,7 @@ from .schemas import (
     ApprovalDecisionResponse,
     HumanDecisionRequest,
     RunStateResponse,
+    RunHeartbeatResponse,
     Scenario2ApprovalDecisionResponse,
     Scenario2DependencyStatusRequest,
     Scenario2IngestionStateResponse,
@@ -202,6 +205,7 @@ class ProductApiContainer:
     scenario3_sources: Scenario3ProviderSources | None = None
     scenario3_provider_read_service: Scenario3ProviderReadService | None = None
     scenario3_agent_runtime: Scenario3AgentRuntime | None = None
+    run_activity_repository: SqlAlchemyRunActivityRepository | None = None
 
     async def close(self) -> None:
         if self.scenario3_agent_runtime is not None:
@@ -240,9 +244,11 @@ def build_container_from_env() -> ProductApiContainer:
         read_service=read_service,
         proposal_service=proposal_service,
     )
+    gemini_providers = GeminiProviderCoordinator()
     agent_runtime = Scenario1AgentRuntime(
         adapter=tool_adapter,
         session_service=adk_session_service,
+        provider_coordinator=gemini_providers,
     )
     state_service = RunStateService(
         SqlAlchemyRunStateQuery(session_factory)
@@ -261,6 +267,7 @@ def build_container_from_env() -> ProductApiContainer:
     scenario2_sources = PersistedScenario2FixtureSources(
         scenario2_state_service,
         session_factory,
+        isolate_runs=PublicDemoSettings.from_env().enabled,
     )
     scenario2_read_service = Scenario2ReadToolService(
         read_uow_factory=lambda: SqlAlchemyScenario2ToolReadUnitOfWork(
@@ -271,13 +278,17 @@ def build_container_from_env() -> ProductApiContainer:
         dependency_status=scenario2_sources,
         major_incident_directory=scenario2_sources,
         ttl_policy=Scenario2EvidenceTtlPolicy(
-            local_service_health=timedelta(minutes=5),
-            external_dependency_status=timedelta(minutes=2),
-            major_incident_search=timedelta(minutes=2),
+            # Several model/tool turns can span minutes under provider load.
+            # Keep independent observations valid long enough for the agent
+            # to compare them; the validator still rejects expired evidence.
+            local_service_health=timedelta(minutes=15),
+            external_dependency_status=timedelta(minutes=15),
+            major_incident_search=timedelta(minutes=15),
         ),
     )
     scenario2_proposal_service = MajorIncidentProposalService(
-        lambda: SqlAlchemyScenario2ProposalUnitOfWork(session_factory)
+        lambda: SqlAlchemyScenario2ProposalUnitOfWork(session_factory),
+        isolate_runs=PublicDemoSettings.from_env().enabled,
     )
     scenario2_tool_adapter = DefaultScenario2ToolAdapter(
         read_service=scenario2_read_service,
@@ -293,6 +304,7 @@ def build_container_from_env() -> ProductApiContainer:
     scenario2_agent_runtime = Scenario2AgentRuntime(
         adapter=scenario2_tool_adapter,
         session_service=adk_session_service,
+        provider_coordinator=gemini_providers,
     )
     scenario2_dispatch_worker = Scenario2DispatchWorker(
         uow_factory=lambda: SqlAlchemyDispatchUnitOfWork(session_factory),
@@ -336,6 +348,7 @@ def build_container_from_env() -> ProductApiContainer:
     scenario3_agent_runtime = Scenario3AgentRuntime(
         adapter=scenario3_tool_adapter,
         session_service=adk_session_service,
+        provider_coordinator=gemini_providers,
     )
 
     # Scenario 1 and Scenario 3 share one durable device-Incident consumer.
@@ -378,6 +391,7 @@ def build_container_from_env() -> ProductApiContainer:
         ),
         scenario2_approval_service=scenario2_approval_service,
         scenario2_simulator=scenario2_simulator,
+        run_activity_repository=SqlAlchemyRunActivityRepository(session_factory),
         scenario2_sources=scenario2_sources,
         scenario3_fixture=scenario3_fixture,
         scenario3_sources=scenario3_sources,
@@ -1346,6 +1360,36 @@ def create_app(
                 message="Run was not found in the current tenant context.",
             )
         return run_state_response(snapshot)
+
+    @app.post(
+        "/api/v1/runs/{run_id}/heartbeat",
+        response_model=RunHeartbeatResponse,
+        responses=_ERROR_RESPONSES,
+    )
+    async def heartbeat_run(
+        run_id: Annotated[str, _ID_PATH],
+        request: Request,
+        tenant_id: TenantId,
+    ) -> RunHeartbeatResponse:
+        services = _container(request)
+        if services.run_activity_repository is None:
+            _raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="RUN_ACTIVITY_UNAVAILABLE",
+                message="Run activity tracking is unavailable.",
+                retryable=True,
+            )
+        active = await services.run_activity_repository.heartbeat(
+            tenant_id=tenant_id,
+            run_id=run_id,
+        )
+        if active is None:
+            _raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="RUN_NOT_FOUND",
+                message="Run was not found in the current tenant context.",
+            )
+        return RunHeartbeatResponse(active=active)
 
     @app.get(
         "/api/v1/runs/{run_id}/events",

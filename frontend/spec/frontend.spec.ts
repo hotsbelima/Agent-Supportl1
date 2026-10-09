@@ -2,11 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import {
   connectionTone,
+  dependencyNameLabel,
   eventSummary,
+  evidenceEntityLabel,
+  evidenceSourceLabel,
+  incidentTextLabel,
+  kbTitleLabel,
   FIELD_SERVICE_OUTCOME_NOTE,
   observationState,
+  playbackIncidentStatus,
+  playbackVisibility,
   proposalTone,
+  shouldRevealProposalPanel,
+  scenario2InvestigationActivities,
   STALE_PROPOSAL_NOTE,
+  TIMELINE_PLAYBACK_INTERVAL_MS,
 } from "../lib/presentation";
 import { isStateRefreshEvent } from "../lib/recovery";
 import {
@@ -14,7 +24,11 @@ import {
   createSseParser,
   type SseFrame,
 } from "../lib/sse";
-import type { ApplicationEventView, EvidenceView } from "../lib/types";
+import type {
+  ApplicationEventView,
+  EvidenceView,
+  Scenario2IngestionStateResponse,
+} from "../lib/types";
 
 function event(
   eventType: string,
@@ -34,15 +48,48 @@ function event(
 describe("operational presentation", () => {
   it("uses persisted details without inventing missing fields", () => {
     expect(eventSummary(event("tool.started", { tool_name: "get_device" })))
-      .toBe("Запущен инструмент: get_device");
-    expect(eventSummary(event("tool.started"))).toBe("Запущен инструмент");
+      .toBe("Начата проверка: Проверка устройства");
+    expect(eventSummary(event("tool.started"))).toBe("Начата системная проверка");
     expect(eventSummary(event("run.status_changed", { status: "ACTIVE" })))
       .toBe("Статус запуска → Активен");
     expect(
       eventSummary(
         event("observation.recorded", { source_type: "CMDB_SNAPSHOT" }),
       ),
-    ).toBe("Сохранено наблюдение: CMDB_SNAPSHOT");
+    ).toBe("Сохранено наблюдение: Данные CMDB");
+  });
+
+  it("uses human-readable Russian labels for technical product values", () => {
+    expect(evidenceSourceLabel("CMDB_SNAPSHOT")).toBe("Данные CMDB");
+    expect(evidenceSourceLabel("ACCESS_LINK_DIAGNOSTIC")).toBe(
+      "Диагностика канала доступа",
+    );
+    expect(incidentTextLabel("Payment terminal is unavailable.")).toBe(
+      "Платёжный терминал недоступен.",
+    );
+    expect(incidentTextLabel("payment_gateway_timeout")).toBe(
+      "Таймаут платёжного шлюза.",
+    );
+    expect(
+      incidentTextLabel("Single payment terminal reports payment gateway timeouts."),
+    ).toBe("На одном платёжном терминале зафиксированы таймауты платёжного шлюза.");
+    expect(dependencyNameLabel("AcmePay")).toBe("CloudPayments");
+    expect(kbTitleLabel("Physical access path inspection")).toBe(
+      "Проверка физического пути подключения",
+    );
+    expect(
+      evidenceEntityLabel({
+        evidence_id: "E-DEP",
+        tenant_id: "TENANT-8OCT",
+        run_id: "RUN-1",
+        source_type: "EXTERNAL_DEPENDENCY_STATUS",
+        captured_at: "2026-10-05T00:00:00Z",
+        entity_ids: ["DEP-ACMEPAY-PAYMENTS"],
+        payload: { dependency_name: "AcmePay", status: "HEALTHY" },
+        facts: [],
+        expires_at: null,
+      }),
+    ).toBe("CloudPayments");
   });
 
   it("refreshes authoritative state when a Product observation arrives", () => {
@@ -79,6 +126,183 @@ describe("operational presentation", () => {
     ).toBeNull();
   });
 
+  it("keeps entity visibility aligned with the playback cursor", () => {
+    const beforeApproval = playbackVisibility([
+      {
+        ...event("external.signal", {
+          details: { site_id: "SITE-MSK-001" },
+        }),
+        seq: 1,
+      },
+      {
+        ...event("observation.recorded", { evidence_id: "E-1" }),
+        seq: 2,
+      },
+      {
+        ...event("proposal.created", { proposal_id: "P-1" }),
+        seq: 3,
+      },
+      {
+        ...event("run.status_changed", {
+          status: "WAITING_APPROVAL",
+          cause: "native_hitl_paused",
+          proposal_id: "P-1",
+        }),
+        seq: 4,
+      },
+    ]);
+
+    expect([...beforeApproval.signalSites]).toEqual(["SITE-MSK-001"]);
+    expect([...beforeApproval.evidenceIds]).toEqual(["E-1"]);
+    expect([...beforeApproval.proposalIds]).toEqual(["P-1"]);
+    expect(beforeApproval.approvalRequested).toBe(true);
+    expect(beforeApproval.approvalDecided).toBe(false);
+    expect(beforeApproval.approvalDecision).toBeNull();
+    expect(beforeApproval.actionExecuted).toBe(false);
+    expect(playbackIncidentStatus("ESCALATED", false)).toBe("OPEN");
+
+    const afterExecution = playbackVisibility([
+      { ...event("approval.decided", { decision: "APPROVED" }), seq: 5 },
+      { ...event("action.executed", { proposal_id: "P-1" }), seq: 6 },
+    ]);
+    expect(afterExecution.approvalDecided).toBe(true);
+    expect(afterExecution.approvalDecision).toBe("APPROVED");
+    expect(afterExecution.actionExecuted).toBe(true);
+    expect(playbackIncidentStatus("ESCALATED", true)).toBe("ESCALATED");
+  });
+
+  it("reveals the Scenario 1 proposal panel only when its creation event is visible", () => {
+    const beforeProposal = playbackVisibility([
+      { ...event("external.signal"), seq: 1 },
+      { ...event("observation.recorded", { evidence_id: "E-1" }), seq: 2 },
+    ]);
+    expect(
+      shouldRevealProposalPanel("scenario-1", "P-1", beforeProposal.proposalIds),
+    ).toBe(false);
+
+    const afterProposal = playbackVisibility([
+      { ...event("proposal.created", { proposal_id: "P-1" }), seq: 3 },
+    ]);
+    expect(
+      shouldRevealProposalPanel("scenario-1", "P-1", afterProposal.proposalIds),
+    ).toBe(true);
+    expect(shouldRevealProposalPanel("scenario-3", null, new Set())).toBe(true);
+  });
+
+  it("builds Scenario 2 human activity only from persisted signals, evidence and proposal state", () => {
+    const state: Scenario2IngestionStateResponse = {
+      run: {
+        run_id: "RUN-1",
+        tenant_id: "TENANT-8OCT",
+        scenario_id: "scenario-2",
+        status: "WAITING_APPROVAL",
+        created_at: "2026-10-05T00:00:00Z",
+        updated_at: "2026-10-05T00:00:30Z",
+      },
+      service_incidents: [],
+      operational_signals: [],
+      evidence: [
+        {
+          evidence_id: "E-LOCAL",
+          tenant_id: "TENANT-8OCT",
+          run_id: "RUN-1",
+          source_type: "LOCAL_SERVICE_HEALTH",
+          captured_at: "2026-10-05T00:00:20Z",
+          entity_ids: ["SITE-KZN-017", "payment_gateway"],
+          payload: {
+            site_id: "SITE-KZN-017",
+            service_key: "payment_gateway",
+            network_health: "HEALTHY",
+            local_service_health: "HEALTHY",
+          },
+          facts: [],
+          expires_at: "2026-10-05T00:05:20Z",
+        },
+      ],
+      major_incident_proposals: [
+        {
+          proposal_id: "MIP-1",
+          tenant_id: "TENANT-8OCT",
+          run_id: "RUN-1",
+          correlation_key: "payment_gateway_timeout",
+          service_key: "payment_gateway",
+          affected_site_ids: ["SITE-KZN-017", "SITE-SAM-024"],
+          dependency_id: "DEP-ACMEPAY-PAYMENTS",
+          dependency_name: "AcmePay",
+          action_type: "CREATE_MAJOR_INCIDENT",
+          evidence_ids: ["E-LOCAL"],
+          summary: "Cross-site payment timeouts",
+          rationale: "Persisted evidence supports a shared dependency.",
+          status: "PENDING_APPROVAL",
+          created_at: "2026-10-05T00:00:25Z",
+          updated_at: "2026-10-05T00:00:25Z",
+        },
+      ],
+      major_incident_approvals: [],
+      major_incident_executions: [],
+      major_incidents: [],
+      latest_event_seq: 5,
+    };
+
+    const activities = scenario2InvestigationActivities(
+      [
+        {
+          ...event("external.signal", {
+            source: "MONITORING",
+            site_id: "SITE-SAM-024",
+            service_key: "payment_gateway",
+            safe_payload: { kind: "payment_timeout_rate" },
+          }),
+          seq: 1,
+        },
+        {
+          ...event("external.signal", {
+            source: "ITSM",
+            site_id: "SITE-KZN-017",
+            service_key: "payment_gateway",
+            safe_payload: {
+              kind: "user_ticket",
+              impact: "payment_attempts_timing_out",
+            },
+          }),
+          seq: 2,
+        },
+        {
+          ...event("observation.recorded", {
+            evidence_id: "E-LOCAL",
+            source_type: "LOCAL_SERVICE_HEALTH",
+          }),
+          seq: 3,
+        },
+        {
+          ...event("proposal.created", { proposal_id: "MIP-1" }),
+          seq: 4,
+        },
+        {
+          ...event("run.status_changed", {
+          status: "WAITING_APPROVAL",
+          cause: "native_hitl_paused",
+          proposal_id: "MIP-1",
+        }),
+          seq: 5,
+        },
+      ],
+      state,
+    );
+
+    expect(TIMELINE_PLAYBACK_INTERVAL_MS).toBe(3_500);
+    expect(activities.map((item) => item.title)).toEqual([
+      "Агент запросил подтверждение действия",
+      "Агент выявил корреляцию между событиями",
+      "Агент проверил локальную инфраструктуру",
+      "Получена заявка пользователя: платёжные операции завершаются по таймауту на площадке SITE-KZN-017",
+      "Получен сигнал мониторинга: повышенный уровень таймаутов платежей на площадке SITE-SAM-024",
+    ]);
+    expect(activities[1].detail).toContain("CloudPayments");
+    expect(activities[1].detail).toContain("SITE-KZN-017");
+    expect(activities[1].detail).toContain("SITE-SAM-024");
+  });
+
   it("keeps important states visually distinct", () => {
     expect(proposalTone("STALE")).toBe("stale");
     expect(proposalTone("REJECTED")).toBe("rejected");
@@ -95,7 +319,7 @@ describe("operational presentation", () => {
 
   it("never presents a registered work order as a completed repair", () => {
     expect(FIELD_SERVICE_OUTCOME_NOTE).toBe(
-      "Заявка на выездной сервис зарегистрирована. Это ещё не подтверждает ремонт устройства.",
+      "Заявка на выездной сервис зарегистрирована.",
     );
     expect(FIELD_SERVICE_OUTCOME_NOTE.toLowerCase()).not.toContain(
       "инцидент закрыт",
