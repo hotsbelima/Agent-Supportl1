@@ -64,6 +64,9 @@ describe("Phase 9A final public UI", () => {
     expect(startSource).toContain("startScenario3()");
     expect(startSource).not.toContain("/agent/invoke");
     expect(startSource).not.toContain("invokeScenario");
+    expect(startSource).not.toContain("SCENARIO_2_MAINTENANCE_MESSAGE");
+    expect(startSource).not.toContain("window.alert");
+    expect(startSource).toContain("setSelectedScenario(scenario)");
   });
 
   it("routes Scenario 2 to its real Product-state console", () => {
