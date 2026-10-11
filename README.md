@@ -1,6 +1,6 @@
 # Autonomous L1 Incident Agent
 
-A portfolio-grade autonomous L1 incident-management agent built with
+A autonomous L1 incident-management agent built with
 **Google ADK + Gemini**, a persistent Product backend, PostgreSQL, HITL and a
 three-scenario operational console.
 
@@ -17,9 +17,9 @@ resumes against authoritative Product state.
 - durable outbox dispatch and restart recovery;
 - human approval/rejection with native wait/resume;
 - stale revalidation before execution;
-- idempotent/exactly-once business effects;
+- idempotent business effects;
 - persisted SSE timeline and reconnect/backfill;
-- final browser UI for three distinct scenarios;
+- browser UI for three distinct scenarios;
 - portfolio-grade public-demo hardening.
 
 This is an **agent**, not a hard-coded workflow: the model chooses investigation
