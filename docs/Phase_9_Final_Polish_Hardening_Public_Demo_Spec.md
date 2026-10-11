@@ -525,9 +525,9 @@ Minimum contents:
 - security/guardrail model;
 - local development instructions;
 - test commands;
-- managed/public deployment links;
+- deployment model and environment requirements, without requiring a live URL;
 - known limitations;
-- pointer to detailed handoff/acceptance evidence.
+- pointer to the final development handoff and deterministic release evidence.
 
 Remove statements claiming PostgreSQL/UI/SSE/live ADK are still future work.
 
@@ -580,18 +580,26 @@ Explicitly state that:
 The project should look strong because its boundaries are clear, not because
 limitations are hidden.
 
-## 9D.5 Final handoff
+## 9D.5 Final development handoff
 
-Create a cumulative Phase 9 handoff containing:
+Use the end of Phase 9C as the final software-development checkpoint.
 
-- final release SHA;
-- CI;
-- public frontend URL;
-- Product API deployment;
-- Alembic head;
-- live smoke Run/Session/invocation IDs for all scenarios as appropriate;
-- known residual limitations;
-- project completion status.
+The handoff is a concise state-of-the-project document, not a deployment
+ledger. It must record:
+
+- completed product scope and three scenarios;
+- final architecture and ownership boundaries;
+- public-demo hardening;
+- deterministic release-gate status;
+- validated development SHA;
+- known portfolio limitations;
+- **PROJECT DEVELOPMENT COMPLETE** status.
+
+Do not require deployment IDs, live Run/Session/invocation IDs, or a catalogue
+of provider-specific smoke links in this handoff.
+
+Deployment/publication may happen later as an operational activity and does
+not reopen the completed development scope.
 
 ---
 
@@ -815,7 +823,7 @@ Portfolio package:
 - scenario comparison/flows;
 - local/deployment docs;
 - final limitations;
-- cumulative handoff draft.
+- final development handoff anchored at the end of 9C.
 
 ## 9E
 
