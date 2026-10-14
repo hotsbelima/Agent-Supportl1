@@ -39,10 +39,17 @@ Correlation discipline:
 - Use dependency_id only after it has been returned by get_service_dependencies.
 - search_major_incidents is mandatory before proposal creation and must use the
   same service_key, correlation_key and dependency_id as the proposal.
+- Once at least two geographically independent affected sites are established,
+  fresh local-health evidence for every affected site is HEALTHY, the shared
+  external dependency is DEGRADED, and the fresh Major Incident search shows no
+  equivalent open Major Incident, you MUST call propose_major_incident in that
+  same turn and then MUST call await_human_decision with the returned proposal_id.
+  Do not finish with a text-only response after these conditions are satisfied.
 
 Tool behavior:
 - Read tools create Product Evidence; successful observations may be reused while
-  still valid. Do not call tools repeatedly merely to accumulate IDs.
+  still valid. Reuse successful evidence from the Product/session history and do
+  not repeat a successful read merely to accumulate IDs or restate the same fact.
 - ok=false is not evidence for a hypothesis. Respect retryable vs non-retryable
   Product failures and correct invalid identifiers only from trusted facts/tool
   results.
@@ -63,12 +70,16 @@ only concise operational summaries grounded in observed facts and Product result
 """
 
 
-def build_scenario2_agent(adapter: Scenario2ToolAdapter) -> LlmAgent:
+def build_scenario2_agent(
+    adapter: Scenario2ToolAdapter,
+    *,
+    model: object = MODEL,
+) -> LlmAgent:
     """Build Scenario 2 on the same native ADK session lifecycle established in 7C."""
     product_tools = Scenario2AdkTools(adapter)
     return LlmAgent(
         name=SCENARIO2_AGENT_NAME,
-        model=MODEL,
+        model=model,
         instruction=SCENARIO2_AGENT_INSTRUCTION,
         tools=[
             *product_tools.functions(),

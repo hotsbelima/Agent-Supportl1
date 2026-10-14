@@ -76,6 +76,21 @@ def _failure(
     )
 
 
+async def _record_tool_started(
+    uow: Scenario3ProviderReadUnitOfWork,
+    *,
+    context: ToolCallContext,
+    tool_name: str,
+) -> None:
+    await append_uow_event(
+        uow,
+        context=context,
+        event_type=ApplicationEventType.TOOL_STARTED,
+        payload={"tool_name": tool_name},
+    )
+    await uow.commit()
+
+
 async def _record_observation(
     uow: Scenario3ProviderReadUnitOfWork,
     *,
@@ -201,6 +216,7 @@ class Scenario3ProviderReadService:
                         "service_not_bound_to_run",
                     )
 
+                await _record_tool_started(uow, context=context, tool_name="get_service_dependencies")
                 mappings = await self._dependency_mapping.get_service_dependencies(
                     tenant_id=context.tenant_id,
                     run_id=context.run_id,
@@ -315,6 +331,7 @@ class Scenario3ProviderReadService:
                         "dependency_not_established",
                     )
 
+                await _record_tool_started(uow, context=context, tool_name="get_external_dependency_status")
                 snapshot = (
                     await self._dependency_status.get_external_dependency_status(
                         tenant_id=context.tenant_id,

@@ -31,6 +31,10 @@ class ApiErrorResponse(BaseModel):
     error: ApiErrorBody
 
 
+class RunHeartbeatResponse(BaseModel):
+    active: bool
+
+
 class AcceptanceAccessLinkStateRequest(BaseModel):
     operational_state: Literal["UP", "DOWN"]
 

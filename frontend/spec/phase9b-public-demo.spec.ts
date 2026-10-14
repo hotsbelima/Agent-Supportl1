@@ -1,8 +1,21 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
-import { ApiClientError, displayApiError } from "../lib/api";
+import { ApiClientError, apiUrl, displayApiError } from "../lib/api";
+
+const nextConfigSource = readFileSync(
+  new URL("../next.config.ts", import.meta.url),
+  "utf8",
+);
 
 describe("Phase 9B public demo frontend errors", () => {
+  it("keeps Product API browser traffic on the stable Vercel origin", () => {
+    expect(apiUrl("/health")).toBe("/product-api/health");
+    expect(nextConfigSource).toContain('source: "/product-api/:path*"');
+    expect(nextConfigSource).toContain("p01--product-api--yxz5y8myjdln.code.run");
+  });
+
   it("distinguishes local demo cooldown from provider quota", () => {
     const demoCooldown = new ApiClientError(
       429,

@@ -472,7 +472,7 @@ def test_each_signal_persists_fact_event_and_separate_dispatch_envelope():
     asyncio.run(scenario())
 
 
-def test_same_site_second_signal_reuses_service_incident_and_third_site_creates_second():
+def test_each_new_signal_source_identity_creates_separate_service_incident():
     async def scenario() -> None:
         suffix = uuid4().hex[:10]
         tenant_id = f"TENANT-7C-SITES-{suffix}"
@@ -492,11 +492,7 @@ def test_same_site_second_signal_reuses_service_incident_and_third_site_creates_
             assert second.ingested is not None
             assert (
                 first.ingested.service_incident.incident_id
-                == second.ingested.service_incident.incident_id
-            )
-            assert (
-                second.ingested.service_incident.updated_at
-                >= first.ingested.service_incident.updated_at
+                != second.ingested.service_incident.incident_id
             )
 
             after_two = await state_service.get(
@@ -505,10 +501,10 @@ def test_same_site_second_signal_reuses_service_incident_and_third_site_creates_
             )
             assert after_two is not None
             assert len(after_two.operational_signals) == 2
-            assert len(after_two.service_incidents) == 1
+            assert len(after_two.service_incidents) == 2
             assert (
                 after_two.operational_signals[0].incident_id
-                == after_two.operational_signals[1].incident_id
+                != after_two.operational_signals[1].incident_id
             )
 
             third = await simulator.next(tenant_id=tenant_id, run_id=run_id)
@@ -519,7 +515,13 @@ def test_same_site_second_signal_reuses_service_incident_and_third_site_creates_
             )
             assert after_three is not None
             assert len(after_three.operational_signals) == 3
-            assert len(after_three.service_incidents) == 2
+            assert len(after_three.service_incidents) == 3
+            assert len(
+                {
+                    signal.incident_id
+                    for signal in after_three.operational_signals
+                }
+            ) == 3
             assert third.complete is True
             signal_evidence = await _evidence_rows(
                 factory,

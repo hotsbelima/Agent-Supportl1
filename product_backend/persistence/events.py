@@ -9,18 +9,23 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from product_backend.contracts.events import (
+    AGENT_DISPATCH_TOPIC,
     ApplicationEvent,
     ApplicationEventType,
     ApplicationOutboxRecord,
+    SCENARIO2_AGENT_DISPATCH_TOPIC,
     validate_safe_event_payload,
 )
 
 from .tables import ApplicationEventRow, ApplicationOutboxRow, RunRow
+
+
+RUN_CLIENT_IDLE_TIMEOUT = timedelta(seconds=90)
 
 
 Clock = Callable[[], datetime]
@@ -244,6 +249,20 @@ class SqlAlchemyApplicationOutboxRepository:
         if not math.isfinite(lease_seconds) or lease_seconds <= 0:
             raise ValueError("lease_seconds must be a positive finite number")
         now = _require_aware_utc(self._clock())
+        if topic in {AGENT_DISPATCH_TOPIC, SCENARIO2_AGENT_DISPATCH_TOPIC}:
+            inactive_before = now - RUN_CLIENT_IDLE_TIMEOUT
+            await self._session.execute(
+                update(RunRow)
+                .where(
+                    RunRow.scenario_id.in_(("scenario-1", "scenario-2", "scenario-3")),
+                    RunRow.dispatch_abandoned_at.is_(None),
+                    or_(
+                        RunRow.client_last_seen_at.is_(None),
+                        RunRow.client_last_seen_at < inactive_before,
+                    ),
+                )
+                .values(dispatch_abandoned_at=now)
+            )
         earlier = aliased(ApplicationOutboxRow)
         earlier_undelivered_same_run = exists(
             select(1).where(
@@ -254,7 +273,7 @@ class SqlAlchemyApplicationOutboxRepository:
                 earlier.event_seq < ApplicationOutboxRow.event_seq,
             )
         )
-        result = await self._session.execute(
+        statement = (
             select(ApplicationOutboxRow)
             .where(
                 ApplicationOutboxRow.topic == topic,
@@ -270,6 +289,19 @@ class SqlAlchemyApplicationOutboxRepository:
             .with_for_update(skip_locked=True)
             .limit(1)
         )
+        if topic in {AGENT_DISPATCH_TOPIC, SCENARIO2_AGENT_DISPATCH_TOPIC}:
+            statement = (
+                statement.join(
+                    RunRow,
+                    (RunRow.tenant_id == ApplicationOutboxRow.tenant_id)
+                    & (RunRow.run_id == ApplicationOutboxRow.run_id),
+                )
+                .where(
+                    RunRow.dispatch_abandoned_at.is_(None),
+                    RunRow.client_last_seen_at >= now - RUN_CLIENT_IDLE_TIMEOUT,
+                )
+            )
+        result = await self._session.execute(statement)
         row = result.scalar_one_or_none()
         if row is None:
             return None

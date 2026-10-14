@@ -89,12 +89,14 @@ Business boundary:
 
 def build_scenario1_agent(
     adapter: Scenario1ToolAdapter,
+    *,
+    model: object = MODEL,
 ) -> LlmAgent:
     """Build one ADK agent with six Product tools plus the native wait point."""
     product_tools = Scenario1AdkTools(adapter)
     return LlmAgent(
         name=AGENT_NAME,
-        model=MODEL,
+        model=model,
         instruction=AGENT_INSTRUCTION,
         tools=[
             *product_tools.functions(),

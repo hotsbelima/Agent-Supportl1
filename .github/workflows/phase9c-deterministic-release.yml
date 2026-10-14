@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase-9c-deterministic-release-gate
+      - phase-9d-demo-polish
   pull_request:
   workflow_dispatch:
 

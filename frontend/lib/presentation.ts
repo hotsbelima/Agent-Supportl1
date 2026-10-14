@@ -3,11 +3,155 @@ import type {
   ConnectionState,
   EvidenceView,
   JsonValue,
+  MajorIncidentProposalView,
   ProposalView,
+  RunStateResponse,
+  Scenario2IngestionStateResponse,
 } from "./types";
 
 export const FIELD_SERVICE_OUTCOME_NOTE =
-  "Заявка на выездной сервис зарегистрирована. Это ещё не подтверждает ремонт устройства.";
+  "Заявка на выездной сервис зарегистрирована.";
+
+export const TIMELINE_PLAYBACK_INTERVAL_MS = 3_500;
+
+export type InvestigationActivityKind =
+  | "fact"
+  | "check"
+  | "agent"
+  | "human"
+  | "result";
+
+export type InvestigationActivity = {
+  id: string;
+  occurred_at: string;
+  source_event_seq: number;
+  kind: InvestigationActivityKind;
+  title: string;
+  detail: string | null;
+};
+
+export function visibleTimelineEvents(
+  events: ApplicationEventView[],
+  runStartedAt: string,
+  nowMs: number,
+): ApplicationEventView[] {
+  const ordered = [...events].sort((a, b) => a.seq - b.seq);
+  if (!ordered.length) return [];
+
+  const startedMs = Date.parse(runStartedAt);
+  if (!Number.isFinite(startedMs)) return ordered.reverse();
+
+  const elapsedMs = Math.max(0, nowMs - startedMs);
+  const visibleCount = Math.min(
+    ordered.length,
+    Math.floor(elapsedMs / TIMELINE_PLAYBACK_INTERVAL_MS) + 1,
+  );
+
+  return ordered.slice(0, visibleCount).reverse();
+}
+
+export type PlaybackVisibility = {
+  evidenceIds: Set<string>;
+  proposalIds: Set<string>;
+  signalSites: Set<string>;
+  approvalRequested: boolean;
+  approvalDecided: boolean;
+  approvalDecision: string | null;
+  actionExecuted: boolean;
+};
+
+export function playbackVisibility(
+  visibleEvents: ApplicationEventView[],
+): PlaybackVisibility {
+  const evidenceIds = new Set<string>();
+  const proposalIds = new Set<string>();
+  const signalSites = new Set<string>();
+  let approvalRequested = false;
+  let approvalDecided = false;
+  let approvalDecision: string | null = null;
+  let actionExecuted = false;
+
+  for (const event of visibleEvents) {
+    if (event.event_type === "observation.recorded") {
+      const evidenceId = stringValue(event.payload, "evidence_id");
+      if (evidenceId) evidenceIds.add(evidenceId);
+      continue;
+    }
+
+    if (event.event_type === "proposal.created") {
+      const proposalId = stringValue(event.payload, "proposal_id");
+      if (proposalId) proposalIds.add(proposalId);
+      continue;
+    }
+
+    if (event.event_type === "external.signal") {
+      const details = objectValue(event.payload, "details");
+      const site =
+        stringValue(event.payload, "site_id") ??
+        (details ? stringValue(details, "site_id") : null);
+      if (site) signalSites.add(site);
+      continue;
+    }
+
+    if (
+      event.event_type === "run.status_changed" &&
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
+    ) {
+      approvalRequested = true;
+      continue;
+    }
+
+    if (event.event_type === "approval.decided") {
+      approvalDecided = true;
+      approvalDecision = stringValue(event.payload, "decision");
+      continue;
+    }
+
+    if (event.event_type === "action.executed") {
+      actionExecuted = true;
+    }
+  }
+
+  return {
+    evidenceIds,
+    proposalIds,
+    signalSites,
+    approvalRequested,
+    approvalDecided,
+    approvalDecision,
+    actionExecuted,
+  };
+}
+
+export function shouldRevealProposalPanel(
+  scenarioId: string | null | undefined,
+  proposalId: string | null,
+  visibleProposalIds: ReadonlySet<string>,
+): boolean {
+  if (!scenarioId) return false;
+  if (scenarioId !== "scenario-1") return true;
+  return proposalId !== null && visibleProposalIds.has(proposalId);
+}
+
+export function nativeHitlReady(
+  events: ApplicationEventView[],
+  proposalId: string,
+): boolean {
+  return events.some(
+    (event) =>
+      event.event_type === "run.status_changed" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused" &&
+      stringValue(event.payload, "proposal_id") === proposalId,
+  );
+}
+
+export function playbackIncidentStatus(
+  status: string,
+  actionExecuted: boolean,
+): string {
+  return !actionExecuted && status === "ESCALATED" ? "OPEN" : status;
+}
 
 export const STALE_PROPOSAL_NOTE =
   "Решение человека сохранено, но свежие авторитетные данные больше не разрешают выполнение. Действие выездного сервиса не создавалось.";
@@ -20,6 +164,216 @@ function stringValue(
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function booleanValue(
+  payload: Record<string, JsonValue>,
+  key: string,
+): boolean | null {
+  const value = payload[key];
+  return typeof value === "boolean" ? value : null;
+}
+
+function objectValue(
+  payload: Record<string, JsonValue>,
+  key: string,
+): Record<string, JsonValue> | null {
+  const value = payload[key];
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function stringArrayValue(
+  payload: Record<string, JsonValue>,
+  key: string,
+): string[] {
+  const value = payload[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function evidenceForEvent(
+  event: ApplicationEventView,
+  evidence: EvidenceView[],
+): EvidenceView | null {
+  const evidenceId = stringValue(event.payload, "evidence_id");
+  if (!evidenceId) return null;
+  return evidence.find((item) => item.evidence_id === evidenceId) ?? null;
+}
+
+function activity(
+  event: ApplicationEventView,
+  kind: InvestigationActivityKind,
+  title: string,
+  detail: string | null = null,
+): InvestigationActivity {
+  return {
+    id: `${event.seq}:${kind}:${title}`,
+    occurred_at: event.occurred_at,
+    source_event_seq: event.seq,
+    kind,
+    title,
+    detail,
+  };
+}
+
+export function activityKindLabel(kind: InvestigationActivityKind): string {
+  if (kind === "fact") return "Факт";
+  if (kind === "check") return "Результат проверки";
+  if (kind === "agent") return "Действие агента";
+  if (kind === "human") return "Решение человека";
+  return "Результат";
+}
+
+const EVIDENCE_SOURCE_LABELS: Record<string, string> = {
+  CMDB_SNAPSHOT: "Данные CMDB",
+  DEVICE_SNAPSHOT: "Состояние устройства",
+  SITE_HEALTH: "Состояние площадки",
+  ACCESS_LINK_DIAGNOSTIC: "Диагностика канала доступа",
+  INCIDENT_SEARCH: "Проверка связанных инцидентов",
+  KB_ARTICLE: "Материал базы знаний",
+  SERVICE_DEPENDENCY_MAPPING: "Зависимости сервиса",
+  EXTERNAL_DEPENDENCY_STATUS: "Состояние внешней зависимости",
+  LOCAL_SERVICE_HEALTH: "Состояние локального сервиса",
+  MAJOR_INCIDENT_SEARCH: "Проверка крупных инцидентов",
+  OPERATIONAL_SIGNAL: "Операционный сигнал",
+};
+
+export function evidenceSourceLabel(value: string): string {
+  return EVIDENCE_SOURCE_LABELS[value] ?? "Системное наблюдение";
+}
+
+const INCIDENT_TEXT_LABELS: Record<string, string> = {
+  "Payment terminal is unavailable.": "Платёжный терминал недоступен.",
+  "Payment terminal is unavailable": "Платёжный терминал недоступен.",
+  payment_terminal_unavailable: "Платёжный терминал недоступен.",
+  payment_gateway_timeout: "Таймаут платёжного шлюза.",
+  payment_gateway_timeouts: "Таймауты платёжного шлюза.",
+  payment_attempts_timing_out: "Платёжные операции завершаются по таймауту.",
+  "Cross-site payment timeouts": "Таймауты платежей на нескольких площадках.",
+  "Cross-site payment timeouts.": "Таймауты платежей на нескольких площадках.",
+  "Single payment terminal reports payment gateway timeouts.":
+    "На одном платёжном терминале зафиксированы таймауты платёжного шлюза.",
+};
+
+export function incidentTextLabel(value: string): string {
+  const mapped = INCIDENT_TEXT_LABELS[value];
+  if (mapped) return mapped;
+  return /[А-Яа-яЁё]/.test(value) ? value : "Зафиксирована проблема сервиса.";
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  payment_gateway: "Платёжный шлюз",
+  payment_terminal: "Платёжный терминал",
+  payments: "Платежи",
+};
+
+export function serviceLabel(value: string): string {
+  return SERVICE_LABELS[value] ?? (/^[A-Za-z0-9_.-]+$/.test(value) ? "Сервис" : value);
+}
+
+const DEPENDENCY_NAME_LABELS: Record<string, string> = {
+  AcmePay: "CloudPayments",
+  CloudPayments: "CloudPayments",
+};
+
+export function dependencyNameLabel(value: string): string {
+  return DEPENDENCY_NAME_LABELS[value] ??
+    (/[А-Яа-яЁё]/.test(value) ? value : "Внешний провайдер");
+}
+
+const KB_TITLE_LABELS: Record<string, string> = {
+  "Physical access path inspection": "Проверка физического пути подключения",
+};
+
+export function kbTitleLabel(value: string): string {
+  return KB_TITLE_LABELS[value] ??
+    (/[А-Яа-яЁё]/.test(value) ? value : "Материал базы знаний");
+}
+
+const USER_FACING_TEXT_LABELS: Record<string, string> = {
+  "Physical access path inspection": "Проверка физического пути подключения",
+  "Payment terminal is unavailable.": "Платёжный терминал недоступен.",
+  "Payment gateway timeout": "Таймаут платёжного шлюза.",
+  "Cross-site payment timeouts": "Таймауты платежей на нескольких площадках.",
+  "Cross-site payment timeouts.": "Таймауты платежей на нескольких площадках.",
+  "Single payment terminal reports payment gateway timeouts.":
+    "На одном платёжном терминале зафиксированы таймауты платёжного шлюза.",
+};
+
+export function userFacingTextLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const exact = USER_FACING_TEXT_LABELS[trimmed];
+  if (exact) return exact;
+  const branded = trimmed.replaceAll("AcmePay", "CloudPayments");
+  if (/[А-Яа-яЁё]/.test(branded)) return branded;
+  return "Подтверждённое системное наблюдение. Оригинальное значение доступно в «Деталях».";
+}
+
+export function evidenceEntityLabel(evidence: EvidenceView): string {
+  const payload = evidence.payload;
+  if (evidence.source_type === "SERVICE_DEPENDENCY_MAPPING") {
+    const service = stringValue(payload, "service_key");
+    if (service) return serviceLabel(service);
+  }
+  if (evidence.source_type === "EXTERNAL_DEPENDENCY_STATUS") {
+    const dependency = stringValue(payload, "dependency_name");
+    if (dependency) return dependencyNameLabel(dependency);
+  }
+  if (evidence.source_type === "KB_ARTICLE") {
+    const title = stringValue(payload, "title");
+    if (title) return kbTitleLabel(title);
+  }
+  if (
+    evidence.source_type === "SITE_HEALTH" ||
+    evidence.source_type === "LOCAL_SERVICE_HEALTH"
+  ) {
+    const site = stringValue(payload, "site_id");
+    if (site) return site;
+  }
+  if (evidence.source_type === "MAJOR_INCIDENT_SEARCH") {
+    return "Проверка крупных инцидентов";
+  }
+  return evidence.entity_ids[0] ?? "Наблюдение";
+}
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  "simulation.started": "Запуск сценария",
+  "external.signal": "Операционный сигнал",
+  "observation.recorded": "Наблюдение сохранено",
+  "tool.started": "Начата системная проверка",
+  "tool.finished": "Системная проверка завершена",
+  "finding.recorded": "Диагностический вывод",
+  "proposal.created": "Предложение действия",
+  "approval.decided": "Решение человека",
+  "action.executed": "Действие выполнено",
+  "run.status_changed": "Изменение состояния",
+};
+
+export function eventTypeLabel(value: string): string {
+  return EVENT_TYPE_LABELS[value] ?? "Системное событие";
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  get_device: "Проверка устройства",
+  get_site_health: "Проверка площадки",
+  run_diagnostic: "Диагностика канала доступа",
+  diagnose_access_link: "Диагностика канала доступа",
+  search_incidents: "Проверка связанных инцидентов",
+  search_kb: "Проверка базы знаний",
+  get_kb_article: "Проверка базы знаний",
+  get_service_dependencies: "Проверка зависимостей сервиса",
+  get_service_dependency: "Проверка зависимостей сервиса",
+  get_external_dependency_status: "Проверка внешней зависимости",
+  get_local_service_health: "Проверка локального сервиса",
+  search_major_incidents: "Проверка крупных инцидентов",
+};
+
+function toolLabel(value: string): string {
+  return TOOL_LABELS[value] ?? "Системная проверка";
+}
+
 export function eventSummary(event: ApplicationEventView): string {
   const payload = event.payload;
   switch (event.event_type) {
@@ -30,12 +384,12 @@ export function eventSummary(event: ApplicationEventView): string {
     case "observation.recorded": {
       const sourceType = stringValue(payload, "source_type");
       return sourceType
-        ? `Сохранено наблюдение: ${sourceType}`
+        ? `Сохранено наблюдение: ${evidenceSourceLabel(sourceType)}`
         : "Сохранено наблюдение";
     }
     case "tool.started": {
       const tool = stringValue(payload, "tool_name");
-      return tool ? `Запущен инструмент: ${tool}` : "Запущен инструмент";
+      return tool ? `Начата проверка: ${toolLabel(tool)}` : "Начата системная проверка";
     }
     case "tool.finished":
       return "Инструмент завершил работу";
@@ -58,7 +412,7 @@ export function eventSummary(event: ApplicationEventView): string {
         : "Изменился статус запуска";
     }
     default:
-      return event.event_type;
+      return "Системное событие";
   }
 }
 
@@ -99,7 +453,560 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function statusLabel(value: string): string {
-  return STATUS_LABELS[value] ?? value;
+  return STATUS_LABELS[value] ??
+    (/[А-Яа-яЁё]/.test(value) ? value : "Неизвестно");
+}
+
+const DIAGNOSIS_LABELS: Record<string, string> = {
+  LOCAL_ACCESS_LINK_FAILURE: "Сбой локального канала доступа",
+};
+
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  ONSITE_FIELD_VISIT: "Выезд специалиста на площадку",
+  FIELD_SERVICE_VISIT: "Выезд специалиста на площадку",
+  CREATE_MAJOR_INCIDENT: "Создание крупного инцидента",
+  REGISTER_MAJOR_INCIDENT: "Регистрация крупного инцидента",
+  MAJOR_INCIDENT_CREATE: "Создание крупного инцидента",
+  MAJOR_INCIDENT_REGISTRATION: "Регистрация крупного инцидента",
+};
+
+export function diagnosisLabel(value: string): string {
+  return DIAGNOSIS_LABELS[value] ?? "Диагноз сформирован агентом";
+}
+
+export function actionTypeLabel(value: string): string {
+  return ACTION_TYPE_LABELS[value] ?? "Действие агента";
+}
+
+function standardEvidenceActivity(
+  event: ApplicationEventView,
+  evidence: EvidenceView,
+): InvestigationActivity | null {
+  const payload = evidence.payload;
+
+  switch (evidence.source_type) {
+    case "CMDB_SNAPSHOT": {
+      const device = stringValue(payload, "device_id");
+      const switchId = stringValue(payload, "expected_switch_id");
+      const port = stringValue(payload, "expected_port_id");
+      const detail =
+        device && switchId && port
+          ? `Устройство ${device} подключено к ${switchId}, порт ${port}.`
+          : "Получены данные о подключении устройства к инфраструктуре.";
+      return activity(event, "check", "Агент определил топологию устройства", detail);
+    }
+    case "SITE_HEALTH": {
+      const site = stringValue(payload, "site_id");
+      const siteNetwork = stringValue(payload, "site_network");
+      const paymentService = stringValue(payload, "payment_service");
+      const peerReachable = booleanValue(payload, "peer_reachable");
+      const detail =
+        siteNetwork === "HEALTHY" &&
+        paymentService === "HEALTHY" &&
+        peerReachable === true
+          ? `Сеть и платёжный сервис${site ? ` на площадке ${site}` : ""} работают штатно; соседнее устройство доступно.`
+          : `Получено актуальное состояние площадки${site ? ` ${site}` : ""}.`;
+      return activity(event, "check", "Агент проверил состояние площадки", detail);
+    }
+    case "ACCESS_LINK_DIAGNOSTIC": {
+      const switchId = stringValue(payload, "switch_id");
+      const port = stringValue(payload, "port_id");
+      const adminState = stringValue(payload, "admin_state");
+      const operationalState = stringValue(payload, "operational_state");
+      if (operationalState === "DOWN") {
+        return activity(
+          event,
+          "check",
+          "Обнаружен локальный сетевой сбой",
+          `Канал ${switchId && port ? `${switchId} / ${port}` : "доступа"} административно ${adminState === "UP" ? "включён" : statusLabel(adminState ?? "UNKNOWN")}, но операционно недоступен.`,
+        );
+      }
+      return activity(
+        event,
+        "check",
+        "Агент проверил локальный канал доступа",
+        operationalState
+          ? `Операционное состояние канала: ${statusLabel(operationalState)}.`
+          : null,
+      );
+    }
+    case "INCIDENT_SEARCH": {
+      const openIds = stringArrayValue(payload, "open_incident_ids");
+      return activity(
+        event,
+        "check",
+        "Агент проверил связанные инциденты",
+        openIds.length
+          ? `Найдены открытые инциденты: ${openIds.join(", ")}.`
+          : "Других открытых инцидентов по проверенной области не найдено.",
+      );
+    }
+    case "KB_ARTICLE": {
+      const approved = booleanValue(payload, "approved");
+      const title = stringValue(payload, "title");
+      return activity(
+        event,
+        "check",
+        approved
+          ? "Агент нашёл утверждённую инструкцию"
+          : "Агент проверил базу знаний",
+        title ? `Материал: «${kbTitleLabel(title)}».` : null,
+      );
+    }
+    case "SERVICE_DEPENDENCY_MAPPING": {
+      const service = stringValue(payload, "service_key");
+      const dependency = stringValue(payload, "dependency_name");
+      return activity(
+        event,
+        "check",
+        "Агент определил внешнюю зависимость сервиса",
+        dependency
+          ? `Сервис ${service ? serviceLabel(service) : "в текущем инциденте"} зависит от ${dependencyNameLabel(dependency)}.`
+          : null,
+      );
+    }
+    case "EXTERNAL_DEPENDENCY_STATUS": {
+      const dependency = stringValue(payload, "dependency_name");
+      const status = stringValue(payload, "status");
+      return activity(
+        event,
+        "check",
+        `Агент проверил состояние ${dependency ? dependencyNameLabel(dependency) : "внешней зависимости"}`,
+        status ? `Состояние: ${statusLabel(status)}.` : null,
+      );
+    }
+    case "LOCAL_SERVICE_HEALTH": {
+      const site = stringValue(payload, "site_id");
+      const network = stringValue(payload, "network_health");
+      const localService = stringValue(payload, "local_service_health");
+      return activity(
+        event,
+        "check",
+        "Агент проверил локальную инфраструктуру",
+        network === "HEALTHY" && localService === "HEALTHY"
+          ? `Локальная сеть и сервис${site ? ` на площадке ${site}` : ""} работают штатно.`
+          : null,
+      );
+    }
+    case "MAJOR_INCIDENT_SEARCH": {
+      const openIds = stringArrayValue(payload, "open_major_incident_ids");
+      return activity(
+        event,
+        "check",
+        "Агент проверил, зарегистрирован ли уже крупный инцидент по этой проблеме",
+        openIds.length
+          ? `Найдены совпадающие крупные инциденты: ${openIds.join(", ")}.`
+          : "Активного крупного инцидента по этой зависимости пока нет.",
+      );
+    }
+    default:
+      return activity(
+        event,
+        "check",
+        "Агент получил новое подтверждённое наблюдение",
+        `Тип наблюдения: ${evidenceSourceLabel(evidence.source_type)}.`,
+      );
+  }
+}
+
+function standardExternalSignalActivity(
+  event: ApplicationEventView,
+  state: RunStateResponse,
+): InvestigationActivity {
+  const details = objectValue(event.payload, "details");
+  const incidentId =
+    (details && stringValue(details, "incident_id")) ??
+    stringValue(event.payload, "incident_id");
+  const incident =
+    state.incidents.find((item) => item.incident_id === incidentId) ??
+    state.incidents[0] ??
+    null;
+  const device =
+    (details && stringValue(details, "reported_device_id")) ??
+    incident?.reported_device_id ??
+    null;
+  const site =
+    (details && stringValue(details, "site_id")) ?? incident?.site_id ?? null;
+
+  const symptomKey = details ? stringValue(details, "symptom_key") : null;
+  const signalTitle =
+    state.run.scenario_id === "scenario-3" ||
+    symptomKey === "payment_gateway_timeout"
+      ? `Получен сигнал: таймауты платежей${device ? ` на терминале ${device}` : ""}`
+      : device
+        ? `Получен сигнал: терминал ${device} недоступен`
+        : "Получен сигнал об инциденте";
+
+  return activity(
+    event,
+    "fact",
+    signalTitle,
+    site
+      ? `Инцидент зарегистрирован на площадке ${site}.`
+      : "Инцидент зарегистрирован в состоянии продукта.",
+  );
+}
+
+export function standardInvestigationActivities(
+  visibleEvents: ApplicationEventView[],
+  state: RunStateResponse,
+): InvestigationActivity[] {
+  const ordered = [...visibleEvents].sort((a, b) => a.seq - b.seq);
+  const result: InvestigationActivity[] = [];
+  let investigationStarted = false;
+
+  for (const event of ordered) {
+    if (event.event_type === "external.signal") {
+      result.push(standardExternalSignalActivity(event, state));
+      continue;
+    }
+
+    if (event.event_type === "tool.started") {
+      const tool = stringValue(event.payload, "tool_name");
+      if (!investigationStarted) {
+        investigationStarted = true;
+        result.push(
+          activity(
+            event,
+            "agent",
+            "Агент приступил к расследованию",
+            "Начат сбор и проверка фактов по инциденту.",
+          ),
+        );
+      }
+      result.push(
+        activity(
+          event,
+          "agent",
+          tool ? `Агент выполняет: ${toolLabel(tool)}` : "Агент выполняет системную проверку",
+          "Ожидаем результат проверки.",
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "observation.recorded") {
+      const evidence = evidenceForEvent(event, state.evidence);
+      if (evidence) {
+        const item = standardEvidenceActivity(event, evidence);
+        if (item) result.push(item);
+      }
+      continue;
+    }
+
+    if (event.event_type === "finding.recorded") {
+      const summary =
+        stringValue(event.payload, "summary") ??
+        stringValue(event.payload, "finding");
+      result.push(
+        activity(
+          event,
+          "agent",
+          "Агент зафиксировал диагностический вывод",
+          summary ? userFacingTextLabel(summary) : null,
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "proposal.created") {
+      const proposalId = stringValue(event.payload, "proposal_id");
+      const proposal =
+        state.proposals.find((item) => item.proposal_id === proposalId) ?? null;
+      result.push(
+        activity(
+          event,
+          "agent",
+          "Агент сформировал предложение действия",
+          proposal
+            ? `Диагноз: ${diagnosisLabel(proposal.diagnosis)}. Предложение: ${actionTypeLabel(proposal.action_type)}.`
+            : "Предложение сохранено в состоянии продукта.",
+        ),
+      );
+      continue;
+    }
+
+    if (
+      event.event_type === "run.status_changed" &&
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
+    ) {
+      result.push(
+        activity(
+          event,
+          "agent",
+          "Агент запросил подтверждение действия",
+          "Для потенциально опасного действия требуется решение администратора.",
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "approval.decided") {
+      const decision = stringValue(event.payload, "decision");
+      result.push(
+        activity(
+          event,
+          "human",
+          decision === "APPROVED"
+            ? "Администратор одобрил предложенное действие"
+            : decision === "REJECTED"
+              ? "Администратор отклонил предложенное действие"
+              : "Получено решение администратора",
+          null,
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "action.executed") {
+      result.push(
+        activity(
+          event,
+          "result",
+          FIELD_SERVICE_OUTCOME_NOTE,
+          null,
+        ),
+      );
+    }
+  }
+
+  return result.reverse();
+}
+
+function scenario2SignalActivity(
+  event: ApplicationEventView,
+): InvestigationActivity {
+  const source = stringValue(event.payload, "source");
+  const site = stringValue(event.payload, "site_id");
+  const service = stringValue(event.payload, "service_key");
+  const safePayload = objectValue(event.payload, "safe_payload");
+  const kind = safePayload ? stringValue(safePayload, "kind") : null;
+  const impact = safePayload ? stringValue(safePayload, "impact") : null;
+
+  if (source === "MONITORING") {
+    const description =
+      kind === "payment_timeout_rate"
+        ? "повышенный уровень таймаутов платежей"
+        : `сбой сервиса ${service ?? "платежей"}`;
+    return activity(
+      event,
+      "fact",
+      `Получен сигнал мониторинга: ${description}${site ? ` на площадке ${site}` : ""}`,
+      null,
+    );
+  }
+
+  if (source === "ITSM") {
+    const description =
+      impact === "payment_attempts_timing_out" || kind === "user_ticket"
+        ? "платёжные операции завершаются по таймауту"
+        : `зафиксирована проблема сервиса ${service ?? "платежей"}`;
+    return activity(
+      event,
+      "fact",
+      `Получена заявка пользователя: ${description}${site ? ` на площадке ${site}` : ""}`,
+      null,
+    );
+  }
+
+  return activity(
+    event,
+    "fact",
+    `Получен операционный сигнал: зафиксирована проблема сервиса ${service ?? "платежей"}${site ? ` на площадке ${site}` : ""}`,
+    null,
+  );
+}
+
+function scenario2EvidenceActivity(
+  event: ApplicationEventView,
+  evidence: EvidenceView,
+): InvestigationActivity | null {
+  const payload = evidence.payload;
+
+  switch (evidence.source_type) {
+    case "LOCAL_SERVICE_HEALTH": {
+      const site = stringValue(payload, "site_id");
+      const network = stringValue(payload, "network_health");
+      const localService = stringValue(payload, "local_service_health");
+      return activity(
+        event,
+        "check",
+        "Агент проверил локальную инфраструктуру",
+        network === "HEALTHY" && localService === "HEALTHY"
+          ? `Локальная сеть и платёжный сервис${site ? ` на площадке ${site}` : ""} работают штатно.`
+          : `Получено актуальное состояние${site ? ` площадки ${site}` : " локальной инфраструктуры"}.`,
+      );
+    }
+    case "SERVICE_DEPENDENCY_MAPPING": {
+      const service = stringValue(payload, "service_key");
+      const dependency = stringValue(payload, "dependency_name");
+      return activity(
+        event,
+        "check",
+        "Агент определил общую внешнюю зависимость",
+        dependency
+          ? `Сервис ${service ? serviceLabel(service) : "платежей"} зависит от ${dependencyNameLabel(dependency)}.`
+          : null,
+      );
+    }
+    case "EXTERNAL_DEPENDENCY_STATUS": {
+      const dependency = stringValue(payload, "dependency_name");
+      const status = stringValue(payload, "status");
+      return activity(
+        event,
+        "check",
+        status === "DEGRADED"
+          ? `Обнаружена деградация ${dependency ? dependencyNameLabel(dependency) : "внешней зависимости"}`
+          : `Агент проверил состояние ${dependency ? dependencyNameLabel(dependency) : "внешней зависимости"}`,
+        status ? `Состояние: ${statusLabel(status)}.` : null,
+      );
+    }
+    case "MAJOR_INCIDENT_SEARCH": {
+      const openIds = stringArrayValue(payload, "open_major_incident_ids");
+      return activity(
+        event,
+        "check",
+        "Агент проверил, зарегистрирован ли уже крупный инцидент по этой проблеме",
+        openIds.length
+          ? `Найдены совпадающие открытые инциденты: ${openIds.join(", ")}.`
+          : "Активного крупного инцидента по этой зависимости пока нет.",
+      );
+    }
+    case "OPERATIONAL_SIGNAL":
+      return null;
+    default:
+      return standardEvidenceActivity(event, evidence);
+  }
+}
+
+export function scenario2InvestigationActivities(
+  visibleEvents: ApplicationEventView[],
+  state: Scenario2IngestionStateResponse,
+): InvestigationActivity[] {
+  const ordered = [...visibleEvents].sort((a, b) => a.seq - b.seq);
+  const result: InvestigationActivity[] = [];
+  let investigationStarted = false;
+
+  for (const event of ordered) {
+    if (event.event_type === "external.signal") {
+      result.push(scenario2SignalActivity(event));
+      continue;
+    }
+
+    if (event.event_type === "tool.started") {
+      const tool = stringValue(event.payload, "tool_name");
+      if (!investigationStarted) {
+        investigationStarted = true;
+        result.push(
+          activity(
+            event,
+            "agent",
+            "Агент приступил к проверке собранных фактов",
+            "Начата проверка локального состояния и общих зависимостей.",
+          ),
+        );
+      }
+      result.push(
+        activity(
+          event,
+          "agent",
+          tool ? `Агент выполняет: ${toolLabel(tool)}` : "Агент выполняет системную проверку",
+          "Ожидаем результат проверки.",
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "observation.recorded") {
+      const evidence = evidenceForEvent(event, state.evidence);
+      if (evidence) {
+        const item = scenario2EvidenceActivity(event, evidence);
+        if (item) result.push(item);
+      }
+      continue;
+    }
+
+    if (event.event_type === "proposal.created") {
+      const proposalId = stringValue(event.payload, "proposal_id");
+      const proposal =
+        state.major_incident_proposals.find(
+          (item) => item.proposal_id === proposalId,
+        ) ?? null;
+      result.push(
+        activity(
+          event,
+          "agent",
+          "Агент выявил корреляцию между событиями",
+          proposal
+            ? `Сбои на площадках ${proposal.affected_site_ids.join(", ")} связаны с общей деградацией зависимости ${dependencyNameLabel(proposal.dependency_name)}. Агент предлагает зарегистрировать крупный инцидент.`
+            : "Корреляция подтверждена сохранённым предложением крупного инцидента.",
+        ),
+      );
+      continue;
+    }
+
+    if (
+      event.event_type === "run.status_changed" &&
+      stringValue(event.payload, "status") === "WAITING_APPROVAL" &&
+      stringValue(event.payload, "cause") === "native_hitl_paused"
+    ) {
+      result.push(
+        activity(
+          event,
+          "agent",
+          "Агент запросил подтверждение действия",
+          "Для регистрации крупного инцидента требуется решение администратора.",
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "approval.decided") {
+      const decision = stringValue(event.payload, "decision");
+      result.push(
+        activity(
+          event,
+          "human",
+          decision === "APPROVED"
+            ? "Администратор одобрил создание крупного инцидента"
+            : decision === "REJECTED"
+              ? "Администратор отклонил создание крупного инцидента"
+              : "Получено решение администратора",
+          null,
+        ),
+      );
+      continue;
+    }
+
+    if (event.event_type === "action.executed") {
+      const majorIncidentId = stringValue(event.payload, "major_incident_id");
+      result.push(
+        activity(
+          event,
+          "result",
+          "Крупный инцидент зарегистрирован",
+          majorIncidentId ? `ID крупного инцидента: ${majorIncidentId}.` : null,
+        ),
+      );
+    }
+  }
+
+  return result.reverse();
+}
+
+export function proposalRationale(proposal: ProposalView): string {
+  if (proposal.diagnosis === "LOCAL_ACCESS_LINK_FAILURE") {
+    return `Терминал ${proposal.device_id} недоступен из-за локального сбоя канала доступа. Наблюдения подтверждают необходимость выездной диагностики; действие требует решения человека.`;
+  }
+  return proposal.rationale;
+}
+
+export function majorIncidentRationale(
+  proposal: MajorIncidentProposalView,
+): string {
+  const sites = proposal.affected_site_ids.join(", ");
+  return `Сигналы на площадках ${sites} указывают на общую деградацию зависимости ${dependencyNameLabel(proposal.dependency_name)}. Предлагается зарегистрировать крупный инцидент после подтверждения человеком.`;
 }
 
 export function connectionLabel(state: ConnectionState): string {
@@ -111,13 +1018,10 @@ export function connectionLabel(state: ConnectionState): string {
 export function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return (
-    new Intl.DateTimeFormat("ru-RU", {
-      dateStyle: "medium",
-      timeStyle: "medium",
-      timeZone: "UTC",
-    }).format(date) + " UTC"
-  );
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(date);
 }
 
 export function proposalTone(

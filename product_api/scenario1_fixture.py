@@ -192,7 +192,7 @@ class Scenario1FixtureSources:
         return (
             KbArticle(
                 article_id="KB-LOCAL-LINK",
-                title="Physical access path inspection",
+                title="Проверка физического пути подключения",
                 approved=True,
                 diagnosis_codes=(DiagnosisCode.LOCAL_ACCESS_LINK_FAILURE,),
                 allowed_actions=(ActionType.ONSITE_FIELD_VISIT,),

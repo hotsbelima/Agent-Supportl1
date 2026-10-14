@@ -33,7 +33,8 @@ describe("Phase 8D Scenario 3 UI exposure", () => {
   it("reuses one persisted run console and derives scenario identity from Product state", () => {
     expect(consoleSource).toContain("state?.run.scenario_id");
     expect(consoleSource).toContain("{scenarioLabel} · операционная консоль");
-    expect(consoleSource).toContain("{state.run.scenario_id}");
+    expect(consoleSource).toContain('className="run-footer-bar"');
+    expect(consoleSource).not.toContain("<strong>{state.run.scenario_id}</strong>");
     expect(consoleSource).not.toContain("Сценарий 1 · операционная консоль");
     expect(consoleSource).toContain("К выбору сценариев");
   });

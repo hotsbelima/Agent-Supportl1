@@ -13,14 +13,29 @@ import {
   isRetryableApiFailure,
 } from "@/lib/api";
 import {
+  actionTypeLabel,
+  activityKindLabel,
   connectionLabel,
   connectionTone,
+  dependencyNameLabel,
   eventSummary,
+  eventTypeLabel,
+  evidenceEntityLabel,
+  evidenceSourceLabel,
   formatTimestamp,
+  incidentTextLabel,
+  majorIncidentRationale,
   observationState,
+  nativeHitlReady,
+  playbackIncidentStatus,
+  playbackVisibility,
   proposalTone,
+  serviceLabel,
   statusLabel,
   STALE_PROPOSAL_NOTE,
+  scenario2InvestigationActivities,
+  userFacingTextLabel,
+  visibleTimelineEvents,
 } from "@/lib/presentation";
 import { abortableDelay } from "@/lib/recovery";
 import { streamRunEvents } from "@/lib/sse";
@@ -32,6 +47,8 @@ import type {
 } from "@/lib/types";
 
 const DEMO_OPERATOR = "portfolio-demo-operator";
+const AUTO_SIGNAL_INTERVAL_MS = 20_000;
+const CANONICAL_SIGNAL_COUNT = 3;
 
 function StatusBadge({
   value,
@@ -58,19 +75,23 @@ function isAbortError(error: unknown): boolean {
 export function Scenario2Console({ runId }: { runId: string }) {
   const [state, setState] = useState<Scenario2IngestionStateResponse | null>(null);
   const [events, setEvents] = useState<ApplicationEventView[]>([]);
+  const [playbackNow, setPlaybackNow] = useState(() => Date.now());
   const [connection, setConnection] =
     useState<ConnectionState>("Reconnecting");
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [progressing, setProgressing] = useState(false);
-  const [simulatorComplete, setSimulatorComplete] = useState(false);
-  const [progressNotice, setProgressNotice] = useState<string | null>(null);
   const [decision, setDecision] = useState<{
     proposalId: string;
     verb: "approve" | "reject";
   } | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [journalState, setJournalState] = useState({
+    runId,
+    visible: false,
+  });
+  const journalVisible =
+    journalState.runId === runId ? journalState.visible : false;
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
     null,
@@ -79,6 +100,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
     useState<string | null>(null);
 
   const cursorRef = useRef(0);
+  const autoAdvanceInFlightRef = useRef(false);
 
   const refreshState = useCallback(
     async (signal?: AbortSignal) => {
@@ -185,7 +207,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
           setConnection("Reconnecting");
           setStreamError(
-            "Поток событий прервалась. Восстанавливаемся из сохранённого состояние продукта.",
+            "Поток событий прервался. Восстанавливаемся из сохранённого состояния продукта.",
           );
 
           try {
@@ -223,28 +245,59 @@ export function Scenario2Console({ runId }: { runId: string }) {
     };
   }, [refreshState, runId]);
 
-  async function handleNextSignal() {
-    if (progressing || simulatorComplete) return;
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setPlaybackNow(Date.now());
+    }, 1_000);
 
-    setProgressing(true);
-    setProgressNotice(null);
-    try {
-      const result = await advanceScenario2Simulator(runId);
-      setState(result.state);
-      setSimulatorComplete(result.complete);
-      setProgressNotice(
-        result.ingested
-          ? `Сигнал ${result.ingested.signal.source_ref} сохранён. состояние продукта обновлён.`
-          : result.complete
-            ? "Все демонстрационные сигналы уже отправлены."
-            : "Следующий шаг симулятора выполнен.",
-      );
-    } catch (error) {
-      setProgressNotice(displayApiError(error));
-    } finally {
-      setProgressing(false);
+    return () => window.clearInterval(timerId);
+  }, [runId]);
+
+  const signalCount = state?.operational_signals.length ?? 0;
+  const simulatorComplete = signalCount >= CANONICAL_SIGNAL_COUNT;
+  const latestSignalAt = state?.operational_signals.at(-1)?.received_at ?? null;
+  const autoScheduleAnchor = latestSignalAt ?? state?.run.created_at ?? null;
+
+  useEffect(() => {
+    if (
+      simulatorComplete ||
+      !autoScheduleAnchor ||
+      autoAdvanceInFlightRef.current
+    ) {
+      return;
     }
-  }
+
+    const anchorMs = Date.parse(autoScheduleAnchor);
+    const delayMs =
+      signalCount === 0
+        ? 0
+        : Number.isFinite(anchorMs)
+          ? Math.max(0, anchorMs + AUTO_SIGNAL_INTERVAL_MS - Date.now())
+          : AUTO_SIGNAL_INTERVAL_MS;
+    const controller = new AbortController();
+
+    const timeoutId = window.setTimeout(() => {
+      if (controller.signal.aborted || autoAdvanceInFlightRef.current) return;
+      autoAdvanceInFlightRef.current = true;
+      void advanceScenario2Simulator(runId, controller.signal)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          setState(result.state);
+        })
+        .catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          setStreamError(displayApiError(error));
+        })
+        .finally(() => {
+          autoAdvanceInFlightRef.current = false;
+        });
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [autoScheduleAnchor, runId, signalCount, simulatorComplete]);
 
   async function handleDecision(
     proposal: MajorIncidentProposalView,
@@ -265,7 +318,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
       setDecisionNotice(
         result.replayed
           ? "Сохранённое решение воспроизведено без повторного выполнения."
-          : "Решение человека сохранено в состояние продукта.",
+          : "Решение человека сохранено в состоянии продукта.",
       );
       await refreshState();
     } catch (error) {
@@ -276,7 +329,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
         );
         if (persisted && persisted.status !== "PENDING_APPROVAL") {
           setDecisionNotice(
-            "Ответ прервался, но сохранённое решение восстановлено из состояние продукта.",
+            "Ответ прервался, но сохранённое решение восстановлено из состояния продукта.",
           );
         } else {
           setDecisionError(
@@ -321,75 +374,48 @@ export function Scenario2Console({ runId }: { runId: string }) {
     );
   }
 
+  const visibleEvents = visibleTimelineEvents(
+    events,
+    state.run.created_at,
+    playbackNow,
+  );
+  const investigationActivities = scenario2InvestigationActivities(
+    visibleEvents,
+    state,
+  );
+  const playback = playbackVisibility(visibleEvents);
+  const visibleServiceIncidents = state.service_incidents.filter((item) =>
+    playback.signalSites.has(item.site_id),
+  );
+  const visibleEvidence = state.evidence.filter((item) =>
+    playback.evidenceIds.has(item.evidence_id),
+  );
+  const visibleProposals = state.major_incident_proposals;
+  const visibleMajorIncidents = state.major_incidents;
+  const actionExecuted = state.major_incident_executions.length > 0;
+
   const selectedIncident = selectedIncidentId
-    ? state.service_incidents.find(
+    ? visibleServiceIncidents.find(
         (item) => item.incident_id === selectedIncidentId,
       ) ?? null
     : null;
   const selectedObservation = selectedObservationId
-    ? state.evidence.find((item) => item.evidence_id === selectedObservationId) ??
+    ? visibleEvidence.find((item) => item.evidence_id === selectedObservationId) ??
       null
     : null;
-  const latestProposal = state.major_incident_proposals.length
-    ? [...state.major_incident_proposals]
+  const latestProposal = visibleProposals.length
+    ? [...visibleProposals]
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .at(-1) ?? null
     : null;
-  const latestMajorIncident = state.major_incidents.at(-1) ?? null;
-  const lastSeq = events.at(-1)?.seq ?? state.latest_event_seq;
+  const latestProposalDisplayStatus = latestProposal?.status ?? null;
+  const latestProposalHitlReady =
+    latestProposal !== null &&
+    nativeHitlReady(events, latestProposal.proposal_id);
+  const latestMajorIncident = visibleMajorIncidents.at(-1) ?? null;
 
   return (
     <main className="console-shell">
-      <header className="run-header">
-        <div className="brand-lockup">
-          <Link href="/" className="brand-mark" aria-label="На главную">
-            8O
-          </Link>
-          <div>
-            <p className="eyebrow">Автономный L1-агент по инцидентам</p>
-            <h1>Сценарий 2 · массовый сервисный инцидент</h1>
-          </div>
-        </div>
-
-        <div className="run-header-actions">
-          <Link className="secondary-button compact-button" href="/">
-            Новый запуск
-          </Link>
-        </div>
-
-        <div className="run-header-grid">
-          <div>
-            <span>Запуск</span>
-            <code>{state.run.run_id}</code>
-          </div>
-          <div>
-            <span>Статус</span>
-            <StatusBadge value={state.run.status} tone="info" />
-          </div>
-          <div>
-            <span>Инциденты</span>
-            <strong>{state.service_incidents.length}</strong>
-          </div>
-          <div>
-            <span>Сигналы</span>
-            <strong>{state.operational_signals.length}</strong>
-          </div>
-          <div>
-            <span>Соединение</span>
-            <span
-              className="status-badge"
-              data-tone={connectionTone(connection)}
-            >
-              {connectionLabel(connection)}
-            </span>
-          </div>
-          <div>
-            <span>Последнее событие</span>
-            <strong>#{lastSeq}</strong>
-          </div>
-        </div>
-      </header>
-
       {streamError ? (
         <div className="connection-warning" role="status">
           Сохранённое состояние остаётся доступным. <span>{streamError}</span>
@@ -398,7 +424,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
       <div className="console-grid">
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel incident-panel">
             <div className="panel-heading">
               <div>
                 <p className="panel-kicker">Текущее состояние продукта</p>
@@ -406,14 +432,13 @@ export function Scenario2Console({ runId }: { runId: string }) {
               </div>
               {selectedIncident ? (
                 <StatusBadge
-                  value={selectedIncident.status}
+                  value={playbackIncidentStatus(
+                    selectedIncident.status,
+                    actionExecuted,
+                  )}
                   tone="info"
                 />
-              ) : (
-                <span className="panel-count">
-                  {state.service_incidents.length}
-                </span>
-              )}
+              ) : null}
             </div>
 
             {selectedIncident ? (
@@ -436,15 +461,22 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Статус</dt>
-                    <dd>{statusLabel(selectedIncident.status)}</dd>
+                    <dd>
+                      {statusLabel(
+                        playbackIncidentStatus(
+                          selectedIncident.status,
+                          actionExecuted,
+                        ),
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Сервис</dt>
-                    <dd>{selectedIncident.service_key}</dd>
+                    <dd>{serviceLabel(selectedIncident.service_key)}</dd>
                   </div>
                   <div>
                     <dt>Симптом</dt>
-                    <dd>{selectedIncident.symptom_key}</dd>
+                    <dd>{incidentTextLabel(selectedIncident.symptom_key)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Обновлён</dt>
@@ -452,19 +484,25 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </dl>
               </div>
-            ) : state.service_incidents.length ? (
+            ) : visibleServiceIncidents.length ? (
               <div className="entity-list" role="list">
-                {state.service_incidents.map((item) => (
+                {visibleServiceIncidents.map((item) => (
                   <div
                     className="entity-row"
                     role="listitem"
                     key={item.incident_id}
                   >
                     <div className="entity-row-main">
-                      <strong>{item.symptom_key}</strong>
-                      <span>{item.site_id} · {item.service_key}</span>
+                      <strong>{incidentTextLabel(item.symptom_key)}</strong>
+                      <span>{item.site_id} · {serviceLabel(item.service_key)}</span>
                     </div>
-                    <StatusBadge value={item.status} tone="info" />
+                    <StatusBadge
+                      value={playbackIncidentStatus(
+                        item.status,
+                        actionExecuted,
+                      )}
+                      tone="info"
+                    />
                     <button
                       className="detail-button"
                       type="button"
@@ -476,19 +514,17 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 ))}
               </div>
             ) : (
-              <EmptyPanel>
-                Инцидентов пока нет. Добавьте следующий демонстрационный сигнал.
-              </EmptyPanel>
+              <EmptyPanel>Инцидентов ещё нет.</EmptyPanel>
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel observation-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Безопасные факты продукта</p>
+                <p className="panel-kicker">Наблюдаемые факты</p>
                 <h2>Наблюдения</h2>
               </div>
-              <span className="panel-count">{state.evidence.length}</span>
+              
             </div>
 
             {selectedObservation ? (
@@ -503,7 +539,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <dl className="facts-grid">
                   <div>
                     <dt>Тип</dt>
-                    <dd>{selectedObservation.source_type}</dd>
+                    <dd>{evidenceSourceLabel(selectedObservation.source_type)}</dd>
                   </div>
                   <div>
                     <dt>Получено</dt>
@@ -525,34 +561,30 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 {selectedObservation.facts.length ? (
                   <ul className="facts-list observation-facts">
                     {selectedObservation.facts.map((fact) => (
-                      <li key={fact}>{fact}</li>
+                      <li key={fact}>{userFacingTextLabel(fact)}</li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="muted-copy observation-copy">
-                    Нормализованных фактов пока нет.
-                  </p>
-                )}
+                ) : null}
                 <div className="observation-payload">
                   <span className="subtle-label payload-label">
-                    Безопасные типизированные данные
+                    Данные
                   </span>
                   <pre className="payload-block">
                     {JSON.stringify(selectedObservation.payload, null, 2)}
                   </pre>
                 </div>
               </div>
-            ) : state.evidence.length ? (
+            ) : visibleEvidence.length ? (
               <div className="entity-list" role="list">
-                {state.evidence.map((evidence) => (
+                {visibleEvidence.map((evidence) => (
                   <div
                     className="entity-row observation-row"
                     role="listitem"
                     key={evidence.evidence_id}
                   >
                     <div className="entity-row-main">
-                      <strong>{evidence.source_type}</strong>
-                      <span>{evidence.entity_ids[0] ?? "наблюдение"}</span>
+                      <strong>{evidenceSourceLabel(evidence.source_type)}</strong>
+                      <span>{evidenceEntityLabel(evidence)}</span>
                       <time dateTime={evidence.captured_at}>
                         {formatTimestamp(evidence.captured_at)}
                       </time>
@@ -576,25 +608,75 @@ export function Scenario2Console({ runId }: { runId: string }) {
               </div>
             ) : (
               <EmptyPanel>
-                наблюдений появится после того, как агент начнёт расследование.
+                Наблюдения появятся после того, как агент начнёт расследование.
               </EmptyPanel>
             )}
           </article>
         </section>
 
         <section className="console-column timeline-column">
+          <article className="panel scroll-panel investigation-panel">
+            <div className="panel-heading sticky-heading">
+              <div>
+                <p className="panel-kicker">
+                  Что происходило и к каким выводам пришёл агент
+                </p>
+                <h2>Ход расследования</h2>
+              </div>
+              
+            </div>
+
+            {investigationActivities.length ? (
+              <ol className="activity-list">
+                {investigationActivities.map((item) => (
+                  <li className="activity-item" data-kind={item.kind} key={item.id}>
+                    <div className="activity-meta">
+                      <span>{activityKindLabel(item.kind)}</span>
+                      <time dateTime={item.occurred_at}>
+                        {formatTimestamp(item.occurred_at)}
+                      </time>
+                    </div>
+                    <strong>{item.title}</strong>
+                    {item.detail ? <p>{item.detail}</p> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyPanel>
+                Ход расследования появится после первых подтверждённых событий.
+              </EmptyPanel>
+            )}
+          </article>
+
           <article className="panel scroll-panel timeline-panel">
             <div className="panel-heading sticky-heading">
               <div>
-                <p className="panel-kicker">Сохранённый журнал аудита</p>
-                <h2>Хронология</h2>
+                <p className="panel-kicker">События системы</p>
+                <h2>Технический журнал</h2>
               </div>
-              <span className="panel-count">{events.length}</span>
+              <button
+                className="journal-toggle"
+                type="button"
+                onClick={() =>
+                  setJournalState((current) => ({
+                    runId,
+                    visible:
+                      current.runId === runId ? !current.visible : true,
+                  }))
+                }
+                aria-expanded={journalVisible}
+              >
+                {journalVisible ? "Скрыть журнал" : "Показать журнал"}
+              </button>
             </div>
 
-            {events.length ? (
+            {!journalVisible ? (
+              <div className="journal-hidden-copy">
+                Содержимое журнала скрыто, чтобы не перегружать интерфейс технической информацией.
+              </div>
+            ) : visibleEvents.length ? (
               <ol className="timeline-list">
-                {events.map((event) => (
+                {visibleEvents.map((event) => (
                   <li className="timeline-item" key={event.seq}>
                     <div className="timeline-rail"><span>{event.seq}</span></div>
                     <div className="timeline-content">
@@ -604,9 +686,9 @@ export function Scenario2Console({ runId }: { runId: string }) {
                           {formatTimestamp(event.occurred_at)}
                         </time>
                       </div>
-                      <code className="event-type">{event.event_type}</code>
+                      <span className="event-type">{eventTypeLabel(event.event_type)}</span>
                       <details className="event-details">
-                        <summary>Безопасные сохранённые детали</summary>
+                        <summary>Детали</summary>
                         <pre>{JSON.stringify(event.payload, null, 2)}</pre>
                       </details>
                     </div>
@@ -614,50 +696,25 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 ))}
               </ol>
             ) : (
-              <EmptyPanel>Сохранённых событий пока нет.</EmptyPanel>
+              <EmptyPanel>Событий системы пока нет.</EmptyPanel>
             )}
           </article>
         </section>
 
         <section className="console-column">
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel decision-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Корреляция и решение</p>
-                <h2>Предложение крупного инцидента</h2>
+                <p className="panel-kicker">Подтверждение действий агента</p>
+                <h2>Предложение и решение</h2>
               </div>
               {latestProposal ? (
                 <StatusBadge
-                  value={latestProposal.status}
-                  tone={proposalTone(latestProposal.status)}
+                  value={latestProposalDisplayStatus ?? latestProposal.status}
+                  tone={proposalTone(
+                    latestProposalDisplayStatus ?? latestProposal.status,
+                  )}
                 />
-              ) : null}
-            </div>
-
-            <div className="scenario-progress">
-              <div>
-                <span className="subtle-label">Демонстрационный поток</span>
-                <p>
-                  Сигналов сохранено: <strong>{state.operational_signals.length}</strong>.
-                  Каждый шаг сохраняет событие в состоянии продукта до отправки агенту.
-                </p>
-              </div>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => void handleNextSignal()}
-                disabled={progressing || simulatorComplete}
-              >
-                {progressing
-                  ? "Добавляем сигнал…"
-                  : simulatorComplete
-                    ? "Все сигналы отправлены"
-                    : "Добавить следующий сигнал"}
-              </button>
-              {progressNotice ? (
-                <p className="decision-notice" role="status">
-                  {progressNotice}
-                </p>
               ) : null}
             </div>
 
@@ -670,11 +727,11 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div>
                     <dt>Зависимость</dt>
-                    <dd>{latestProposal.dependency_name}</dd>
+                    <dd>{dependencyNameLabel(latestProposal.dependency_name)}</dd>
                   </div>
                   <div>
                     <dt>Действие</dt>
-                    <dd>{latestProposal.action_type}</dd>
+                    <dd>{actionTypeLabel(latestProposal.action_type)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Затронутые площадки</dt>
@@ -684,7 +741,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
 
                 <div className="proposal-rationale">
                   <span>Обоснование</span>
-                  <p>{latestProposal.rationale}</p>
+                  <p>{majorIncidentRationale(latestProposal)}</p>
                 </div>
 
                 <div className="proposal-evidence">
@@ -696,7 +753,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </div>
 
-                {latestProposal.status === "PENDING_APPROVAL" ? (
+                {latestProposal.status === "PENDING_APPROVAL" && latestProposalHitlReady ? (
                   <div className="decision-area">
                     <p>
                       Для создания крупного инцидента требуется решение человека.
@@ -756,13 +813,13 @@ export function Scenario2Console({ runId }: { runId: string }) {
             )}
           </article>
 
-          <article className="panel scroll-panel">
+          <article className="panel scroll-panel result-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Результат после решения человека</p>
-                <h2>Крупный инцидент</h2>
+                <p className="panel-kicker">Результат действия</p>
+                <h2>Что сделано</h2>
               </div>
-              <span className="panel-count">{state.major_incidents.length}</span>
+              
             </div>
 
             {latestMajorIncident ? (
@@ -774,11 +831,11 @@ export function Scenario2Console({ runId }: { runId: string }) {
                 <dl className="facts-grid">
                   <div>
                     <dt>Сервис</dt>
-                    <dd>{latestMajorIncident.service_key}</dd>
+                    <dd>{serviceLabel(latestMajorIncident.service_key)}</dd>
                   </div>
                   <div>
                     <dt>Зависимость</dt>
-                    <dd>{latestMajorIncident.dependency_name}</dd>
+                    <dd>{dependencyNameLabel(latestMajorIncident.dependency_name)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Площадки</dt>
@@ -786,7 +843,7 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                   <div className="wide">
                     <dt>Описание</dt>
-                    <dd>{latestMajorIncident.summary}</dd>
+                    <dd>{incidentTextLabel(latestMajorIncident.summary)}</dd>
                   </div>
                   <div className="wide">
                     <dt>Создан</dt>
@@ -794,24 +851,24 @@ export function Scenario2Console({ runId }: { runId: string }) {
                   </div>
                 </dl>
                 <p className="semantic-note">
-                  Крупный инцидент зарегистрирован как демонстрационное действие продукта.
-                  Это не изменение реальной клиентской инфраструктуры.
+                  Крупный инцидент зарегистрирован.
                 </p>
               </div>
-            ) : (
-              <EmptyPanel>
-                Крупный инцидент ещё не создан. До человеческого решения побочный
-                эффект запрещён.
-              </EmptyPanel>
-            )}
+            ) : null}
           </article>
         </section>
       </div>
 
-      <footer className="console-footer">
-        <span>Источник истины: состояние продукта в PostgreSQL</span>
-        <span>Поток событий: сохранённый SSE</span>
-        <span>Среда AI: Google ADK + Gemini</span>
+      <footer className="run-footer-bar">
+        <strong>Сценарий 2 · массовый сервисный инцидент</strong>
+        <div className="run-footer-actions">
+          <span className="status-badge" data-tone={connectionTone(connection)}>
+            {connectionLabel(connection)}
+          </span>
+          <Link className="secondary-button compact-button" href="/">
+            Новый запуск
+          </Link>
+        </div>
       </footer>
     </main>
   );

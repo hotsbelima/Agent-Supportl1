@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from copy import deepcopy
+from datetime import UTC, datetime
+from typing import Annotated, Any, Awaitable, Callable, Literal
 
 from google.adk.tools import ToolContext
 from pydantic import Field
@@ -77,6 +79,67 @@ class Scenario3AdkTools:
 
     def __init__(self, adapter: Scenario3ToolAdapter) -> None:
         self._adapter = adapter
+        self._successful_read_cache: dict[
+            tuple[str, str, str, tuple[tuple[str, str], ...]],
+            tuple[datetime | None, dict[str, Any]],
+        ] = {}
+
+    @staticmethod
+    def _cache_expiry(payload: dict[str, Any]) -> datetime | None:
+        expiries: list[datetime] = []
+
+        def visit(value: Any) -> None:
+            if isinstance(value, dict):
+                expires_at = value.get("expires_at")
+                if isinstance(expires_at, str) and expires_at:
+                    try:
+                        parsed = datetime.fromisoformat(
+                            expires_at.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        parsed = None
+                    if parsed is not None:
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=UTC)
+                        expiries.append(parsed.astimezone(UTC))
+                for nested in value.values():
+                    visit(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    visit(nested)
+
+        visit(payload)
+        return min(expiries) if expiries else None
+
+    async def _cached_read(
+        self,
+        *,
+        name: str,
+        arguments: dict[str, str],
+        tool_context: ToolContext,
+        call: Callable[[], Awaitable[object]],
+    ) -> dict[str, Any]:
+        context = _product_context(tool_context)
+        key = (
+            context.tenant_id,
+            context.run_id,
+            name,
+            tuple(sorted(arguments.items())),
+        )
+        cached = self._successful_read_cache.get(key)
+        if cached is not None:
+            expires_at, payload = cached
+            if expires_at is None or expires_at > datetime.now(UTC):
+                return deepcopy(payload)
+            self._successful_read_cache.pop(key, None)
+
+        payload = _payload(await call())
+        if payload.get("ok") is True:
+            self._successful_read_cache[key] = (
+                self._cache_expiry(payload),
+                deepcopy(payload),
+            )
+        return payload
 
     async def get_service_dependencies(
         self,
@@ -84,11 +147,15 @@ class Scenario3AdkTools:
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Read dependencies for the persisted Scenario 3 business service."""
-        result = await self._adapter.get_service_dependencies(
-            _product_context(tool_context),
-            GetServiceDependenciesRequest(service_key=service_key),
+        return await self._cached_read(
+            name="get_service_dependencies",
+            arguments={"service_key": service_key},
+            tool_context=tool_context,
+            call=lambda: self._adapter.get_service_dependencies(
+                _product_context(tool_context),
+                GetServiceDependenciesRequest(service_key=service_key),
+            ),
         )
-        return _payload(result)
 
     async def get_external_dependency_status(
         self,
@@ -96,11 +163,15 @@ class Scenario3AdkTools:
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Read authoritative status for a dependency established by mapping."""
-        result = await self._adapter.get_external_dependency_status(
-            _product_context(tool_context),
-            GetExternalDependencyStatusRequest(dependency_id=dependency_id),
+        return await self._cached_read(
+            name="get_external_dependency_status",
+            arguments={"dependency_id": dependency_id},
+            tool_context=tool_context,
+            call=lambda: self._adapter.get_external_dependency_status(
+                _product_context(tool_context),
+                GetExternalDependencyStatusRequest(dependency_id=dependency_id),
+            ),
         )
-        return _payload(result)
 
     async def get_device(
         self,
@@ -108,11 +179,15 @@ class Scenario3AdkTools:
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Read CMDB topology for the affected reported device."""
-        result = await self._adapter.get_device(
-            _product_context(tool_context),
-            GetDeviceRequest(device_id=device_id),
+        return await self._cached_read(
+            name="get_device",
+            arguments={"device_id": device_id},
+            tool_context=tool_context,
+            call=lambda: self._adapter.get_device(
+                _product_context(tool_context),
+                GetDeviceRequest(device_id=device_id),
+            ),
         )
-        return _payload(result)
 
     async def get_site_health(
         self,
@@ -120,11 +195,15 @@ class Scenario3AdkTools:
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Read current local site health and persist Product Evidence."""
-        result = await self._adapter.get_site_health(
-            _product_context(tool_context),
-            GetSiteHealthRequest(site_id=site_id),
+        return await self._cached_read(
+            name="get_site_health",
+            arguments={"site_id": site_id},
+            tool_context=tool_context,
+            call=lambda: self._adapter.get_site_health(
+                _product_context(tool_context),
+                GetSiteHealthRequest(site_id=site_id),
+            ),
         )
-        return _payload(result)
 
     async def run_diagnostic(
         self,
@@ -133,14 +212,21 @@ class Scenario3AdkTools:
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Run the read-only access-link diagnostic for a CMDB attachment."""
-        result = await self._adapter.run_diagnostic(
-            _product_context(tool_context),
-            RunDiagnosticRequest(
-                diagnostic_type=DiagnosticType(diagnostic_type),
-                target_id=target_id,
+        return await self._cached_read(
+            name="run_diagnostic",
+            arguments={
+                "diagnostic_type": diagnostic_type,
+                "target_id": target_id,
+            },
+            tool_context=tool_context,
+            call=lambda: self._adapter.run_diagnostic(
+                _product_context(tool_context),
+                RunDiagnosticRequest(
+                    diagnostic_type=DiagnosticType(diagnostic_type),
+                    target_id=target_id,
+                ),
             ),
         )
-        return _payload(result)
 
     async def search_kb(
         self,
@@ -148,11 +234,15 @@ class Scenario3AdkTools:
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Search approved KB guidance and persist returned Product Evidence."""
-        result = await self._adapter.search_kb(
-            _product_context(tool_context),
-            SearchKbRequest(query=query),
+        return await self._cached_read(
+            name="search_kb",
+            arguments={"query": query},
+            tool_context=tool_context,
+            call=lambda: self._adapter.search_kb(
+                _product_context(tool_context),
+                SearchKbRequest(query=query),
+            ),
         )
-        return _payload(result)
 
     async def propose_field_visit(
         self,

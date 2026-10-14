@@ -9,12 +9,10 @@ import type {
   TimelineResponse,
 } from "./types";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "")
-  .trim()
-  .replace(/\/+$/, "");
+const API_BASE_URL = "/product-api";
 
 export const DEMO_TENANT_ID =
-  (process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "").trim();
+  (process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "TENANT-8OCT").trim();
 
 export class ApiClientError extends Error {
   constructor(
@@ -45,7 +43,6 @@ export class ApiClientError extends Error {
 }
 
 export function configurationIssue(): string | null {
-  if (!API_BASE_URL) return "Не настроен адрес API продукта.";
   if (!DEMO_TENANT_ID) {
     return "Не настроен демонстрационный контур интерфейса.";
   }
@@ -121,6 +118,16 @@ export function getRunState(
   return requestJson<RunStateResponse>(
     `/api/v1/runs/${encodeURIComponent(runId)}`,
     { signal },
+  );
+}
+
+export function sendRunHeartbeat(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<{ active: boolean }> {
+  return requestJson<{ active: boolean }>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/heartbeat`,
+    { method: "POST", signal },
   );
 }
 

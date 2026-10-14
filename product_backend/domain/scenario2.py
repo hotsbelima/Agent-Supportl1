@@ -139,6 +139,7 @@ class MajorIncidentProposal:
     status: ProposalStatus
     created_at: datetime
     updated_at: datetime
+    deduplication_scope: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +167,7 @@ class MajorIncidentRecord:
     summary: str
     status: MajorIncidentStatus
     created_at: datetime
+    deduplication_scope: str = ""
 
 
 @dataclass(frozen=True, slots=True)

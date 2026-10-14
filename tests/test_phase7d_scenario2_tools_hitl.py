@@ -33,7 +33,10 @@ from agent_runtime.scenario2_agent import (
 from agent_runtime.scenario2_service import (
     Scenario2AgentRuntime,
     _find_scenario2_event_correlation,
+    _required_outcome_continuation_count,
 )
+from agent_runtime.scenario2_tools import Scenario2AdkTools
+from agent_runtime.sessions import get_run_session
 from product_api.app import create_app
 from product_api.scenario2_fixture import (
     ACMEPAY_DEPENDENCY_ID,
@@ -215,6 +218,54 @@ def _decision_response(call_id: str = "CALL-WAIT"):
     )
 
 
+def test_phase7d_scenario2_read_cache_reuses_successful_identical_search():
+    class _Adapter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def search_major_incidents(self, context, request):
+            self.calls += 1
+            return {
+                "ok": True,
+                "snapshot": {
+                    "service_key": request.service_key,
+                    "correlation_key": request.correlation_key,
+                    "dependency_id": request.dependency_id,
+                    "open_major_incident_ids": [],
+                },
+                "evidence": {
+                    "evidence_id": "E-MI-SEARCH",
+                    "expires_at": "2099-01-01T00:00:00+00:00",
+                },
+            }
+
+    async def scenario() -> None:
+        adapter = _Adapter()
+        tools = Scenario2AdkTools(adapter)  # type: ignore[arg-type]
+        context = SimpleNamespace(
+            user_id="TENANT-CACHE",
+            session=SimpleNamespace(id="RUN-CACHE"),
+        )
+        first = await tools.search_major_incidents(
+            service_key="payment_gateway",
+            correlation_key="payment_gateway_timeout",
+            dependency_id="DEP-ACMEPAY-PAYMENTS",
+            tool_context=context,  # type: ignore[arg-type]
+        )
+        first["snapshot"]["open_major_incident_ids"].append("MUTATED")
+        second = await tools.search_major_incidents(
+            service_key="payment_gateway",
+            correlation_key="payment_gateway_timeout",
+            dependency_id="DEP-ACMEPAY-PAYMENTS",
+            tool_context=context,  # type: ignore[arg-type]
+        )
+
+        assert adapter.calls == 1
+        assert second["snapshot"]["open_major_incident_ids"] == []
+
+    asyncio.run(scenario())
+
+
 def test_phase7d_agent_exposes_exact_product_tools_plus_native_wait():
     async def scenario() -> None:
         agent = build_scenario2_agent(_UnusedAdapter())
@@ -230,6 +281,9 @@ def test_phase7d_agent_exposes_exact_product_tools_plus_native_wait():
         )
         assert tools[-1].name == WAIT_FOR_HUMAN_DECISION_TOOL
         assert isinstance(tools[-1], LongRunningFunctionTool)
+
+        assert "MUST call propose_major_incident" in SCENARIO2_AGENT_INSTRUCTION
+        assert "Do not finish with a text-only response" in SCENARIO2_AGENT_INSTRUCTION
 
         expected = {
             "get_local_service_health": {"site_id", "service_key"},
@@ -427,6 +481,130 @@ class _Scenario2ScriptedModel(BaseLlm):
         raise TypeError(f"Unsupported scripted model step: {type(step)!r}")
 
 
+def _scripted_duplicate_search_call() -> types.Part:
+    return types.Part.from_function_call(
+        name="search_major_incidents",
+        args={
+            "service_key": "payment_gateway",
+            "correlation_key": "payment_gateway_timeout",
+            "dependency_id": "DEP-ACMEPAY-PAYMENTS",
+        },
+    )
+
+
+def _build_duplicate_search_agent(model: BaseLlm) -> LlmAgent:
+    async def search_major_incidents(
+        service_key: str,
+        correlation_key: str,
+        dependency_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "service_key": service_key,
+            "correlation_key": correlation_key,
+            "dependency_id": dependency_id,
+            "open_major_incident_ids": [],
+        }
+
+    return LlmAgent(
+        name="phase9g_duplicate_search_agent",
+        model=model,
+        instruction="Search once and stop.",
+        tools=[FunctionTool(search_major_incidents)],
+    )
+
+
+def test_phase9g_repeated_identical_read_loop_is_stopped_before_unbounded_model_turns(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        model = _Scenario2ScriptedModel(
+            steps=[
+                _scripted_duplicate_search_call(),
+                _scripted_duplicate_search_call(),
+                "must not reach a third Gemini turn",
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_duplicate_search_agent(model),
+        )
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=InMemorySessionService(),
+        )
+        try:
+            with pytest.raises(
+                RuntimeError,
+                match="repeated identical read-tool loop",
+            ):
+                await runtime.invoke_operational_signal(
+                    tenant_id="TENANT-9G-LOOP",
+                    run_id="RUN-9G-LOOP",
+                    product_event_id="EVENT-9G-LOOP",
+                    operational_fact={"signal": {"site_id": "SITE-A"}},
+                )
+            assert len(model.requests) <= 2
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
+
+
+def test_scenario2_retries_repeated_read_loop_as_a_new_agent_continuation(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        model = _Scenario2ScriptedModel(
+            steps=[
+                _scripted_duplicate_search_call(),
+                _scripted_duplicate_search_call(),
+                "Continuation received; the agent can reassess fresh evidence.",
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_duplicate_search_agent(model),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            invocation = {
+                "tenant_id": "TENANT-9G-LOOP-RECOVERY",
+                "run_id": "RUN-9G-LOOP-RECOVERY",
+                "product_event_id": "EVENT-9G-LOOP-RECOVERY",
+                "operational_fact": {"signal": {"site_id": "SITE-A"}},
+                "require_proposal_hitl": True,
+            }
+            with pytest.raises(RuntimeError, match="repeated identical read-tool loop"):
+                await runtime.invoke_operational_signal(**invocation)
+
+            result = await runtime.invoke_operational_signal(**invocation)
+            session = await get_run_session(
+                sessions,
+                tenant_id=invocation["tenant_id"],
+                run_id=invocation["run_id"],
+            )
+            assert session is not None
+            assert _required_outcome_continuation_count(
+                list(session.events),
+                product_event_id=invocation["product_event_id"],
+            ) == 1
+            assert result.final_answer == (
+                "Continuation received; the agent can reassess fresh evidence."
+            )
+            assert len(model.requests) == 3
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
+
+
 def _scripted_proposal_call() -> types.Part:
     return types.Part.from_function_call(
         name="propose_major_incident",
@@ -572,7 +750,163 @@ def test_phase7d_native_adk_pause_resume_and_redelivery_use_same_invocation(
     asyncio.run(scenario())
 
 
-def _build_stack(factory):
+
+def test_scenario2_two_provider_failures_continue_to_proposal(monkeypatch):
+    async def scenario():
+        proposal_id = "MI-PROP-503-CONTINUED"
+        proposal_calls = []
+        model = _Scenario2ScriptedModel(steps=[
+            RuntimeError("503 UNAVAILABLE"), RuntimeError("503 UNAVAILABLE"),
+            _scripted_proposal_call(), _scripted_wait_call(proposal_id),
+        ])
+        monkeypatch.setattr(
+            scenario2_service_module, "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(model, proposal_id, proposal_calls),
+        )
+        runtime = Scenario2AgentRuntime(adapter=object(), session_service=InMemorySessionService())
+        invocation = dict(tenant_id="TENANT-503-CONT", run_id="RUN-503-CONT",
+                          product_event_id="EVENT-503-CONT", operational_fact={"signal": {}},
+                          require_proposal_hitl=True)
+        try:
+            for _ in range(2):
+                with pytest.raises(RuntimeError, match="503 UNAVAILABLE"):
+                    await runtime.invoke_operational_signal(**invocation)
+            recovered = await runtime.invoke_operational_signal(
+                **invocation, force_required_outcome_continuation=True,
+            )
+            assert recovered.recoverable
+            assert recovered.awaiting_human_decision
+            assert proposal_calls == [proposal_id]
+        finally:
+            await runtime.close()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("create_first", [False, True])
+def test_invalid_native_wait_does_not_poison_next_attempt(monkeypatch, create_first):
+    async def scenario():
+        proposal_id = "MI-PROP-WAIT-RECOVERY"
+        proposal_calls = []
+        steps = ([_scripted_proposal_call()] if create_first else [])
+        steps += [_scripted_wait_call("FABRICATED-ID")]
+        steps += ([] if create_first else [_scripted_proposal_call()])
+        steps += [_scripted_wait_call(proposal_id)]
+        model = _Scenario2ScriptedModel(steps=steps)
+        monkeypatch.setattr(
+            scenario2_service_module, "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(model, proposal_id, proposal_calls),
+        )
+        runtime = Scenario2AgentRuntime(adapter=object(), session_service=InMemorySessionService())
+        invocation = dict(tenant_id="TENANT-WAIT", run_id="RUN-WAIT", product_event_id="EVENT-WAIT",
+                          operational_fact={"signal": {}}, require_proposal_hitl=True)
+        try:
+            with pytest.raises(RuntimeError, match="Scenario 2 native wait"):
+                await runtime.invoke_operational_signal(**invocation)
+            recovered = await runtime.invoke_operational_signal(**invocation)
+            assert recovered.recoverable
+            assert recovered.awaiting_human_decision
+            assert recovered.pending_proposal_id == proposal_id
+            assert proposal_calls == [proposal_id]
+        finally:
+            await runtime.close()
+    asyncio.run(scenario())
+
+
+def test_scenario2_provider_failure_after_proposal_resumes_native_wait(monkeypatch):
+    async def scenario():
+        proposal_id = "MI-PROP-503-RECOVERY"
+        proposal_calls = []
+        model = _Scenario2ScriptedModel(steps=[
+            _scripted_proposal_call(),
+            RuntimeError("503 UNAVAILABLE"),
+            _scripted_wait_call(proposal_id),
+        ])
+        monkeypatch.setattr(
+            scenario2_service_module, "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(model, proposal_id, proposal_calls),
+        )
+        runtime = Scenario2AgentRuntime(adapter=object(), session_service=InMemorySessionService())
+        invocation = dict(tenant_id="TENANT-503", run_id="RUN-503", product_event_id="EVENT-503",
+                          operational_fact={"signal": {}}, require_proposal_hitl=True)
+        try:
+            with pytest.raises(RuntimeError, match="503 UNAVAILABLE"):
+                await runtime.invoke_operational_signal(**invocation)
+            recovered = await runtime.invoke_operational_signal(**invocation)
+            assert recovered.recoverable
+            assert recovered.awaiting_human_decision
+            assert recovered.pending_proposal_id == proposal_id
+            assert proposal_calls == [proposal_id]
+        finally:
+            await runtime.close()
+    asyncio.run(scenario())
+
+
+def test_phase7d_text_only_required_outcome_continues_to_proposal_and_wait(
+    monkeypatch,
+):
+    async def scenario() -> None:
+        proposal_id = "MI-PROP-7D-CONTINUE"
+        proposal_calls: list[str] = []
+        model = _Scenario2ScriptedModel(
+            steps=[
+                "All required evidence is present, but I am ending with text.",
+                _scripted_proposal_call(),
+                _scripted_wait_call(proposal_id),
+            ]
+        )
+        monkeypatch.setattr(
+            scenario2_service_module,
+            "build_scenario2_agent",
+            lambda adapter: _build_scripted_scenario2_agent(
+                model,
+                proposal_id,
+                proposal_calls,
+            ),
+        )
+        sessions = InMemorySessionService()
+        runtime = Scenario2AgentRuntime(
+            adapter=object(),
+            session_service=sessions,
+        )
+        try:
+            tenant_id = "TENANT-7D-CONTINUE"
+            run_id = "RUN-7D-CONTINUE"
+            event_id = "EVENT-7D-CONTINUE"
+            fact = {"signal": {"signal_id": "SIG-7D-CONTINUE"}}
+
+            bad = await runtime.invoke_operational_signal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                product_event_id=event_id,
+                operational_fact=fact,
+                require_proposal_hitl=True,
+            )
+            assert bad.awaiting_human_decision is False
+            assert bad.pending_proposal_id is None
+            assert bad.final_answer is not None
+            assert proposal_calls == []
+
+            continued = await runtime.invoke_operational_signal(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                product_event_id=event_id,
+                operational_fact=fact,
+                require_proposal_hitl=True,
+            )
+            assert continued.awaiting_human_decision is True
+            assert continued.pending_proposal_id == proposal_id
+            assert continued.paused_function_call_id is not None
+            assert continued.invocation_id is not None
+            assert continued.invocation_id != bad.invocation_id
+            assert proposal_calls == [proposal_id]
+            assert len(model.requests) == 3
+        finally:
+            await runtime.close()
+
+    asyncio.run(scenario())
+
+
+def _build_stack(factory, *, isolate_runs=False):
     state_service = Scenario2StateService(
         SqlAlchemyScenario2StateQuery(factory)
     )
@@ -589,6 +923,7 @@ def _build_stack(factory):
     sources = PersistedScenario2FixtureSources(
         state_service,
         factory,
+        isolate_runs=isolate_runs,
     )
     read_service = Scenario2ReadToolService(
         read_uow_factory=lambda: SqlAlchemyScenario2ToolReadUnitOfWork(
@@ -605,7 +940,8 @@ def _build_stack(factory):
         ),
     )
     proposal_service = MajorIncidentProposalService(
-        lambda: SqlAlchemyScenario2ProposalUnitOfWork(factory)
+        lambda: SqlAlchemyScenario2ProposalUnitOfWork(factory),
+        isolate_runs=isolate_runs,
     )
     adapter = DefaultScenario2ToolAdapter(
         read_service=read_service,
@@ -762,6 +1098,32 @@ async def _clear_scenario2_outbox(factory, tenant_id: str) -> None:
             )
         )
         await session.commit()
+
+
+def test_demo_postgres_repeated_runs_ignore_pending_and_executed_equivalents():
+    async def scenario():
+        tenant_id = f"TENANT-DEMO-SCOPE-{uuid4().hex[:10]}"
+        engine = create_engine(DatabaseSettings(url=_database_url()))
+        factory = create_session_factory(engine)
+        stack = _build_stack(factory, isolate_runs=True)
+        try:
+            first_run, first_proposal = await _prepare_pending_major_incident(stack, tenant_id)
+            second_run, second_proposal = await _prepare_pending_major_incident(stack, tenant_id)
+            for run_id, proposal_id in ((first_run, first_proposal), (second_run, second_proposal)):
+                result = await stack["approval"].decide(
+                    ToolCallContext(tenant_id=tenant_id, run_id=run_id),
+                    proposal_id=proposal_id, decision=ApprovalDecision.APPROVED,
+                    decided_by="demo-scope-test",
+                )
+                assert result.ok
+                assert result.major_incident.deduplication_scope == run_id
+            third_run, third_proposal = await _prepare_pending_major_incident(stack, tenant_id)
+            assert len({first_run, second_run, third_run}) == 3
+            assert len({first_proposal, second_proposal, third_proposal}) == 3
+        finally:
+            await _clear_scenario2_outbox(factory, tenant_id)
+            await engine.dispose()
+    asyncio.run(scenario())
 
 
 def test_phase7d_postgres_tools_proposal_approve_replay_and_cross_run_search():

@@ -13,7 +13,7 @@ from .scenario3_fixture import SERVICE_KEY
 
 
 ACMEPAY_DEPENDENCY_ID = "DEP-ACMEPAY-PAYMENTS"
-ACMEPAY_NAME = "AcmePay"
+ACMEPAY_NAME = "CloudPayments"
 
 
 class Scenario3ProviderSources:

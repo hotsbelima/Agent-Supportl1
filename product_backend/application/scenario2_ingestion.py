@@ -265,43 +265,31 @@ class Scenario2SignalIngestionService:
 
             now = self._clock()
 
-            incident = await uow.service_incidents.get_for_site_service(
+            # Every new external source identity represents its own Product
+            # incident. Monitoring alerts and ITSM user tickets must remain
+            # separate incident entities even when they share site/service.
+            # Idempotent replay is handled above by (source, source_ref).
+            incident_hint = (
+                _clean(signal_input.incident_id_hint)
+                if signal_input.incident_id_hint is not None
+                else ""
+            )
+            incident = ServiceIncident(
+                incident_id=(
+                    incident_hint
+                    if incident_hint
+                    else self._id_factory("incident")
+                ),
                 tenant_id=tenant,
                 run_id=run_key,
                 site_id=site_id,
                 service_key=service_key,
+                symptom_key=symptom_key,
+                status=IncidentStatus.OPEN,
+                created_at=now,
+                updated_at=now,
             )
-            if incident is None:
-                incident_hint = (
-                    _clean(signal_input.incident_id_hint)
-                    if signal_input.incident_id_hint is not None
-                    else ""
-                )
-                incident = ServiceIncident(
-                    incident_id=(
-                        incident_hint
-                        if incident_hint
-                        else self._id_factory("incident")
-                    ),
-                    tenant_id=tenant,
-                    run_id=run_key,
-                    site_id=site_id,
-                    service_key=service_key,
-                    symptom_key=symptom_key,
-                    status=IncidentStatus.OPEN,
-                    created_at=now,
-                    updated_at=now,
-                )
-                await uow.service_incidents.add(incident)
-            elif incident.symptom_key != symptom_key:
-                return _failure(
-                    ErrorCode.INVALID_ARGUMENT,
-                    "Site/service already has a different active Scenario 2 symptom.",
-                    "service_incident_symptom_conflict",
-                )
-            else:
-                incident = replace(incident, updated_at=now)
-                await uow.service_incidents.save(incident)
+            await uow.service_incidents.add(incident)
 
             signal_hint = (
                 _clean(signal_input.signal_id_hint)

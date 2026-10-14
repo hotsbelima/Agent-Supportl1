@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import logging
 from typing import Protocol, TypeVar
 
 from product_backend.application.major_incident import MajorIncidentProposalService
@@ -70,6 +71,7 @@ def _unexpected_failure(reason: str) -> Scenario2ToolFailure:
 
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class DefaultScenario2ToolAdapter:
@@ -90,7 +92,9 @@ class DefaultScenario2ToolAdapter:
     ) -> T | Scenario2ToolFailure:
         try:
             return await operation()
-        except Exception:
+        except Exception as error:
+            logger.warning("Scenario 2 tool exception operation=%s error_type=%s",
+                           unexpected_reason, type(error).__name__)
             return _unexpected_failure(unexpected_reason)
 
     async def get_local_service_health(
@@ -152,6 +156,13 @@ class DefaultScenario2ToolAdapter:
     ) -> ProposeMajorIncidentResult:
         async def operation() -> ProposeMajorIncidentResult:
             result = await self._proposal_service.create(context, request)
+            logger.info(
+                "Scenario 2 proposal result run_id=%s ok=%s error_code=%s reason=%s evidence_count=%s",
+                context.run_id, result.ok,
+                result.error.code if not result.ok else None,
+                dict(result.error.details).get("reason") if not result.ok else None,
+                len(request.evidence_ids),
+            )
             if not result.ok:
                 return Scenario2ToolFailure(ok=False, error=result.error)
             return ProposeMajorIncidentSuccess(ok=True, proposal=result.proposal)

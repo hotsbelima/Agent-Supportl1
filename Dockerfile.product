@@ -15,4 +15,4 @@ COPY alembic.ini ./
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["python", "-m", "product_api"]
+CMD ["sh", "-c", "python -m alembic upgrade head && exec python -m product_api"]

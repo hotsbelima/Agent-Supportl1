@@ -191,12 +191,18 @@ class SqlAlchemyServiceIncidentRepository:
         service_key: str,
     ) -> ServiceIncident | None:
         result = await self._session.execute(
-            select(ServiceIncidentRow).where(
+            select(ServiceIncidentRow)
+            .where(
                 ServiceIncidentRow.tenant_id == tenant_id,
                 ServiceIncidentRow.run_id == run_id,
                 ServiceIncidentRow.site_id == site_id,
                 ServiceIncidentRow.service_key == service_key,
             )
+            .order_by(
+                ServiceIncidentRow.updated_at.desc(),
+                ServiceIncidentRow.incident_id.desc(),
+            )
+            .limit(1)
         )
         row = result.scalar_one_or_none()
         return _service_incident_from_row(row) if row is not None else None

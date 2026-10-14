@@ -180,10 +180,12 @@ class MajorIncidentProposalService:
         *,
         clock: Clock = _utc_now,
         id_factory: IdFactory = _id,
+        isolate_runs: bool = False,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
         self._id_factory = id_factory
+        self._isolate_runs = isolate_runs
 
     async def create(
         self,
@@ -191,6 +193,7 @@ class MajorIncidentProposalService:
         request: ProposeMajorIncidentRequest,
     ) -> MajorIncidentProposalResult:
         now = self._clock()
+        scope = {"deduplication_scope": context.run_id} if self._isolate_runs else {}
 
         if not request.correlation_key.strip():
             return _failure(
@@ -261,6 +264,7 @@ class MajorIncidentProposalService:
 
             existing_pending = (
                 await uow.major_incident_proposals.get_pending_equivalent(
+                    **scope,
                     tenant_id=context.tenant_id,
                     service_key=request.service_key,
                     correlation_key=request.correlation_key,
@@ -275,6 +279,7 @@ class MajorIncidentProposalService:
                 )
 
             existing_major_incident = await uow.major_incidents.get_equivalent(
+                **scope,
                 tenant_id=context.tenant_id,
                 service_key=request.service_key,
                 correlation_key=request.correlation_key,
@@ -304,6 +309,7 @@ class MajorIncidentProposalService:
                 )
 
             proposal = MajorIncidentProposal(
+                **scope,
                 proposal_id=self._id_factory("mi-proposal"),
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,
@@ -588,6 +594,8 @@ class MajorIncidentApprovalService:
                 )
 
             equivalent = await uow.major_incidents.get_equivalent(
+                **({"deduplication_scope": proposal.deduplication_scope}
+                   if proposal.deduplication_scope else {}),
                 tenant_id=context.tenant_id,
                 service_key=proposal.service_key,
                 correlation_key=proposal.correlation_key,
@@ -746,6 +754,7 @@ class MajorIncidentApprovalService:
                 )
 
             major_incident = MajorIncidentRecord(
+                deduplication_scope=proposal.deduplication_scope,
                 major_incident_id=self._id_factory("major-incident"),
                 tenant_id=context.tenant_id,
                 run_id=context.run_id,

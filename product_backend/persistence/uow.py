@@ -288,3 +288,4 @@ class SqlAlchemyDispatchUnitOfWork(_SqlAlchemyUnitOfWorkBase):
     ) -> None:
         super().__init__(session_factory)
         self.outbox = SqlAlchemyApplicationOutboxRepository(self._session)
+        self.events = SqlAlchemyApplicationEventRepository(self._session)
